@@ -1,6 +1,9 @@
 import { getAccessToken, setAccessToken } from "./token-store";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
+// const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://obm-central-commerce-hub-backend.onrender.com";
+
 
 export class ApiError extends Error {
   status: number;
