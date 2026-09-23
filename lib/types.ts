@@ -36,6 +36,7 @@ export interface Category {
   id: string;
   name: string;
   slug: string;
+  imageUrl: string | null;
   parentId: string | null;
 }
 
@@ -43,6 +44,24 @@ export interface Brand {
   id: string;
   name: string;
   logoUrl: string | null;
+}
+
+export interface ProductImage {
+  id: string;
+  url: string;
+  sortOrder: number;
+}
+
+// The findOne() include is a raw Prisma relation, not run through
+// InventoryService — no computed availableStock/isLowStock here, just the
+// four stored columns. Compute availableStock client-side where needed.
+export interface RawInventory {
+  id: string;
+  productId: string;
+  currentStock: number;
+  reservedStock: number;
+  lowStockThreshold: number;
+  updatedAt: string;
 }
 
 export interface Product {
@@ -58,9 +77,8 @@ export interface Product {
   isActive: boolean;
   category?: Category | null;
   brand?: Brand | null;
-  inventory?: InventorySummary | null;
-  images?: { id: string; url: string; sortOrder: number }[];
-  channels?: { channel: Channel; isPublished: boolean; price: string; name: string | null }[];
+  inventory?: RawInventory | null;
+  images?: ProductImage[];
 }
 
 export interface ProductChannelOverride {
@@ -110,7 +128,7 @@ export interface Customer {
   createdAt: string;
 }
 
-export interface Order {
+interface OrderBase {
   id: string;
   orderNumber: string;
   channelId: string | null;
@@ -127,11 +145,23 @@ export interface Order {
   shippingAddress: string;
   notes: string | null;
   createdAt: string;
-  customer?: Customer;
-  channel?: Channel | null;
-  items?: OrderItem[];
-  statusHistory?: OrderStatusHistoryEntry[];
-  payments?: Payment[];
+  items: OrderItem[];
+}
+
+// GET /admin/orders — customer/channel are select-limited subsets, not the
+// full shapes findOne() returns.
+export interface OrderListItem extends OrderBase {
+  customer: Pick<Customer, "id" | "name" | "phone">;
+  channel: Pick<Channel, "id" | "name" | "slug"> | null;
+}
+
+// GET /admin/orders/:id — full nested shapes plus history/payments/shipment.
+export interface OrderDetail extends OrderBase {
+  customer: Customer;
+  channel: Channel | null;
+  statusHistory: OrderStatusHistoryEntry[];
+  payments: Payment[];
+  shipment: unknown | null;
 }
 
 export interface OrderItem {

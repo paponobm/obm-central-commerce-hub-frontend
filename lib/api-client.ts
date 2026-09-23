@@ -59,7 +59,11 @@ async function request<T>(
     ...(options.headers as Record<string, string> | undefined),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (options.body && !headers["Content-Type"]) {
+  // FormData bodies must NOT get a manual Content-Type — the browser sets
+  // multipart/form-data with the correct boundary itself, and overriding
+  // it (even to the same-looking value) breaks the boundary and the
+  // upload silently fails server-side.
+  if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -111,6 +115,13 @@ export const api = {
       body: data !== undefined ? JSON.stringify(data) : undefined,
     }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  // No Content-Type here — the browser sets multipart/form-data with the
+  // correct boundary itself; setting it manually breaks the upload.
+  upload: <T>(path: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<T>(path, { method: "POST", body: formData });
+  },
 };
 
 export { API_URL };
