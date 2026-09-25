@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { AnnouncementBanner } from "@/components/layout/announcement-banner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -38,6 +39,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           and the whole page scrolls (topbar included) instead of just
           the content area. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <AnnouncementBanner
+          title="Package Expiring Soon"
+          message="Your package will expire in 0 days. Please renew to avoid interruptions."
+          actionLabel="Renew Package"
+        />
         <Topbar />
         <main className="min-h-0 flex-1 overflow-y-auto p-6">{children}</main>
       </div>
