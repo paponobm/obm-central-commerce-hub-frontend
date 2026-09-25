@@ -26,6 +26,20 @@
   --status-cancelled: #dc2626;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Categorical chart palette (dataviz skill's validated reference instance —
+     fixed hue order is the CVD-safety mechanism, never reorder or cycle it).
+     Validated for stacked-bar/adjacent-pair use up to all 8 slots. */
+  --series-1: #2a78d6; /* blue */
+  --series-2: #eb6834; /* orange */
+  --series-3: #1baf7a; /* aqua */
+  --series-4: #eda100; /* yellow */
+  --series-5: #e87ba4; /* magenta */
+  --series-6: #008300; /* green */
+  --series-7: #4a3aa7; /* violet */
+  --series-8: #e34948; /* red */
+  --chart-text-secondary: #52514e;
+  --chart-text-muted: #898781;
 }
 
 body {

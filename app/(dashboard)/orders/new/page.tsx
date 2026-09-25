@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { Channel, Customer, OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
+import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,14 +13,18 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 const SOURCES: OrderSource[] = ["MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 
-interface ItemRow {
+interface LineItem {
   productId: string;
-  quantity: string;
-  unitPrice: string;
-  discount: string;
+  productName: string;
+  sku: string;
+  image?: string;
+  quantity: number;
+  unitPrice: string; // blank = let the backend resolve channel/base price
 }
 
-const EMPTY_ITEM: ItemRow = { productId: "", quantity: "1", unitPrice: "", discount: "" };
+function availableStock(p: Product): number {
+  return p.inventory ? p.inventory.currentStock - p.inventory.reservedStock : 0;
+}
 
 export default function NewOrderPage() {
   const router = useRouter();
@@ -43,7 +48,8 @@ export default function NewOrderPage() {
   const [shippingPhone, setShippingPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
 
-  const [items, setItems] = useState<ItemRow[]>([{ ...EMPTY_ITEM }]);
+  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [productSearch, setProductSearch] = useState("");
   const [discount, setDiscount] = useState("");
   const [shippingFee, setShippingFee] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
@@ -81,28 +87,53 @@ export default function NewOrderPage() {
     setShippingAddress((v) => v || c.address || "");
   }
 
-  function updateItem(index: number, patch: Partial<ItemRow>) {
-    setItems((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    const pool = q
+      ? products.filter(
+          (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
+        )
+      : products;
+    return pool.slice(0, 20);
+  }, [products, productSearch]);
+
+  function addProduct(p: Product) {
+    setLineItems((rows) => {
+      const existing = rows.find((r) => r.productId === p.id);
+      if (existing) {
+        return rows.map((r) =>
+          r.productId === p.id ? { ...r, quantity: r.quantity + 1 } : r,
+        );
+      }
+      return [
+        ...rows,
+        {
+          productId: p.id,
+          productName: p.name,
+          sku: p.sku,
+          image: p.images?.[0]?.url,
+          quantity: 1,
+          unitPrice: "",
+        },
+      ];
+    });
   }
 
-  function addItemRow() {
-    setItems((rows) => [...rows, { ...EMPTY_ITEM }]);
+  function updateLineItem(productId: string, patch: Partial<LineItem>) {
+    setLineItems((rows) =>
+      rows.map((r) => (r.productId === productId ? { ...r, ...patch } : r)),
+    );
   }
 
-  function removeItemRow(index: number) {
-    setItems((rows) => rows.filter((_, i) => i !== index));
-  }
-
-  function productPrice(productId: string): string {
-    const p = products.find((x) => x.id === productId);
-    return p ? p.basePrice : "";
+  function removeLineItem(productId: string) {
+    setLineItems((rows) => rows.filter((r) => r.productId !== productId));
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
 
-    const validItems = items.filter((i) => i.productId && Number(i.quantity) > 0);
+    const validItems = lineItems.filter((i) => i.quantity > 0);
     if (validItems.length === 0) {
       setFormError("Add at least one product line item.");
       return;
@@ -134,9 +165,8 @@ export default function NewOrderPage() {
         shippingAddress,
         items: validItems.map((i) => ({
           productId: i.productId,
-          quantity: Number(i.quantity),
+          quantity: i.quantity,
           unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
-          discount: i.discount ? Number(i.discount) : undefined,
         })),
         discount: discount ? Number(discount) : undefined,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
@@ -247,72 +277,134 @@ export default function NewOrderPage() {
 
           <Card>
             <h2 className="mb-4 text-sm font-semibold text-foreground">Items</h2>
-            <div className="space-y-3">
-              {items.map((row, i) => (
-                <div key={i} className="grid grid-cols-12 items-end gap-2">
-                  <div className="col-span-5">
-                    {i === 0 && <Label>Product</Label>}
-                    <Select
-                      required
-                      value={row.productId}
-                      onChange={(e) => updateItem(i, { productId: e.target.value })}
-                    >
-                      <option value="">Choose a product…</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.sku} — {p.name}
-                        </option>
-                      ))}
-                    </Select>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/40">
+                  Order Items {lineItems.length > 0 && `(${lineItems.length})`}
+                </h3>
+                {lineItems.length === 0 ? (
+                  <p className="rounded-lg bg-black/5 px-3 py-6 text-center text-sm text-foreground/50">
+                    No products added. Search on the right to add products to this order.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {lineItems.map((item) => (
+                      <div
+                        key={item.productId}
+                        className="flex items-center gap-2 rounded-lg border border-black/5 p-2"
+                      >
+                        {item.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+                          <img
+                            src={item.image}
+                            alt={item.productName}
+                            className="h-10 w-10 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/40">
+                            {item.productName.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {item.productName}
+                          </div>
+                          <div className="text-xs text-foreground/50">{item.sku}</div>
+                        </div>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) =>
+                            updateLineItem(item.productId, {
+                              quantity: Math.max(1, Number(e.target.value)),
+                            })
+                          }
+                          className="w-16 text-right"
+                          title="Quantity"
+                        />
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unitPrice}
+                          placeholder={
+                            products.find((p) => p.id === item.productId)?.basePrice
+                          }
+                          onChange={(e) =>
+                            updateLineItem(item.productId, { unitPrice: e.target.value })
+                          }
+                          className="w-24 text-right"
+                          title="Unit price (blank = storefront/base price)"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeLineItem(item.productId)}
+                          className="shrink-0 text-status-cancelled hover:opacity-70"
+                          aria-label="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                  <div className="col-span-2">
-                    {i === 0 && <Label>Qty</Label>}
-                    <Input
-                      required
-                      type="number"
-                      min="1"
-                      value={row.quantity}
-                      onChange={(e) => updateItem(i, { quantity: e.target.value })}
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    {i === 0 && <Label>Price</Label>}
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.unitPrice}
-                      placeholder={productPrice(row.productId)}
-                      onChange={(e) => updateItem(i, { unitPrice: e.target.value })}
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    {i === 0 && <Label>Discount</Label>}
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.discount}
-                      onChange={(e) => updateItem(i, { discount: e.target.value })}
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="text-status-cancelled hover:bg-status-cancelled/10"
-                      disabled={items.length === 1}
-                      onClick={() => removeItemRow(i)}
-                    >
-                      ✕
-                    </Button>
-                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/40">
+                  Add Products
+                </h3>
+                <Input
+                  placeholder="Search by name or SKU…"
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                />
+                <div className="mt-2 max-h-80 space-y-1 overflow-y-auto">
+                  {filteredProducts.map((p) => {
+                    const available = availableStock(p);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addProduct(p)}
+                        className="flex w-full items-center gap-2 rounded-lg p-2 text-left hover:bg-black/5"
+                      >
+                        {p.images?.[0]?.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+                          <img
+                            src={p.images[0].url}
+                            alt={p.name}
+                            className="h-10 w-10 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/40">
+                            {p.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {p.name}
+                          </div>
+                          <div className="text-xs text-foreground/50">{p.sku}</div>
+                        </div>
+                        <div className="shrink-0 text-right text-xs">
+                          <div className="font-medium text-foreground">{money(p.basePrice)}</div>
+                          <div className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
+                            Stock: {available}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {filteredProducts.length === 0 && (
+                    <p className="py-6 text-center text-sm text-foreground/50">
+                      No products found.
+                    </p>
+                  )}
                 </div>
-              ))}
+              </div>
             </div>
-            <Button type="button" variant="secondary" className="mt-3" onClick={addItemRow}>
-              Add Item
-            </Button>
           </Card>
 
           <Card>

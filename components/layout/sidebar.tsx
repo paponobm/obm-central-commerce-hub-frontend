@@ -20,7 +20,7 @@ export function Sidebar() {
         </span>
       </div>
 
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-2">
+      <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 py-2">
         {NAV_SECTIONS.map((section, i) => {
           const items = section.items.filter(
             (item) => !item.permission || hasPermission(item.permission),

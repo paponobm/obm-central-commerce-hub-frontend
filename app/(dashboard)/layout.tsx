@@ -32,9 +32,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      {/* min-h-0 overrides the flex default of min-height:auto — without
+          it this column grows to fit its content instead of respecting
+          the parent's height, so overflow-y-auto below never kicks in
+          and the whole page scrolls (topbar included) instead of just
+          the content area. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );

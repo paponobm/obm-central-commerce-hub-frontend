@@ -8,6 +8,7 @@ import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
+import { StackedBarChart } from "@/components/ui/stacked-bar-chart";
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -107,17 +108,28 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <h2 className="mb-3 mt-6 text-sm font-semibold text-foreground">Order Status</h2>
-          <div className="space-y-2">
-            {Object.entries(data.ordersByStatus)
-              .filter(([, count]) => count > 0)
-              .map(([status, count]) => (
-                <div key={status} className="flex items-center justify-between text-sm">
-                  <StatusBadge status={status} />
-                  <span className="font-medium text-foreground">{count}</span>
-                </div>
-              ))}
-          </div>
+        </Card>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Status</h2>
+          <StackedBarChart
+            segments={Object.entries(data.ordersByStatus).map(([status, count]) => ({
+              label: status.replaceAll("_", " "),
+              value: count,
+            }))}
+          />
+        </Card>
+
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Source</h2>
+          <StackedBarChart
+            segments={data.ordersBySource.map((s) => ({
+              label: s.source,
+              value: s.orderCount,
+            }))}
+          />
         </Card>
       </div>
 
