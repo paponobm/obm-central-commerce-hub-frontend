@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { Channel, Customer, OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
+import { useChannelScope } from "@/lib/channel-scope-context";
+import type { Customer, OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
 import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -28,8 +29,10 @@ function availableStock(p: Product): number {
 
 export default function NewOrderPage() {
   const router = useRouter();
+  const { channels: scopedChannels, activeChannelId: globalChannelId } =
+    useChannelScope();
+  const channels = scopedChannels ?? [];
 
-  const [channels, setChannels] = useState<Channel[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
 
   const [customerMode, setCustomerMode] = useState<"existing" | "new">("new");
@@ -42,7 +45,13 @@ export default function NewOrderPage() {
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
 
   const [source, setSource] = useState<OrderSource>("MANUAL");
-  const [channelId, setChannelId] = useState("");
+  const [channelId, setChannelId] = useState(globalChannelId ?? "");
+
+  // Follows the global Store Selector — creating an order while a specific
+  // store is active shouldn't default to "no channel".
+  useEffect(() => {
+    setChannelId(globalChannelId ?? "");
+  }, [globalChannelId]);
 
   const [shippingName, setShippingName] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
@@ -60,7 +69,6 @@ export default function NewOrderPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    api.get<Channel[]>("/admin/channels").then(setChannels).catch(() => {});
     api.get<Product[]>("/admin/products").then(setProducts).catch(() => {});
   }, []);
 
@@ -447,14 +455,20 @@ export default function NewOrderPage() {
               </div>
               <div>
                 <Label>Channel</Label>
-                <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-                  <option value="">None</option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
+                {globalChannelId ? (
+                  <div className="flex h-[42px] items-center rounded-lg bg-black/5 px-3 text-sm text-foreground/70">
+                    {channels.find((c) => c.id === globalChannelId)?.name ?? "…"}
+                  </div>
+                ) : (
+                  <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+                    <option value="">None</option>
+                    {channels.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
               </div>
             </div>
           </Card>

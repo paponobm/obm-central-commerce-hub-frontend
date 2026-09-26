@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useChannelScope } from "@/lib/channel-scope-context";
+import { isBlockedInStore } from "@/components/layout/nav-config";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { AnnouncementBanner } from "@/components/layout/announcement-banner";
@@ -10,12 +12,20 @@ import { AnnouncementBanner } from "@/components/layout/announcement-banner";
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const { activeChannelId } = useChannelScope();
+  const blocked = !!activeChannelId && isBlockedInStore(pathname);
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/login");
     }
   }, [loading, user, router]);
+
+  // A storefront has no access to the central pages — send it home.
+  useEffect(() => {
+    if (blocked) router.replace("/");
+  }, [blocked, router]);
 
   if (loading) {
     return (
@@ -45,7 +55,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           actionLabel="Renew Package"
         />
         <Topbar />
-        <main className="min-h-0 flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto p-6">{blocked ? null : children}</main>
       </div>
     </div>
   );

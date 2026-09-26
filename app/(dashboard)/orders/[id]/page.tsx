@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderDetail, OrderStatus } from "@/lib/types";
+import type { OrderDetail, OrderStatus, CustomerResponseStatus } from "@/lib/types";
 import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -25,6 +25,21 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   RETURNED: [],
 };
 
+// Independent of order status — no state machine, any value can follow any
+// value (a call can go PENDING -> INTERESTED -> CALL_BACK -> CONFIRMED in
+// any order the conversation actually takes).
+const CUSTOMER_RESPONSES: CustomerResponseStatus[] = [
+  "NO_RESPONSE",
+  "CALL_BACK",
+  "INTERESTED",
+  "NOT_INTERESTED",
+  "CONFIRMED",
+];
+
+function responseLabel(r: CustomerResponseStatus | null): string {
+  return r ? r.replaceAll("_", " ") : "—";
+}
+
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -39,10 +54,16 @@ export default function OrderDetailPage() {
   const [transitioning, setTransitioning] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
 
+  const [responseValue, setResponseValue] = useState<CustomerResponseStatus>("NO_RESPONSE");
+  const [responseNote, setResponseNote] = useState("");
+  const [respondingSaving, setRespondingSaving] = useState(false);
+  const [responseError, setResponseError] = useState<string | null>(null);
+
   async function loadOrder() {
     try {
       const data = await api.get<OrderDetail>(`/admin/orders/${orderId}`);
       setOrder(data);
+      setResponseValue(data.customerResponse);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to load order");
     }
@@ -76,6 +97,26 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function handleResponseUpdate(e: FormEvent) {
+    e.preventDefault();
+    setResponseError(null);
+    setRespondingSaving(true);
+    try {
+      await api.patch(`/admin/orders/${orderId}/customer-response`, {
+        customerResponse: responseValue,
+        note: responseNote || undefined,
+      });
+      setResponseNote("");
+      await loadOrder();
+    } catch (err) {
+      setResponseError(
+        err instanceof ApiError ? err.message : "Something went wrong. Try again.",
+      );
+    } finally {
+      setRespondingSaving(false);
+    }
+  }
+
   if (loadError) {
     return <p className="text-sm text-status-cancelled">{loadError}</p>;
   }
@@ -103,6 +144,9 @@ export default function OrderDetailPage() {
           Payment: {order.paymentStatus}
         </Pill>
         <Pill>Shipment: {order.shipmentStatus.replaceAll("_", " ")}</Pill>
+        <Pill tone={order.customerResponse === "CONFIRMED" ? "primary" : "default"}>
+          Response: {responseLabel(order.customerResponse)}
+        </Pill>
         <Pill>{order.source}</Pill>
         {order.channel && <Pill>{order.channel.name}</Pill>}
       </div>
@@ -163,19 +207,29 @@ export default function OrderDetailPage() {
             </p>
           )}
 
-          <h2 className="mb-3 mt-6 text-sm font-semibold text-foreground">Status History</h2>
-          <div className="space-y-2">
-            {order.statusHistory.map((h) => (
-              <div key={h.id} className="flex items-start justify-between text-sm">
+          <h2 className="mb-3 mt-6 text-sm font-semibold text-foreground">Timeline</h2>
+          <div className="space-y-3">
+            {order.timeline.map((t) => (
+              <div key={t.id} className="flex items-start justify-between text-sm">
                 <div>
-                  <span className="font-medium text-foreground">
-                    {h.fromStatus ? `${h.fromStatus.replaceAll("_", " ")} → ` : ""}
-                    {h.toStatus.replaceAll("_", " ")}
-                  </span>
-                  {h.note && <div className="text-xs text-foreground/50">{h.note}</div>}
+                  {t.type === "status" ? (
+                    <span className="font-medium text-foreground">
+                      {t.fromStatus ? `${t.fromStatus.replaceAll("_", " ")} → ` : ""}
+                      {t.toStatus.replaceAll("_", " ")}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-foreground">
+                      Customer response: {responseLabel(t.fromResponse)} →{" "}
+                      {responseLabel(t.toResponse)}
+                    </span>
+                  )}
+                  {t.note && <div className="text-xs text-foreground/50">{t.note}</div>}
+                  {t.changedBy && (
+                    <div className="text-xs text-foreground/40">by {t.changedBy.name}</div>
+                  )}
                 </div>
                 <span className="whitespace-nowrap text-xs text-foreground/50">
-                  {formatDateTime(h.createdAt)}
+                  {formatDateTime(t.createdAt)}
                 </span>
               </div>
             ))}
@@ -215,6 +269,54 @@ export default function OrderDetailPage() {
               </div>
             </Card>
           )}
+
+          <Card>
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Customer Response</h2>
+            <p className="mb-3 text-xs text-foreground/50">
+              Whether the customer has been reached and how — separate from order status.
+            </p>
+            <form onSubmit={handleResponseUpdate} className="space-y-3">
+              <div>
+                <Label>Response</Label>
+                <Select
+                  value={responseValue}
+                  onChange={(e) =>
+                    setResponseValue(e.target.value as CustomerResponseStatus)
+                  }
+                >
+                  {CUSTOMER_RESPONSES.map((r) => (
+                    <option key={r} value={r}>
+                      {r.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label>Note (optional)</Label>
+                <Textarea
+                  rows={2}
+                  value={responseNote}
+                  onChange={(e) => setResponseNote(e.target.value)}
+                />
+              </div>
+              {responseError && (
+                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                  {responseError}
+                </p>
+              )}
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={
+                  respondingSaving ||
+                  (responseValue === order.customerResponse && !responseNote)
+                }
+                className="w-full"
+              >
+                {respondingSaving ? "Saving…" : "Save Response"}
+              </Button>
+            </form>
+          </Card>
 
           <Card>
             <h2 className="mb-3 text-sm font-semibold text-foreground">Update Status</h2>

@@ -3,13 +3,21 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { Category, Brand, Product, ProductChannelOverride } from "@/lib/types";
-import { money } from "@/lib/format";
+import { useChannelScope } from "@/lib/channel-scope-context";
+import type {
+  Category,
+  Brand,
+  Product,
+  ProductChannelOverride,
+  OrderListItem,
+} from "@/lib/types";
+import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { StatusBadge } from "@/components/ui/badge";
 
 interface MasterForm {
   name: string;
@@ -33,12 +41,14 @@ interface ChannelForm {
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { activeChannelId } = useChannelScope();
   const productId = params.id;
 
   const [product, setProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [channelRows, setChannelRows] = useState<ProductChannelOverride[] | null>(null);
+  const [orderHistory, setOrderHistory] = useState<OrderListItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [master, setMaster] = useState<MasterForm | null>(null);
@@ -91,6 +101,10 @@ export default function ProductDetailPage() {
     loadChannels();
     api.get<Category[]>("/admin/categories").then(setCategories).catch(() => {});
     api.get<Brand[]>("/admin/brands").then(setBrands).catch(() => {});
+    api
+      .get<OrderListItem[]>(`/admin/orders?productId=${productId}`)
+      .then(setOrderHistory)
+      .catch(() => setOrderHistory([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
@@ -342,6 +356,7 @@ export default function ProductDetailPage() {
         </Card>
 
         <div className="space-y-6">
+          {!activeChannelId && (
           <Card>
             <h2 className="mb-3 text-sm font-semibold text-foreground">Inventory</h2>
             <div className="space-y-2 text-sm">
@@ -363,6 +378,7 @@ export default function ProductDetailPage() {
               </div>
             </div>
           </Card>
+          )}
 
           <Card>
             <h2 className="mb-3 text-sm font-semibold text-foreground">Images</h2>
@@ -458,6 +474,60 @@ export default function ProductDetailPage() {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card className="mt-6">
+        <h2 className="mb-1 text-sm font-semibold text-foreground">Order History</h2>
+        <p className="mb-4 text-xs text-foreground/50">
+          Every order containing this product, across every storefront it&apos;s sold on.
+        </p>
+
+        {!orderHistory ? (
+          <p className="text-sm text-foreground/60">Loading…</p>
+        ) : orderHistory.length === 0 ? (
+          <p className="text-sm text-foreground/50">No orders yet for this product.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
+                <th className="pb-2 font-medium">Order</th>
+                <th className="pb-2 font-medium">Channel</th>
+                <th className="pb-2 font-medium">Customer</th>
+                <th className="pb-2 font-medium text-right">Qty</th>
+                <th className="pb-2 font-medium">Status</th>
+                <th className="pb-2 font-medium text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orderHistory.map((o) => {
+                const line = o.items.find((i) => i.productId === productId);
+                return (
+                  <tr
+                    key={o.id}
+                    className="cursor-pointer border-b border-black/5 last:border-0 hover:bg-black/[0.02]"
+                    onClick={() => router.push(`/orders/${o.id}`)}
+                  >
+                    <td className="py-2.5">
+                      <div className="font-medium text-foreground">{o.orderNumber}</div>
+                      <div className="text-xs text-foreground/50">{formatDateTime(o.createdAt)}</div>
+                    </td>
+                    <td className="py-2.5 text-foreground/60">
+                      {o.channel?.name ?? "No channel (manual)"}
+                    </td>
+                    <td className="py-2.5 text-foreground/70">{o.customer.name}</td>
+                    <td className="py-2.5 text-right text-foreground">{line?.quantity ?? "—"}</td>
+                    <td className="py-2.5">
+                      <StatusBadge status={o.status} />
+                    </td>
+                    <td className="py-2.5 text-right font-medium text-foreground">
+                      {money(o.total)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

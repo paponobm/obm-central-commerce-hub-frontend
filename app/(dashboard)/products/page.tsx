@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
+import { useChannelScope } from "@/lib/channel-scope-context";
 import type { Category, Brand, Product } from "@/lib/types";
 import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
@@ -34,6 +35,7 @@ const EMPTY_CREATE_FORM: CreateFormState = {
 
 export default function ProductsPage() {
   const router = useRouter();
+  const { activeChannelId } = useChannelScope();
 
   const [products, setProducts] = useState<Product[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -53,6 +55,7 @@ export default function ProductsPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (categoryFilter) params.set("categoryId", categoryFilter);
+    if (activeChannelId) params.set("channelId", activeChannelId);
     const qs = params.toString();
     try {
       const data = await api.get<Product[]>(`/admin/products${qs ? `?${qs}` : ""}`);
@@ -71,7 +74,7 @@ export default function ProductsPage() {
     const timer = setTimeout(loadProducts, 250); // debounce search typing
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, categoryFilter]);
+  }, [search, categoryFilter, activeChannelId]);
 
   function openCreate() {
     setFormError(null);
@@ -124,9 +127,11 @@ export default function ProductsPage() {
         title="Products"
         description="Your master catalog — publish products to storefronts from each product's page."
         actions={
-          <Button variant="primary" onClick={openCreate}>
-            New Product
-          </Button>
+          !activeChannelId && (
+            <Button variant="primary" onClick={openCreate}>
+              New Product
+            </Button>
+          )
         }
       />
 
@@ -169,7 +174,8 @@ export default function ProductsPage() {
               <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
                 <th className="pb-2 font-medium">Product</th>
                 <th className="pb-2 font-medium">Category / Brand</th>
-                <th className="pb-2 font-medium text-right">Stock</th>
+                <th className="pb-2 font-medium">Published Stores</th>
+                {!activeChannelId && <th className="pb-2 font-medium text-right">Stock</th>}
                 <th className="pb-2 font-medium text-right">Base Price</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium text-right">Actions</th>
@@ -212,11 +218,26 @@ export default function ProductsPage() {
                       {p.category?.name ?? "—"}
                       {p.brand?.name && ` · ${p.brand.name}`}
                     </td>
+                    <td className="py-2.5">
+                      {p.channels && p.channels.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {p.channels.map((c) => (
+                            <Pill key={c.channelId} tone="primary">
+                              {c.channel.name}
+                            </Pill>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-foreground/40">Not published</span>
+                      )}
+                    </td>
+                    {!activeChannelId && (
                     <td className="py-2.5 text-right">
                       <span className={available <= 0 ? "text-status-cancelled" : "text-foreground"}>
                         {available}
                       </span>
                     </td>
+                    )}
                     <td className="py-2.5 text-right font-medium text-foreground">
                       {money(p.basePrice)}
                     </td>
@@ -230,6 +251,7 @@ export default function ProductsPage() {
                         <Button variant="ghost" onClick={() => router.push(`/products/${p.id}`)}>
                           Edit
                         </Button>
+                        {!activeChannelId && (
                         <Button
                           variant="ghost"
                           className="text-status-cancelled hover:bg-status-cancelled/10"
@@ -238,6 +260,7 @@ export default function ProductsPage() {
                         >
                           {deletingId === p.id ? "Deleting…" : "Delete"}
                         </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, ApiError } from "@/lib/api-client";
+import { useChannelScope } from "@/lib/channel-scope-context";
 import type { DashboardData } from "@/lib/types";
 import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
@@ -21,15 +22,18 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 export default function DashboardPage() {
+  const { activeChannelId, activeChannel } = useChannelScope();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setData(null);
+    const qs = activeChannelId ? `?channelId=${activeChannelId}` : "";
     api
-      .get<DashboardData>("/admin/reports/dashboard")
+      .get<DashboardData>(`/admin/reports/dashboard${qs}`)
       .then(setData)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load dashboard"));
-  }, []);
+  }, [activeChannelId]);
 
   if (error) {
     return <p className="text-sm text-status-cancelled">{error}</p>;
@@ -43,21 +47,53 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" description="Here's what's happening across every storefront today." />
+      <PageHeader
+        title="Dashboard"
+        description={
+          activeChannel
+            ? `Here's what's happening at ${activeChannel.name} today.`
+            : "Here's what's happening across every storefront today."
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${activeChannel ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}
+      >
         <StatCard label="Today's Orders" value={String(data.today.orderCount)} />
         <StatCard label="Today's Sales" value={money(data.today.salesTotal)} />
         <StatCard label="Pending Orders" value={String(pending)} />
-        <StatCard
-          label="Low Stock Products"
-          value={String(data.lowStock.count)}
-          hint={data.lowStock.count > 0 ? "Needs attention" : undefined}
-        />
+        {!activeChannel && (
+          <StatCard
+            label="Low Stock Products"
+            value={String(data.lowStock.count)}
+            hint={data.lowStock.count > 0 ? "Needs attention" : undefined}
+          />
+        )}
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <h2 className="mb-3 mt-6 text-sm font-semibold text-foreground">
+        {activeChannel ? "This store" : "Stores"}
+      </h2>
+      {data.ordersByChannel.length === 0 ? (
+        <Card>
+          <p className="text-sm text-foreground/50">No orders yet.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {data.ordersByChannel.map((c) => (
+            <Card key={c.channelId ?? "none"}>
+              <div className="truncate text-sm text-foreground/60">{c.channelName}</div>
+              <div className="mt-2 text-2xl font-semibold text-foreground">{money(c.salesTotal)}</div>
+              <div className="mt-1 text-xs text-foreground/50">
+                {c.orderCount} {c.orderCount === 1 ? "order" : "orders"}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-6">
+        <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-foreground">Recent Orders</h2>
             <Link href="/orders" className="text-xs font-medium text-primary hover:underline">
@@ -95,20 +131,6 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card>
-          <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Channel</h2>
-          <div className="space-y-3">
-            {data.ordersByChannel.map((c) => (
-              <div key={c.channelId ?? "none"} className="flex items-center justify-between text-sm">
-                <span className="text-foreground/70">{c.channelName}</span>
-                <span className="font-medium text-foreground">
-                  {c.orderCount} · {money(c.salesTotal)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-        </Card>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -133,7 +155,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {data.lowStock.products.length > 0 && (
+      {!activeChannel && data.lowStock.products.length > 0 && (
         <Card className="mt-6">
           <h2 className="mb-4 text-sm font-semibold text-foreground">Low Stock Products</h2>
           <table className="w-full text-sm">

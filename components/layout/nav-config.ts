@@ -3,13 +3,15 @@ export interface NavLink {
   label: string;
   href: string;
   permission?: string;
+  centralOnly?: boolean;
 }
 
 export interface NavGroup {
   type: "group";
   label: string;
   permission?: string;
-  children: { label: string; href: string }[];
+  centralOnly?: boolean;
+  children: { label: string; href: string; centralOnly?: boolean }[];
 }
 
 export type NavEntry = NavLink | NavGroup;
@@ -33,13 +35,61 @@ export const NAV_ENTRIES: NavEntry[] = [
     permission: "products.view",
     children: [
       { label: "All Products", href: "/products" },
-      { label: "Categories", href: "/categories" },
-      { label: "Brands", href: "/brands" },
+      { label: "Categories", href: "/categories", centralOnly: true },
+      { label: "Brands", href: "/brands", centralOnly: true },
     ],
   },
-  { type: "link", label: "Inventory", href: "/inventory", permission: "inventory.view" },
-  { type: "link", label: "Customers", href: "/customers", permission: "customers.view" },
-  { type: "link", label: "Channels", href: "/channels", permission: "channels.view" },
-  { type: "link", label: "Reports", href: "/reports", permission: "reports.view" },
-  { type: "link", label: "Roles", href: "/roles", permission: "users.manage" },
+  {
+    type: "group",
+    label: "Inventory",
+    permission: "inventory.view",
+    centralOnly: true,
+    children: [
+      { label: "All Stock", href: "/inventory" },
+      { label: "Low Stock", href: "/inventory/low-stock" },
+      { label: "Movements", href: "/inventory/movements" },
+    ],
+  },
+  {
+    type: "group",
+    label: "Purchasing",
+    permission: "suppliers.manage",
+    centralOnly: true,
+    children: [
+      { label: "Purchases", href: "/purchases" },
+      { label: "Suppliers", href: "/suppliers" },
+    ],
+  },
+  { type: "link", label: "Customers", href: "/customers", permission: "customers.view", centralOnly: true },
+  { type: "link", label: "Channels", href: "/channels", permission: "channels.view", centralOnly: true },
+  { type: "link", label: "Reports", href: "/reports", permission: "reports.view", centralOnly: true },
+  { type: "link", label: "Users", href: "/users", permission: "users.manage", centralOnly: true },
+  { type: "link", label: "Roles", href: "/roles", permission: "users.manage", centralOnly: true },
+  { type: "link", label: "Settings", href: "/settings", permission: "users.manage", centralOnly: true },
 ];
+
+// Inside a storefront (a specific store selected) only Dashboard, Orders and
+// that store's Products are available. Everything below is the shared,
+// cross-store side of the business — hidden from the sidebar and redirected
+// away from if reached by URL. The server enforces the same boundary for
+// store-assigned users (CentralOnlyGuard); this is the matching UI mode.
+export const STORE_BLOCKED_PREFIXES = [
+  "/inventory",
+  "/purchases",
+  "/suppliers",
+  "/customers",
+  "/reports",
+  "/users",
+  "/roles",
+  "/settings",
+  "/categories",
+  "/brands",
+];
+
+export function isBlockedInStore(pathname: string): boolean {
+  if (STORE_BLOCKED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return true;
+  }
+  // Store workspace tabs that are central-only: /channels/:id/{customers,inventory,reports}
+  return /^\/channels\/[^/]+\/(customers|inventory|reports)(\/|$)/.test(pathname);
+}

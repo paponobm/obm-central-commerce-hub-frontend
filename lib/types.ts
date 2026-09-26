@@ -9,6 +9,12 @@ export type OrderStatus =
   | "RETURNED";
 
 export type OrderSource = "WEBSITE" | "MANUAL" | "FACEBOOK" | "PHONE" | "WHATSAPP" | "OTHER";
+export type CustomerResponseStatus =
+  | "NO_RESPONSE"
+  | "CALL_BACK"
+  | "INTERESTED"
+  | "NOT_INTERESTED"
+  | "CONFIRMED";
 export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID" | "REFUNDED";
 export type ShipmentStatus =
   | "NOT_SHIPPED"
@@ -30,6 +36,11 @@ export interface Channel {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChannelWithStats extends Channel {
+  productCount: number;
+  orderCount: number;
 }
 
 export interface Category {
@@ -79,6 +90,8 @@ export interface Product {
   brand?: Brand | null;
   inventory?: RawInventory | null;
   images?: ProductImage[];
+  // Only published (isPublished: true) rows — see ProductsService.findAll.
+  channels?: { channelId: string; channel: { name: string } }[];
 }
 
 export interface ProductChannelOverride {
@@ -115,6 +128,7 @@ export interface StockMovement {
   note: string | null;
   createdAt: string;
   createdBy?: { id: string; name: string } | null;
+  product?: { id: string; sku: string; name: string };
 }
 
 export interface Customer {
@@ -128,6 +142,25 @@ export interface Customer {
   createdAt: string;
 }
 
+export interface CustomerDetail extends Customer {
+  stats: { totalOrders: number; totalSpent: number; lastOrderAt: string | null };
+  ordersByChannel: {
+    channelId: string | null;
+    channelName: string;
+    orderCount: number;
+    totalSpent: number;
+  }[];
+  orders: {
+    id: string;
+    orderNumber: string;
+    status: OrderStatus;
+    paymentStatus: PaymentStatus;
+    total: number;
+    createdAt: string;
+    channelName: string;
+  }[];
+}
+
 interface OrderBase {
   id: string;
   orderNumber: string;
@@ -136,6 +169,7 @@ interface OrderBase {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   shipmentStatus: ShipmentStatus;
+  customerResponse: CustomerResponseStatus;
   subtotal: string;
   discount: string;
   shippingFee: string;
@@ -160,9 +194,35 @@ export interface OrderDetail extends OrderBase {
   customer: Customer;
   channel: Channel | null;
   statusHistory: OrderStatusHistoryEntry[];
+  timeline: TimelineEntry[];
   payments: Payment[];
   shipment: unknown | null;
 }
+
+interface TimelineActor {
+  id: string;
+  name: string;
+}
+
+export type TimelineEntry =
+  | {
+      type: "status";
+      id: string;
+      fromStatus: OrderStatus | null;
+      toStatus: OrderStatus;
+      note: string | null;
+      changedBy: TimelineActor | null;
+      createdAt: string;
+    }
+  | {
+      type: "customer_response";
+      id: string;
+      fromResponse: CustomerResponseStatus | null;
+      toResponse: CustomerResponseStatus | null;
+      note: string | null;
+      changedBy: TimelineActor | null;
+      createdAt: string;
+    };
 
 export interface OrderItem {
   id: string;
@@ -221,4 +281,63 @@ export interface Role {
   name: string;
   description: string | null;
   permissions: string[];
+}
+
+export type PurchaseStatus = "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED";
+
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  createdAt: string;
+}
+
+export interface SupplierDetail extends Supplier {
+  purchases: {
+    id: string;
+    status: PurchaseStatus;
+    totalCost: string;
+    createdAt: string;
+    receivedAt: string | null;
+  }[];
+}
+
+export interface PurchaseListItem {
+  id: string;
+  status: PurchaseStatus;
+  totalCost: string;
+  createdAt: string;
+  receivedAt: string | null;
+  supplier: { id: string; name: string };
+  _count: { items: number };
+}
+
+export interface PurchaseDetail {
+  id: string;
+  status: PurchaseStatus;
+  totalCost: string;
+  createdAt: string;
+  receivedAt: string | null;
+  supplier: { id: string; name: string };
+  createdBy: { id: string; name: string } | null;
+  items: {
+    id: string;
+    productId: string;
+    quantity: number;
+    unitCost: string;
+    total: string;
+    product: { id: string; sku: string; name: string };
+  }[];
+}
+
+export interface StaffUser {
+  id: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  createdAt: string;
+  role: { id: string; name: string };
+  channelIds: string[];
 }

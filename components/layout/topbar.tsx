@@ -3,6 +3,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { StoreSelector } from "./store-selector";
 
 function NavAction({
   icon,
@@ -43,6 +44,9 @@ export function Topbar() {
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 bg-sidebar px-6 text-sidebar-fg">
+      <StoreSelector />
+      <div className="mx-1 h-6 w-px bg-white/10" aria-hidden />
+
       {hasPermission("orders.view") && (
         <form
           onSubmit={handleSearch}

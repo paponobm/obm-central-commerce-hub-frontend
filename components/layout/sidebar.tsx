@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useChannelScope } from "@/lib/channel-scope-context";
 import { NAV_ENTRIES } from "./nav-config";
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -14,6 +15,7 @@ function isActivePath(pathname: string, href: string): boolean {
 export function Sidebar() {
   const pathname = usePathname();
   const { user, hasPermission } = useAuth();
+  const { activeChannel } = useChannelScope();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   // Whichever group contains the current route starts expanded, so landing
@@ -49,13 +51,19 @@ export function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-fg">
           O
         </div>
-        <span className="text-base font-semibold text-white">
-          Commerce Hub
+        <span className="truncate text-base font-semibold text-white">
+          {activeChannel ? activeChannel.name : "Commerce Hub"}
         </span>
       </div>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        {NAV_ENTRIES.map((entry) => {
+        {NAV_ENTRIES.map((rawEntry) => {
+          const inStore = !!activeChannel;
+          if (inStore && rawEntry.centralOnly) return null;
+          const entry =
+            inStore && rawEntry.type === "group"
+              ? { ...rawEntry, children: rawEntry.children.filter((c) => !c.centralOnly) }
+              : rawEntry;
           if (entry.permission && !hasPermission(entry.permission)) return null;
 
           if (entry.type === "link") {

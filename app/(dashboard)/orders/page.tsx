@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
+import { useChannelScope } from "@/lib/channel-scope-context";
 import type {
-  Channel,
   OrderListItem,
   OrderStatus,
   OrderSource,
@@ -36,13 +36,14 @@ const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PARTIAL", "PAID", "REFUNDE
 export default function OrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { channels: scopedChannels, activeChannelId: globalChannelId } =
+    useChannelScope();
 
   // Fetched WITHOUT a status filter — status is filtered client-side so the
   // tab counts (computed from this same set) always match what's shown,
   // and switching tabs never needs a round trip. Source/channel/payment/
   // search still narrow the query server-side since those aren't tabs.
   const [allOrders, setAllOrders] = useState<OrderListItem[] | null>(null);
-  const [channels, setChannels] = useState<Channel[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<OrderStatus | "">("");
@@ -52,6 +53,16 @@ export default function OrdersPage() {
   // Seeded from ?search= so the topbar's quick-search box lands here with
   // the term already applied, not just on the URL.
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
+
+  const channels = scopedChannels ?? [];
+
+  // When a specific store is selected globally (via the topbar Store
+  // Selector), this page's own channel filter follows it instead of
+  // offering a second, conflicting way to pick a channel. Back to "All
+  // Stores" globally hands control back to the page-level dropdown.
+  useEffect(() => {
+    setChannelId(globalChannelId ?? "");
+  }, [globalChannelId]);
 
   async function loadOrders(searchTerm: string) {
     const params = new URLSearchParams();
@@ -67,10 +78,6 @@ export default function OrdersPage() {
       setLoadError(err instanceof ApiError ? err.message : "Failed to load orders");
     }
   }
-
-  useEffect(() => {
-    api.get<Channel[]>("/admin/channels?includeInactive=true").then(setChannels).catch(() => {});
-  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => loadOrders(search), 250); // debounce typing
@@ -145,16 +152,22 @@ export default function OrdersPage() {
             ))}
           </Select>
         </div>
-        <div className="w-52">
-          <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-            <option value="">All channels</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </div>
+        {globalChannelId ? (
+          <div className="rounded-lg bg-black/5 px-3 py-2 text-sm text-foreground/60">
+            Store: {channels.find((c) => c.id === globalChannelId)?.name ?? "…"}
+          </div>
+        ) : (
+          <div className="w-52">
+            <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+              <option value="">All channels</option>
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
         <div className="w-40">
           <Select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}>
             <option value="">All payments</option>
