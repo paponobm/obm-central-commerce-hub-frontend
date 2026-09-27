@@ -78,6 +78,7 @@ export default function OrdersPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const channels = scopedChannels ?? [];
 
@@ -136,6 +137,22 @@ export default function OrdersPage() {
       if (!prev || prev.key !== key) return { key, dir: "desc" };
       return { key, dir: prev.dir === "desc" ? "asc" : "desc" };
     });
+  }
+
+  function toggleRowSelected(orderId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (!visibleOrders) return;
+    setSelectedIds((prev) =>
+      prev.size === visibleOrders.length ? new Set() : new Set(visibleOrders.map((o) => o.id)),
+    );
   }
 
   async function copyToClipboard(e: React.MouseEvent, text: string, key: string) {
@@ -271,7 +288,15 @@ export default function OrdersPage() {
             <table className="w-full min-w-[1800px] text-sm">
               <thead>
                 <tr className="text-left text-sm font-semibold text-primary">
-                  <th className="rounded-l-lg px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                  <th className="rounded-l-lg px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                    <input
+                      type="checkbox"
+                      checked={visibleOrders.length > 0 && selectedIds.size === visibleOrders.length}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded border-black/20 accent-primary"
+                    />
+                  </th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <button
                       type="button"
                       onClick={() => toggleSort("createdAt")}
@@ -280,13 +305,13 @@ export default function OrdersPage() {
                       Date {sort?.key === "createdAt" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
                     </button>
                   </th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Invoice</th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Products</th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status</th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
-                  <th className="px-6 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Invoice</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Products</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
+                  <th className="px-8 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <button
                       type="button"
                       onClick={() => toggleSort("total")}
@@ -295,9 +320,9 @@ export default function OrdersPage() {
                       Total {sort?.key === "total" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
                     </button>
                   </th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>User</th>
-                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Source</th>
-                  <th className="rounded-r-lg px-6 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>User</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Source</th>
+                  <th className="rounded-r-lg px-8 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -307,29 +332,38 @@ export default function OrdersPage() {
                   return (
                     <tr
                       key={o.id}
-                      className="border-b border-black/10 align-top last:border-0 hover:bg-primary/[0.03]"
+                      className="border-b border-black/10 align-middle last:border-0 hover:bg-primary/[0.03]"
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(o.id)}
+                          onChange={() => toggleRowSelected(o.id)}
+                          className="h-4 w-4 rounded border-black/20 accent-primary"
+                        />
+                      </td>
+                      <td className="px-8 py-4 whitespace-nowrap">
                         <div className="text-foreground/70">{formatDateTime(o.createdAt)}</div>
                         <div className="text-xs text-foreground/40">
                           Updated {formatRelativeTime(o.updatedAt)}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="whitespace-nowrap px-8 py-4">
                         <div className="flex items-center gap-1.5">
                           <span className="font-medium text-foreground">{o.orderNumber}</span>
-                          {/* <button
+                          <button
                             type="button"
                             onClick={(e) => copyToClipboard(e, o.orderNumber, `${o.id}-invoice`)}
                             className="text-foreground/30 hover:text-foreground/60"
                             title="Copy invoice number"
                           >
                             {copiedId === `${o.id}-invoice` ? "✓" : "⧉"}
-                          </button> */}
+                          </button>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-foreground/70">
+                      <td className="px-8 py-4 text-foreground/70">
                         <div className="flex items-center gap-1.5">
+                          <span title="Customer">👤</span>
                           <span className="font-medium text-foreground">{o.customer.name}</span>
                           <button
                             type="button"
@@ -341,37 +375,48 @@ export default function OrdersPage() {
                           </button>
                         </div>
                         <div
-                          className="flex items-center gap-2 text-xs text-foreground/50"
+                          className="mt-1 flex items-center gap-2 text-xs text-foreground/50"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <a href={telHref(o.customer.phone)} className="hover:text-primary" title="Call">
+                          <a href={telHref(o.customer.phone)} className="text-blue-500 hover:text-blue-700" title="Call">
                             📞
                           </a>
                           <a
                             href={whatsappHref(o.customer.phone)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="hover:text-status-delivered"
+                            className="text-status-delivered hover:opacity-80"
                             title="WhatsApp"
                           >
                             💬
                           </a>
-                          {o.customer.phone}
+                          <span>{o.customer.phone}</span>
+                          {o.customer.successRate !== null && (
+                            <span
+                              className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700"
+                              title="Delivery success rate"
+                            >
+                              {o.customer.successRate}%
+                            </span>
+                          )}
                         </div>
-                        <div className="max-w-[200px] truncate text-xs text-foreground/40" title={o.shippingAddress}>
-                          {o.shippingAddress}
+                        <div className="mt-1 flex items-start gap-1 text-xs text-foreground/40">
+                          <span>📍</span>
+                          <span className="max-w-[180px] truncate" title={o.shippingAddress}>
+                            {o.shippingAddress}
+                          </span>
                         </div>
                       </td>
-                      <td className="max-w-[160px] px-6 py-4 text-xs text-foreground/50">
+                      <td className="max-w-[160px] px-8 py-4 text-xs text-foreground/50">
                         {o.notes ? <span title={o.notes}>{o.notes}</span> : "—"}
                       </td>
                       <td
-                        className="cursor-pointer px-6 py-4 text-foreground/60 hover:text-foreground"
+                        className="cursor-pointer px-8 py-4 text-foreground/60 hover:text-foreground"
                         onClick={() => setProductsModal(o)}
                       >
                         <div className="space-y-1.5">
                           {visibleItems.map((item) => (
-                            <div key={item.id} className="flex items-center gap-2">
+                            <div key={item.id} className="flex items-start gap-2">
                               {item.product?.images[0]?.url ? (
                                 <img
                                   src={item.product.images[0].url}
@@ -383,9 +428,12 @@ export default function OrdersPage() {
                                   —
                                 </span>
                               )}
-                              <span>
-                                {item.productName} × {item.quantity}
-                              </span>
+                              <div className="min-w-0">
+                                <div className="truncate text-foreground">{item.productName}</div>
+                                <div className="text-[11px]" style={{ color: "rgba(47, 111, 235, 0.8)" }}>
+                                  {item.sku} · Qty: {item.quantity}
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -395,10 +443,10 @@ export default function OrdersPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-8 py-4">
                         <StatusBadge status={o.status} />
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-8 py-4">
                         <Pill
                           tone={
                             o.paymentStatus === "PAID"
@@ -413,14 +461,14 @@ export default function OrdersPage() {
                           {o.paymentStatus}
                         </Pill>
                       </td>
-                      <td className="px-6 py-4 text-right font-medium text-foreground whitespace-nowrap">
+                      <td className="whitespace-nowrap px-8 py-4 text-right font-medium text-foreground">
                         {money(o.total)}
                       </td>
-                      <td className="px-6 py-4 text-foreground/60 whitespace-nowrap">
+                      <td className="whitespace-nowrap px-8 py-4 text-foreground/60">
                         {o.createdBy?.name ?? "—"}
                       </td>
-                      <td className="px-6 py-4 text-foreground/60">{o.source}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-8 py-4 text-foreground/60">{o.source}</td>
+                      <td className="px-8 py-4">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
