@@ -4,9 +4,14 @@ export type OrderStatus =
   | "PROCESSING"
   | "READY_TO_SHIP"
   | "SHIPPED"
+  | "PARTIAL"
   | "DELIVERED"
+  | "PENDING_RETURN"
+  | "RETURNED"
+  | "PENDING_CANCEL"
   | "CANCELLED"
-  | "RETURNED";
+  | "PREORDER"
+  | "LOST";
 
 export type OrderSource = "WEBSITE" | "MANUAL" | "FACEBOOK" | "PHONE" | "WHATSAPP" | "OTHER";
 export type CustomerResponseStatus =
@@ -180,6 +185,7 @@ interface OrderBase {
   notes: string | null;
   deliveryMethod: string | null;
   createdAt: string;
+  updatedAt: string;
   items: OrderItem[];
 }
 
@@ -188,6 +194,7 @@ interface OrderBase {
 export interface OrderListItem extends OrderBase {
   customer: Pick<Customer, "id" | "name" | "phone">;
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
+  createdBy: { id: string; name: string } | null;
 }
 
 // GET /admin/orders/:id — full nested shapes plus history/payments/shipment.
@@ -234,6 +241,7 @@ export interface OrderItem {
   unitPrice: string;
   discount: string;
   total: string;
+  product?: { images: { url: string }[] };
 }
 
 export interface OrderStatusHistoryEntry {

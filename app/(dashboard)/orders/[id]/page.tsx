@@ -15,14 +15,19 @@ import { StatusBadge, Pill } from "@/components/ui/badge";
 // regardless, but showing only valid next steps here avoids a round trip
 // just to be told "no."
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ["CONFIRMED", "CANCELLED"],
-  CONFIRMED: ["PROCESSING", "CANCELLED"],
-  PROCESSING: ["READY_TO_SHIP", "CANCELLED"],
-  READY_TO_SHIP: ["SHIPPED", "CANCELLED"],
-  SHIPPED: ["DELIVERED", "RETURNED"],
-  DELIVERED: ["RETURNED"],
-  CANCELLED: [],
+  PENDING: ["CONFIRMED", "PREORDER", "PENDING_CANCEL", "CANCELLED"],
+  CONFIRMED: ["PROCESSING", "PENDING_CANCEL", "CANCELLED"],
+  PROCESSING: ["READY_TO_SHIP", "PENDING_CANCEL", "CANCELLED"],
+  READY_TO_SHIP: ["SHIPPED", "PENDING_CANCEL", "CANCELLED"],
+  SHIPPED: ["DELIVERED", "PARTIAL", "PENDING_RETURN", "LOST"],
+  PARTIAL: ["DELIVERED", "PENDING_RETURN", "RETURNED"],
+  DELIVERED: ["PENDING_RETURN", "RETURNED"],
+  PENDING_RETURN: ["RETURNED"],
   RETURNED: [],
+  PENDING_CANCEL: ["PENDING", "CANCELLED"],
+  CANCELLED: [],
+  PREORDER: ["PENDING", "CANCELLED"],
+  LOST: [],
 };
 
 // Independent of order status — no state machine, any value can follow any

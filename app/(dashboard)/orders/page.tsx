@@ -10,7 +10,7 @@ import type {
   OrderSource,
   PaymentStatus,
 } from "@/lib/types";
-import { money, formatDateTime } from "@/lib/format";
+import { money, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { telHref, whatsappHref } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -18,20 +18,39 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { StatusBadge, Pill } from "@/components/ui/badge";
 
+// Matches the reference tab set exactly. Confirmed/Processing aren't given
+// their own tab (the reference doesn't show them either) but stay reachable
+// — and countable — via "All".
 const TABS: { label: string; value: OrderStatus | "" }[] = [
   { label: "All", value: "" },
   { label: "Pending", value: "PENDING" },
-  { label: "Confirmed", value: "CONFIRMED" },
-  { label: "Processing", value: "PROCESSING" },
-  { label: "Ready to Ship", value: "READY_TO_SHIP" },
+  { label: "RTS", value: "READY_TO_SHIP" },
   { label: "Shipped", value: "SHIPPED" },
   { label: "Delivered", value: "DELIVERED" },
-  { label: "Cancelled", value: "CANCELLED" },
+  { label: "Pending Return", value: "PENDING_RETURN" },
   { label: "Returned", value: "RETURNED" },
+  { label: "Partial", value: "PARTIAL" },
+  { label: "Cancelled", value: "CANCELLED" },
+  { label: "Pending Cancel", value: "PENDING_CANCEL" },
+  { label: "Preorder", value: "PREORDER" },
+  { label: "Lost", value: "LOST" },
 ];
+
+// Mirrors OrdersService's TRANSITIONS map — which statuses can still reach
+// CANCELLED, i.e. when the row-level Cancel shortcut should even appear.
+const CAN_CANCEL_FROM = new Set<OrderStatus>([
+  "PENDING",
+  "CONFIRMED",
+  "PROCESSING",
+  "READY_TO_SHIP",
+  "PENDING_CANCEL",
+  "PREORDER",
+]);
 
 const SOURCES: OrderSource[] = ["WEBSITE", "MANUAL", "FACEBOOK", "PHONE", "WHATSAPP", "OTHER"];
 const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PARTIAL", "PAID", "REFUNDED"];
+
+type SortKey = "createdAt" | "total";
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -53,6 +72,12 @@ export default function OrdersPage() {
   // Seeded from ?search= so the topbar's quick-search box lands here with
   // the term already applied, not just on the URL.
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
+
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
+  const [productsModal, setProductsModal] = useState<OrderListItem | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
 
   const channels = scopedChannels ?? [];
 
@@ -96,8 +121,53 @@ export default function OrdersPage() {
 
   const visibleOrders = useMemo(() => {
     if (!allOrders) return null;
-    return activeTab ? allOrders.filter((o) => o.status === activeTab) : allOrders;
-  }, [allOrders, activeTab]);
+    const filtered = activeTab ? allOrders.filter((o) => o.status === activeTab) : allOrders;
+    if (!sort) return filtered;
+    const sorted = [...filtered].sort((a, b) => {
+      const av = sort.key === "total" ? Number(a.total) : new Date(a.createdAt).getTime();
+      const bv = sort.key === "total" ? Number(b.total) : new Date(b.createdAt).getTime();
+      return sort.dir === "asc" ? av - bv : bv - av;
+    });
+    return sorted;
+  }, [allOrders, activeTab, sort]);
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: "desc" };
+      return { key, dir: prev.dir === "desc" ? "asc" : "desc" };
+    });
+  }
+
+  async function copyToClipboard(e: React.MouseEvent, text: string, key: string) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(key);
+      setTimeout(() => setCopiedId((v) => (v === key ? null : v)), 1500);
+    } catch {
+      // Clipboard permission denied or unavailable — nothing meaningful to
+      // recover into, so just skip the "Copied" confirmation silently.
+    }
+  }
+
+  function customerDetailsText(o: OrderListItem) {
+    return `Name: ${o.customer.name}\nPhone: ${o.customer.phone}\nAddress: ${o.shippingAddress}`;
+  }
+
+  async function cancelOrder(e: React.MouseEvent, order: OrderListItem) {
+    e.stopPropagation();
+    if (!confirm(`Cancel order ${order.orderNumber}? This releases its reserved stock.`)) return;
+    setRowError(null);
+    setBusyId(order.id);
+    try {
+      await api.patch(`/admin/orders/${order.id}/status`, { status: "CANCELLED" });
+      await loadOrders(search);
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : "Failed to cancel order");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div>
@@ -186,94 +256,249 @@ export default function OrdersPage() {
             {loadError}
           </p>
         )}
+        {rowError && (
+          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+            {rowError}
+          </p>
+        )}
 
         {!visibleOrders ? (
           <p className="text-sm text-foreground/60">Loading…</p>
         ) : visibleOrders.length === 0 ? (
           <p className="text-sm text-foreground/50">No orders match these filters.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
-                <th className="pb-2 font-medium">Order</th>
-                <th className="pb-2 font-medium">Customer</th>
-                <th className="pb-2 font-medium">Items</th>
-                <th className="pb-2 font-medium">Channel / Source</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Payment</th>
-                <th className="pb-2 font-medium text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleOrders.map((o) => (
-                <tr
-                  key={o.id}
-                  className="cursor-pointer border-b border-black/5 last:border-0 hover:bg-black/[0.02]"
-                  onClick={() => router.push(`/orders/${o.id}`)}
-                >
-                  <td className="py-2.5">
-                    <div className="font-medium text-foreground">{o.orderNumber}</div>
-                    <div className="text-xs text-foreground/50">{formatDateTime(o.createdAt)}</div>
-                  </td>
-                  <td className="py-2.5 text-foreground/70">
-                    <div className="font-medium text-foreground">{o.customer.name}</div>
-                    <div
-                      className="flex items-center gap-2 text-xs text-foreground/50"
-                      onClick={(e) => e.stopPropagation()}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1800px] text-sm">
+              <thead>
+                <tr className="text-left text-sm font-semibold text-primary">
+                  <th className="rounded-l-lg px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("createdAt")}
+                      className="flex items-center gap-1 hover:text-foreground"
                     >
-                      <a href={telHref(o.customer.phone)} className="hover:text-primary" title="Call">
-                        📞
-                      </a>
-                      <a
-                        href={whatsappHref(o.customer.phone)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-status-delivered"
-                        title="WhatsApp"
-                      >
-                        💬
-                      </a>
-                      {o.customer.phone}
-                    </div>
-                    <div className="max-w-[200px] truncate text-xs text-foreground/40" title={o.shippingAddress}>
-                      {o.shippingAddress}
-                    </div>
-                  </td>
-                  <td className="py-2.5 text-foreground/60">
-                    {o.items.length === 1 ? (
-                      <span>
-                        {o.items[0].productName} × {o.items[0].quantity}
-                      </span>
-                    ) : (
-                      <span>
-                        {o.items[0]?.productName} × {o.items[0]?.quantity}
-                        {o.items.length > 1 && (
-                          <span className="text-foreground/40"> +{o.items.length - 1} more</span>
-                        )}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2.5 text-foreground/60">
-                    <div>{o.channel?.name ?? "No channel (manual)"}</div>
-                    <div className="text-xs text-foreground/40">{o.source}</div>
-                  </td>
-                  <td className="py-2.5">
-                    <StatusBadge status={o.status} />
-                  </td>
-                  <td className="py-2.5">
-                    <Pill tone={o.paymentStatus === "PAID" ? "primary" : "default"}>
-                      {o.paymentStatus}
-                    </Pill>
-                  </td>
-                  <td className="py-2.5 text-right font-medium text-foreground">
-                    {money(o.total)}
-                  </td>
+                      Date {sort?.key === "createdAt" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Invoice</th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Products</th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status</th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
+                  <th className="px-6 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("total")}
+                      className="ml-auto flex items-center gap-1 hover:text-foreground"
+                    >
+                      Total {sort?.key === "total" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>User</th>
+                  <th className="px-6 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Source</th>
+                  <th className="rounded-r-lg px-6 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visibleOrders.map((o) => {
+                  const visibleItems = o.items.slice(0, 2);
+                  const hiddenCount = o.items.length - visibleItems.length;
+                  return (
+                    <tr
+                      key={o.id}
+                      className="border-b border-black/10 align-top last:border-0 hover:bg-primary/[0.03]"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-foreground/70">{formatDateTime(o.createdAt)}</div>
+                        <div className="text-xs text-foreground/40">
+                          Updated {formatRelativeTime(o.updatedAt)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-foreground">{o.orderNumber}</span>
+                          {/* <button
+                            type="button"
+                            onClick={(e) => copyToClipboard(e, o.orderNumber, `${o.id}-invoice`)}
+                            className="text-foreground/30 hover:text-foreground/60"
+                            title="Copy invoice number"
+                          >
+                            {copiedId === `${o.id}-invoice` ? "✓" : "⧉"}
+                          </button> */}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-foreground/70">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-foreground">{o.customer.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => copyToClipboard(e, customerDetailsText(o), `${o.id}-customer`)}
+                            className="text-foreground/30 hover:text-foreground/60"
+                            title="Copy customer details"
+                          >
+                            {copiedId === `${o.id}-customer` ? "✓" : "⧉"}
+                          </button>
+                        </div>
+                        <div
+                          className="flex items-center gap-2 text-xs text-foreground/50"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <a href={telHref(o.customer.phone)} className="hover:text-primary" title="Call">
+                            📞
+                          </a>
+                          <a
+                            href={whatsappHref(o.customer.phone)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-status-delivered"
+                            title="WhatsApp"
+                          >
+                            💬
+                          </a>
+                          {o.customer.phone}
+                        </div>
+                        <div className="max-w-[200px] truncate text-xs text-foreground/40" title={o.shippingAddress}>
+                          {o.shippingAddress}
+                        </div>
+                      </td>
+                      <td className="max-w-[160px] px-6 py-4 text-xs text-foreground/50">
+                        {o.notes ? <span title={o.notes}>{o.notes}</span> : "—"}
+                      </td>
+                      <td
+                        className="cursor-pointer px-6 py-4 text-foreground/60 hover:text-foreground"
+                        onClick={() => setProductsModal(o)}
+                      >
+                        <div className="space-y-1.5">
+                          {visibleItems.map((item) => (
+                            <div key={item.id} className="flex items-center gap-2">
+                              {item.product?.images[0]?.url ? (
+                                <img
+                                  src={item.product.images[0].url}
+                                  alt={item.productName}
+                                  className="h-7 w-7 shrink-0 rounded object-cover"
+                                />
+                              ) : (
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
+                                  —
+                                </span>
+                              )}
+                              <span>
+                                {item.productName} × {item.quantity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {o.items.length > 2 && (
+                          <span className="mt-1 block text-xs font-medium text-primary">
+                            +{hiddenCount} more products
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={o.status} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <Pill
+                          tone={
+                            o.paymentStatus === "PAID"
+                              ? "primary"
+                              : o.paymentStatus === "PARTIAL"
+                                ? "warning"
+                                : o.paymentStatus === "UNPAID"
+                                  ? "danger"
+                                  : "default"
+                          }
+                        >
+                          {o.paymentStatus}
+                        </Pill>
+                      </td>
+                      <td className="px-6 py-4 text-right font-medium text-foreground whitespace-nowrap">
+                        {money(o.total)}
+                      </td>
+                      <td className="px-6 py-4 text-foreground/60 whitespace-nowrap">
+                        {o.createdBy?.name ?? "—"}
+                      </td>
+                      <td className="px-6 py-4 text-foreground/60">{o.source}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            onClick={() => router.push(`/orders/${o.id}`)}
+                            className="text-primary hover:bg-primary/10"
+                          >
+                            View
+                          </Button>
+                          {CAN_CANCEL_FROM.has(o.status) && (
+                            <Button
+                              variant="ghost"
+                              disabled={busyId === o.id}
+                              onClick={(e) => cancelOrder(e, o)}
+                              className="text-status-cancelled hover:bg-status-cancelled/10"
+                            >
+                              {busyId === o.id ? "Cancelling…" : "Cancel"}
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
+
+      {productsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setProductsModal(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-foreground">
+                Products - Invoice #{productsModal.orderNumber}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setProductsModal(null)}
+                className="text-foreground/40 hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3">
+              {productsModal.items.map((item) => (
+                <div key={item.id} className="flex gap-3 rounded-lg border border-black/10 p-3">
+                  {item.product?.images[0]?.url ? (
+                    <img
+                      src={item.product.images[0].url}
+                      alt={item.productName}
+                      className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/30">
+                      —
+                    </span>
+                  )}
+                  <div>
+                    <div className="font-medium text-foreground">{item.productName}</div>
+                    <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
+                    <div className="text-xs text-foreground/50">Quantity: {item.quantity}</div>
+                    <div className="mt-1">
+                      <StatusBadge status={productsModal.status} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
