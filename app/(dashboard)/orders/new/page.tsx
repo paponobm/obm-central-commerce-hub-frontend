@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
-import type { Customer, OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
+import type { OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
 import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,9 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 
 const SOURCES: OrderSource[] = ["MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
+// Free-text on the order, purely informational (see Order.deliveryMethod) —
+// not tied to any courier integration, so this list is just a starting set.
+const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delivery", "Other"];
 
 interface LineItem {
   productId: string;
@@ -35,15 +38,13 @@ export default function NewOrderPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
 
-  const [customerMode, setCustomerMode] = useState<"existing" | "new">("new");
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  // A single customer field pair — the backend already resolves an existing
+  // customer by phone number (CustomersService.resolveCustomer), so there's
+  // no need for a separate "existing customer" search flow here.
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
 
-  const [newCustomerName, setNewCustomerName] = useState("");
-  const [newCustomerPhone, setNewCustomerPhone] = useState("");
-  const [newCustomerEmail, setNewCustomerEmail] = useState("");
-
+  const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS[0]);
   const [source, setSource] = useState<OrderSource>("MANUAL");
   const [channelId, setChannelId] = useState(globalChannelId ?? "");
 
@@ -53,17 +54,20 @@ export default function NewOrderPage() {
     setChannelId(globalChannelId ?? "");
   }, [globalChannelId]);
 
-  const [shippingName, setShippingName] = useState("");
-  const [shippingPhone, setShippingPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
+  const [shippingNote, setShippingNote] = useState("");
 
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [discount, setDiscount] = useState("");
+  const [advanceAmount, setAdvanceAmount] = useState("");
   const [shippingFee, setShippingFee] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
-  const [isPaid, setIsPaid] = useState(false);
-  const [notes, setNotes] = useState("");
+  const [transactionId, setTransactionId] = useState("");
+  // Payment Method / Transaction ID only make sense once there's actually a
+  // payment being recorded — collapsed until Advance has a value, per the
+  // reference layout, instead of showing controls that do nothing yet.
+  const hasAdvance = Number(advanceAmount) > 0;
 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -71,29 +75,6 @@ export default function NewOrderPage() {
   useEffect(() => {
     api.get<Product[]>("/admin/products").then(setProducts).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (customerMode !== "existing" || customerSearch.trim().length < 2) {
-      setCustomerResults([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      api
-        .get<Customer[]>(`/admin/customers?search=${encodeURIComponent(customerSearch)}`)
-        .then(setCustomerResults)
-        .catch(() => {});
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [customerSearch, customerMode]);
-
-  function pickCustomer(c: Customer) {
-    setSelectedCustomer(c);
-    setCustomerResults([]);
-    setCustomerSearch(`${c.name} (${c.phone})`);
-    setShippingName((v) => v || c.name);
-    setShippingPhone((v) => v || c.phone);
-    setShippingAddress((v) => v || c.address || "");
-  }
 
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -137,6 +118,24 @@ export default function NewOrderPage() {
     setLineItems((rows) => rows.filter((r) => r.productId !== productId));
   }
 
+  // subTotal/orderTotal mirror OrdersService.createOrder's exact formula
+  // (subtotal = sum(qty * unitPrice), total = subtotal - discount + shippingFee)
+  // — orderTotal is what actually gets stored as Order.total server-side,
+  // unaffected by any advance payment. "Grand Total" as shown on this page
+  // is the balance still due after that advance (COD collection amount),
+  // which is why it's a separate figure from orderTotal.
+  const subTotal = lineItems.reduce((sum, item) => {
+    const unitPrice = item.unitPrice
+      ? Number(item.unitPrice)
+      : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
+    return sum + item.quantity * unitPrice;
+  }, 0);
+  const orderTotal = Math.max(
+    0,
+    subTotal - (Number(discount) || 0) + (Number(shippingFee) || 0),
+  );
+  const grandTotal = Math.max(0, orderTotal - (Number(advanceAmount) || 0));
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -146,16 +145,12 @@ export default function NewOrderPage() {
       setFormError("Add at least one product line item.");
       return;
     }
-    if (customerMode === "existing" && !selectedCustomer) {
-      setFormError("Select an existing customer, or switch to \"New customer\".");
-      return;
-    }
-    if (customerMode === "new" && (!newCustomerName || !newCustomerPhone)) {
-      setFormError("New customer needs a name and phone number.");
+    if (!customerName || !customerPhone) {
+      setFormError("Mobile number and name are required.");
       return;
     }
     if (!shippingAddress) {
-      setFormError("Shipping address is required.");
+      setFormError("Address is required.");
       return;
     }
 
@@ -164,13 +159,12 @@ export default function NewOrderPage() {
       const order = await api.post<OrderDetail>("/admin/orders", {
         source,
         channelId: channelId || undefined,
-        customerId: customerMode === "existing" ? selectedCustomer?.id : undefined,
-        customerName: customerMode === "new" ? newCustomerName : undefined,
-        customerPhone: customerMode === "new" ? newCustomerPhone : undefined,
-        customerEmail: customerMode === "new" ? newCustomerEmail || undefined : undefined,
-        shippingName: shippingName || undefined,
-        shippingPhone: shippingPhone || undefined,
+        customerName,
+        customerPhone,
+        shippingName: customerName,
+        shippingPhone: customerPhone,
         shippingAddress,
+        deliveryMethod: deliveryMethod || undefined,
         items: validItems.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -178,9 +172,10 @@ export default function NewOrderPage() {
         })),
         discount: discount ? Number(discount) : undefined,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
-        notes: notes || undefined,
+        notes: shippingNote || undefined,
         paymentMethod,
-        isPaid,
+        advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
+        transactionId: hasAdvance ? transactionId || undefined : undefined,
       });
       router.push(`/orders/${order.id}`);
     } catch (err) {
@@ -202,249 +197,72 @@ export default function NewOrderPage() {
         }
       />
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <h2 className="mb-4 text-sm font-semibold text-foreground">Customer</h2>
-            <div className="mb-3 flex gap-4 text-sm">
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="radio"
-                  checked={customerMode === "new"}
-                  onChange={() => {
-                    setCustomerMode("new");
-                    setSelectedCustomer(null);
-                  }}
-                />
-                New customer
-              </label>
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="radio"
-                  checked={customerMode === "existing"}
-                  onChange={() => setCustomerMode("existing")}
-                />
-                Existing customer
-              </label>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div>
+              <Label>Mobile Number</Label>
+              <Input
+                required
+                placeholder="Mobile Number"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+              />
             </div>
-
-            {customerMode === "existing" ? (
-              <div className="relative">
-                <Input
-                  placeholder="Search by name or phone…"
-                  value={customerSearch}
-                  onChange={(e) => {
-                    setCustomerSearch(e.target.value);
-                    setSelectedCustomer(null);
-                  }}
-                />
-                {customerResults.length > 0 && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/10 bg-white shadow-card">
-                    {customerResults.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => pickCustomer(c)}
-                        className="block w-full px-3 py-2 text-left text-sm hover:bg-black/5"
-                      >
-                        {c.name} · {c.phone}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <Label>Name</Label>
-                  <Input
-                    required
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Phone</Label>
-                  <Input
-                    required
-                    value={newCustomerPhone}
-                    onChange={(e) => setNewCustomerPhone(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Email (optional)</Label>
-                  <Input
-                    type="email"
-                    value={newCustomerEmail}
-                    onChange={(e) => setNewCustomerEmail(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-          </Card>
-
-          <Card>
-            <h2 className="mb-4 text-sm font-semibold text-foreground">Items</h2>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/40">
-                  Order Items {lineItems.length > 0 && `(${lineItems.length})`}
-                </h3>
-                {lineItems.length === 0 ? (
-                  <p className="rounded-lg bg-black/5 px-3 py-6 text-center text-sm text-foreground/50">
-                    No products added. Search on the right to add products to this order.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {lineItems.map((item) => (
-                      <div
-                        key={item.productId}
-                        className="flex items-center gap-2 rounded-lg border border-black/5 p-2"
-                      >
-                        {item.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                          <img
-                            src={item.image}
-                            alt={item.productName}
-                            className="h-10 w-10 shrink-0 rounded-md object-cover"
-                          />
-                        ) : (
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/40">
-                            {item.productName.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-foreground">
-                            {item.productName}
-                          </div>
-                          <div className="text-xs text-foreground/50">{item.sku}</div>
-                        </div>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            updateLineItem(item.productId, {
-                              quantity: Math.max(1, Number(e.target.value)),
-                            })
-                          }
-                          className="w-16 text-right"
-                          title="Quantity"
-                        />
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unitPrice}
-                          placeholder={
-                            products.find((p) => p.id === item.productId)?.basePrice
-                          }
-                          onChange={(e) =>
-                            updateLineItem(item.productId, { unitPrice: e.target.value })
-                          }
-                          className="w-24 text-right"
-                          title="Unit price (blank = storefront/base price)"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeLineItem(item.productId)}
-                          className="shrink-0 text-status-cancelled hover:opacity-70"
-                          aria-label="Remove"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/40">
-                  Add Products
-                </h3>
-                <Input
-                  placeholder="Search by name or SKU…"
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                />
-                <div className="mt-2 max-h-80 space-y-1 overflow-y-auto">
-                  {filteredProducts.map((p) => {
-                    const available = availableStock(p);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => addProduct(p)}
-                        className="flex w-full items-center gap-2 rounded-lg p-2 text-left hover:bg-black/5"
-                      >
-                        {p.images?.[0]?.url ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                          <img
-                            src={p.images[0].url}
-                            alt={p.name}
-                            className="h-10 w-10 shrink-0 rounded-md object-cover"
-                          />
-                        ) : (
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/40">
-                            {p.name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-foreground">
-                            {p.name}
-                          </div>
-                          <div className="text-xs text-foreground/50">{p.sku}</div>
-                        </div>
-                        <div className="shrink-0 text-right text-xs">
-                          <div className="font-medium text-foreground">{money(p.basePrice)}</div>
-                          <div className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
-                            Stock: {available}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {filteredProducts.length === 0 && (
-                    <p className="py-6 text-center text-sm text-foreground/50">
-                      No products found.
-                    </p>
-                  )}
-                </div>
-              </div>
+            <div>
+              <Label>Name</Label>
+              <Input
+                required
+                placeholder="Customer Name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
             </div>
-          </Card>
-
-          <Card>
-            <h2 className="mb-4 text-sm font-semibold text-foreground">Shipping</h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Recipient Name</Label>
-                <Input value={shippingName} onChange={(e) => setShippingName(e.target.value)} />
-              </div>
-              <div>
-                <Label>Phone</Label>
-                <Input value={shippingPhone} onChange={(e) => setShippingPhone(e.target.value)} />
-              </div>
+            <div>
+              <Label>Delivery Method</Label>
+              <Select value={deliveryMethod} onChange={(e) => setDeliveryMethod(e.target.value)}>
+                {DELIVERY_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </Select>
             </div>
-            <div className="mt-4">
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div>
               <Label>Address</Label>
               <Textarea
                 required
-                rows={2}
+                rows={3}
+                placeholder="Enter address"
                 value={shippingAddress}
                 onChange={(e) => setShippingAddress(e.target.value)}
               />
             </div>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <h2 className="mb-4 text-sm font-semibold text-foreground">Order Info</h2>
-            <div className="space-y-4">
-              <div>
-                <Label>Source</Label>
+            <div>
+              <Label>Shipping Note</Label>
+              <Textarea
+                rows={3}
+                placeholder="Enter shipping note"
+                value={shippingNote}
+                onChange={(e) => setShippingNote(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Extra Options</Label>
+              <div className="space-y-3 rounded-lg border border-black/10 p-3">
+                {!globalChannelId && (
+                  <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+                    <option value="">No channel (manual)</option>
+                    {channels.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
                 <Select value={source} onChange={(e) => setSource(e.target.value as OrderSource)}>
                   {SOURCES.map((s) => (
                     <option key={s} value={s}>
@@ -453,57 +271,263 @@ export default function NewOrderPage() {
                   ))}
                 </Select>
               </div>
-              <div>
-                <Label>Channel</Label>
-                {globalChannelId ? (
-                  <div className="flex h-[42px] items-center rounded-lg bg-black/5 px-3 text-sm text-foreground/70">
-                    {channels.find((c) => c.id === globalChannelId)?.name ?? "…"}
-                  </div>
-                ) : (
-                  <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-                    <option value="">None</option>
-                    {channels.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </div>
             </div>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Card>
+            <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-foreground">
+              Ordered Products
+              {lineItems.length > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
+                  {lineItems.length}
+                </span>
+              )}
+            </h2>
+            {lineItems.length === 0 ? (
+              <p className="text-sm text-status-cancelled">
+                No Products added. Please add products to the order
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {lineItems.map((item) => {
+                  const product = products.find((p) => p.id === item.productId);
+                  const unitPrice = item.unitPrice ? Number(item.unitPrice) : Number(product?.basePrice ?? 0);
+                  const available = product ? availableStock(product) : null;
+                  const lineTotal = item.quantity * unitPrice;
+
+                  function setPrice(next: number) {
+                    updateLineItem(item.productId, { unitPrice: String(Math.max(0, next)) });
+                  }
+
+                  return (
+                    <div key={item.productId} className="rounded-lg border border-black/5 p-3">
+                      <div className="flex items-start gap-3">
+                        {item.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+                          <img
+                            src={item.image}
+                            alt={item.productName}
+                            className="h-14 w-14 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-sm text-foreground/40">
+                            {item.productName.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {item.productName}
+                          </div>
+                          <div className="text-xs font-medium text-primary">SKU: {item.sku}</div>
+                          <div className="mt-1 flex items-center gap-3 text-xs">
+                            <span className="text-foreground/60">{money(unitPrice)}</span>
+                            {available !== null && (
+                              <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
+                                Stock: {available}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeLineItem(item.productId)}
+                          className="shrink-0 text-status-cancelled hover:opacity-70"
+                          aria-label="Remove"
+                          title="Remove"
+                        >
+                          🗑
+                        </button>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-3">
+                        <div>
+                          <Label>Qty</Label>
+                          <div className="flex min-w-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateLineItem(item.productId, {
+                                  quantity: Math.max(1, item.quantity - 1),
+                                })
+                              }
+                              className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                              aria-label="Decrease quantity"
+                            >
+                              −
+                            </button>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                updateLineItem(item.productId, {
+                                  quantity: Math.max(1, Number(e.target.value)),
+                                })
+                              }
+                              className="w-0 min-w-0 flex-1 text-center"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateLineItem(item.productId, { quantity: item.quantity + 1 })
+                              }
+                              className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                              aria-label="Increase quantity"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Price</Label>
+                          <div className="flex min-w-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setPrice(unitPrice - 1)}
+                              className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                              aria-label="Decrease price"
+                            >
+                              −
+                            </button>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unitPrice}
+                              placeholder={product?.basePrice}
+                              onChange={(e) => updateLineItem(item.productId, { unitPrice: e.target.value })}
+                              className="w-0 min-w-0 flex-1 text-center"
+                              title="Unit price (blank = storefront/base price)"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPrice(unitPrice + 1)}
+                              className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                              aria-label="Increase price"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Total</Label>
+                          <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-center text-sm text-foreground/70">
+                            {lineTotal.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Card>
 
           <Card>
-            <h2 className="mb-4 text-sm font-semibold text-foreground">Discount & Shipping</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Discount</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Shipping Fee</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={shippingFee}
-                  onChange={(e) => setShippingFee(e.target.value)}
-                />
-              </div>
+            <h2 className="mb-4 text-base font-semibold text-foreground">Click To Add Products</h2>
+            <Input
+              placeholder="Search by name or SKU…"
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+            />
+            <div className="mt-3 max-h-[32rem] space-y-2 overflow-y-auto">
+              {filteredProducts.map((p) => {
+                const available = availableStock(p);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => addProduct(p)}
+                    className="flex w-full items-center gap-3 rounded-lg border border-black/5 p-2.5 text-left hover:bg-black/5"
+                  >
+                    {p.images?.[0]?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+                      <img
+                        src={p.images[0].url}
+                        alt={p.name}
+                        className="h-14 w-14 shrink-0 rounded-md object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-sm text-foreground/40">
+                        {p.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
+                      <div className="text-xs font-medium text-primary">SKU: {p.sku}</div>
+                      <div className="mt-1 flex items-center justify-between text-xs">
+                        <span className="text-foreground/60">Price: {money(p.basePrice)}</span>
+                        <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
+                          Stock: {available}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {filteredProducts.length === 0 && (
+                <p className="py-6 text-center text-sm text-foreground/50">No products found.</p>
+              )}
             </div>
           </Card>
+        </div>
 
-          <Card>
-            <h2 className="mb-4 text-sm font-semibold text-foreground">Payment</h2>
-            <div className="space-y-4">
+        <Card>
+          <div
+            className={`grid grid-cols-2 gap-3 whitespace-nowrap ${
+              hasAdvance ? "sm:grid-cols-6" : "sm:grid-cols-5"
+            }`}
+          >
+            <div>
+              <Label>Discount</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Advance</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={advanceAmount}
+                onChange={(e) => setAdvanceAmount(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Sub Total</Label>
+              <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-sm text-foreground/50">
+                {subTotal.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <Label>Delivery Charge</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={shippingFee}
+                onChange={(e) => setShippingFee(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-status-cancelled">Grand Total</Label>
+              <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 px-3 py-2 text-sm font-semibold text-status-cancelled">
+                {grandTotal.toFixed(2)}
+              </div>
+            </div>
+            {hasAdvance && (
               <div>
-                <Label>Method</Label>
+                <Label>Payment Method</Label>
                 <Select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
@@ -515,32 +539,30 @@ export default function NewOrderPage() {
                   ))}
                 </Select>
               </div>
-              <label className="flex items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  checked={isPaid}
-                  onChange={(e) => setIsPaid(e.target.checked)}
-                />
-                Paid in full now (unchecked = due / COD)
-              </label>
-            </div>
-          </Card>
+            )}
+          </div>
 
-          <Card>
-            <Label>Notes</Label>
-            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </Card>
+          {hasAdvance && (
+            <div className="mt-3">
+              <Label>Transaction ID</Label>
+              <Input
+                placeholder="Enter transaction ID"
+                value={transactionId}
+                onChange={(e) => setTransactionId(e.target.value)}
+              />
+            </div>
+          )}
 
           {formError && (
-            <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+            <p className="mt-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
               {formError}
             </p>
           )}
 
-          <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? "Creating Order…" : "Create Order"}
+          <Button type="submit" disabled={submitting} className="mt-4 w-full">
+            {submitting ? "Creating Order…" : `Create Order (${money(grandTotal)}৳)`}
           </Button>
-        </div>
+        </Card>
       </form>
     </div>
   );

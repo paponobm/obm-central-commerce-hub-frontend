@@ -17,6 +17,9 @@ const SERIES_COLORS = [
 export interface StackedBarSegment {
   label: string;
   value: number;
+  // Already-formatted secondary figure (e.g. money) shown beside the count
+  // in the legend — text, never color, carries this second value.
+  secondaryLabel?: string;
 }
 
 export function StackedBarChart({ segments }: { segments: StackedBarSegment[] }) {
@@ -65,7 +68,12 @@ export function StackedBarChart({ segments }: { segments: StackedBarSegment[] })
                 style={{ backgroundColor: SERIES_COLORS[colorIndex % SERIES_COLORS.length] }}
               />
               <span className="text-foreground/70">{s.label}</span>
-              <span className="ml-auto font-medium text-foreground">{s.value}</span>
+              <span className="ml-auto text-right font-medium text-foreground">
+                {s.value}
+                {s.secondaryLabel && (
+                  <span className="block font-normal text-foreground/50">{s.secondaryLabel}</span>
+                )}
+              </span>
             </div>
           );
         })}

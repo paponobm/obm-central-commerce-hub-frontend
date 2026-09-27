@@ -178,6 +178,7 @@ interface OrderBase {
   shippingPhone: string;
   shippingAddress: string;
   notes: string | null;
+  deliveryMethod: string | null;
   createdAt: string;
   items: OrderItem[];
 }
@@ -274,6 +275,15 @@ export interface DashboardData {
     createdAt: string;
   }[];
   salesLast7Days: { date: string; orderCount: number; salesTotal: number }[];
+}
+
+export interface TopProduct {
+  productId: string;
+  sku: string | null;
+  name: string;
+  image: string | null;
+  quantitySold: number;
+  revenue: number;
 }
 
 export interface Role {

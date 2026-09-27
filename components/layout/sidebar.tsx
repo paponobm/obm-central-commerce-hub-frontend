@@ -5,11 +5,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
-import { NAV_ENTRIES } from "./nav-config";
+import { NAV_ENTRIES, type NavEntry } from "./nav-config";
 
 function isActivePath(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+// A parent's own href ("/orders") is always a path-prefix of its children's
+// ("/orders/new"), so naively checking every entry independently marks both
+// active at once on a child route. Only the single longest matching href —
+// i.e. the most specific one — should ever be highlighted.
+function findActiveHref(pathname: string, entries: NavEntry[]): string | null {
+  const allHrefs = entries.flatMap((e) => (e.type === "link" ? [e.href] : e.children.map((c) => c.href)));
+  const matches = allHrefs.filter((href) => isActivePath(pathname, href));
+  if (matches.length === 0) return null;
+  return matches.reduce((longest, href) => (href.length > longest.length ? href : longest));
 }
 
 export function Sidebar() {
@@ -21,20 +32,22 @@ export function Sidebar() {
   // Whichever group contains the current route starts expanded, so landing
   // on e.g. /categories directly (not via a sidebar click) doesn't leave
   // the tree collapsed around the page you're already on.
+  const activeHref = findActiveHref(pathname, NAV_ENTRIES);
+
   useEffect(() => {
     setOpenGroups((prev) => {
       const next = new Set(prev);
       for (const entry of NAV_ENTRIES) {
         if (
           entry.type === "group" &&
-          entry.children.some((c) => isActivePath(pathname, c.href))
+          entry.children.some((c) => c.href === activeHref)
         ) {
           next.add(entry.label);
         }
       }
       return next;
     });
-  }, [pathname]);
+  }, [activeHref]);
 
   function toggleGroup(label: string) {
     setOpenGroups((prev) => {
@@ -67,7 +80,7 @@ export function Sidebar() {
           if (entry.permission && !hasPermission(entry.permission)) return null;
 
           if (entry.type === "link") {
-            const active = isActivePath(pathname, entry.href);
+            const active = entry.href === activeHref;
             return (
               <Link
                 key={entry.href}
@@ -84,9 +97,7 @@ export function Sidebar() {
           }
 
           const open = openGroups.has(entry.label);
-          const groupHasActiveChild = entry.children.some((c) =>
-            isActivePath(pathname, c.href),
-          );
+          const groupHasActiveChild = entry.children.some((c) => c.href === activeHref);
 
           return (
             <div key={entry.label}>
@@ -95,7 +106,7 @@ export function Sidebar() {
                 onClick={() => toggleGroup(entry.label)}
                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   groupHasActiveChild
-                    ? "text-white"
+                    ? "bg-sidebar-active text-sidebar-active-fg"
                     : "text-sidebar-fg hover:bg-white/5"
                 }`}
               >
@@ -110,7 +121,7 @@ export function Sidebar() {
               {open && (
                 <div className="mt-1 space-y-0.5 border-l border-white/10 pl-4">
                   {entry.children.map((child) => {
-                    const active = isActivePath(pathname, child.href);
+                    const active = child.href === activeHref;
                     return (
                       <Link
                         key={child.href}

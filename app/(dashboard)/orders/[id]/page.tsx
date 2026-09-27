@@ -253,6 +253,9 @@ export default function OrderDetailPage() {
               <div>{order.shippingName}</div>
               <div>{order.shippingPhone}</div>
               <div>{order.shippingAddress}</div>
+              {order.deliveryMethod && (
+                <div className="text-xs text-foreground/50">Via {order.deliveryMethod}</div>
+              )}
             </div>
           </Card>
 
