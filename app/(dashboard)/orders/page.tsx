@@ -6,9 +6,11 @@ import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import type {
   OrderListItem,
+  OrderDetail,
   OrderStatus,
   OrderSource,
   PaymentStatus,
+  PaymentMethod,
 } from "@/lib/types";
 import { money, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { telHref, whatsappHref } from "@/lib/phone";
@@ -47,6 +49,19 @@ const CAN_CANCEL_FROM = new Set<OrderStatus>([
   "PREORDER",
 ]);
 
+// The shortest chain of valid transitions (per OrdersService's TRANSITIONS
+// state machine) from each status to READY_TO_SHIP — lets the bulk action
+// walk an order straight there in one click instead of only accepting
+// orders already sitting in PROCESSING. Statuses with no path here (already
+// shipped, cancelled, returned, etc.) genuinely can't reach RTS at all.
+const PATH_TO_RTS: Partial<Record<OrderStatus, OrderStatus[]>> = {
+  PENDING: ["CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
+  CONFIRMED: ["PROCESSING", "READY_TO_SHIP"],
+  PROCESSING: ["READY_TO_SHIP"],
+  PREORDER: ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
+  PENDING_CANCEL: ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
+};
+
 const SOURCES: OrderSource[] = ["WEBSITE", "MANUAL", "FACEBOOK", "PHONE", "WHATSAPP", "OTHER"];
 const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PARTIAL", "PAID", "REFUNDED"];
 
@@ -79,6 +94,19 @@ export default function OrdersPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(true);
+
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [detailsOrderId, setDetailsOrderId] = useState<string | null>(null);
+  const [detailsData, setDetailsData] = useState<OrderDetail | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [showRecordPayment, setShowRecordPayment] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
+  const [paymentTxnId, setPaymentTxnId] = useState("");
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const channels = scopedChannels ?? [];
 
@@ -140,6 +168,7 @@ export default function OrdersPage() {
   }
 
   function toggleRowSelected(orderId: string) {
+    setBulkMenuOpen(true);
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(orderId)) next.delete(orderId);
@@ -150,9 +179,79 @@ export default function OrdersPage() {
 
   function toggleSelectAll() {
     if (!visibleOrders) return;
+    setBulkMenuOpen(true);
     setSelectedIds((prev) =>
       prev.size === visibleOrders.length ? new Set() : new Set(visibleOrders.map((o) => o.id)),
     );
+  }
+
+  // Walks each selected order through every intermediate status on the way
+  // to READY_TO_SHIP (see PATH_TO_RTS) instead of only accepting orders
+  // already in PROCESSING — e.g. a PENDING order goes PENDING → CONFIRMED →
+  // PROCESSING → READY_TO_SHIP as three sequential calls. Orders that can't
+  // reach RTS at all (already shipped, cancelled, returned, etc.) are
+  // skipped and reported, not silently dropped.
+  async function bulkMarkReadyToShip() {
+    if (!allOrders) return;
+    const targets = allOrders.filter((o) => selectedIds.has(o.id));
+    if (targets.length === 0) return;
+
+    setBulkBusy(true);
+    setRowError(null);
+    let failed = 0;
+    let ineligible = 0;
+    for (const o of targets) {
+      if (o.status === "READY_TO_SHIP") continue;
+      const path = PATH_TO_RTS[o.status];
+      if (!path) {
+        ineligible++;
+        continue;
+      }
+      try {
+        for (const step of path) {
+          await api.patch(`/admin/orders/${o.id}/status`, { status: step });
+        }
+      } catch {
+        failed++;
+      }
+    }
+    await loadOrders(search);
+    setSelectedIds(new Set());
+    setBulkBusy(false);
+    if (failed > 0 || ineligible > 0) {
+      setRowError(
+        [
+          failed > 0 ? `${failed} failed.` : null,
+          ineligible > 0 ? `${ineligible} skipped (already shipped, cancelled, or returned).` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+  }
+
+  async function bulkCancel() {
+    if (!allOrders) return;
+    const targets = allOrders.filter((o) => selectedIds.has(o.id) && CAN_CANCEL_FROM.has(o.status));
+    if (targets.length === 0) {
+      setRowError("None of the selected orders can be cancelled.");
+      return;
+    }
+    if (!confirm(`Cancel ${targets.length} order(s)? This releases their reserved stock.`)) return;
+    setBulkBusy(true);
+    setRowError(null);
+    let failed = 0;
+    for (const o of targets) {
+      try {
+        await api.patch(`/admin/orders/${o.id}/status`, { status: "CANCELLED" });
+      } catch {
+        failed++;
+      }
+    }
+    await loadOrders(search);
+    setSelectedIds(new Set());
+    setBulkBusy(false);
+    if (failed > 0) setRowError(`${failed} order(s) failed to cancel.`);
   }
 
   async function copyToClipboard(e: React.MouseEvent, text: string, key: string) {
@@ -183,6 +282,47 @@ export default function OrdersPage() {
       setRowError(err instanceof ApiError ? err.message : "Failed to cancel order");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!detailsOrderId) return;
+    setDetailsData(null);
+    setDetailsError(null);
+    setShowRecordPayment(false);
+    setPaymentAmount("");
+    setPaymentTxnId("");
+    setPaymentError(null);
+    api
+      .get<OrderDetail>(`/admin/orders/${detailsOrderId}`)
+      .then(setDetailsData)
+      .catch((err) => setDetailsError(err instanceof ApiError ? err.message : "Failed to load order"));
+  }, [detailsOrderId]);
+
+  async function submitPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detailsOrderId) return;
+    setPaymentError(null);
+    if (!paymentAmount || Number(paymentAmount) <= 0) {
+      setPaymentError("Enter a valid amount.");
+      return;
+    }
+    setPaymentSubmitting(true);
+    try {
+      const updated = await api.post<OrderDetail>(`/admin/orders/${detailsOrderId}/payments`, {
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+        transactionId: paymentTxnId || undefined,
+      });
+      setDetailsData(updated);
+      setShowRecordPayment(false);
+      setPaymentAmount("");
+      setPaymentTxnId("");
+      await loadOrders(search);
+    } catch (err) {
+      setPaymentError(err instanceof ApiError ? err.message : "Failed to record payment");
+    } finally {
+      setPaymentSubmitting(false);
     }
   }
 
@@ -266,6 +406,67 @@ export default function OrdersPage() {
           </Select>
         </div>
       </div>
+
+      {selectedIds.size > 0 && bulkMenuOpen && (
+        <div className="relative z-30 h-0">
+          <div className="absolute left-1/2 top-0 mt-2 w-72 -translate-x-1/2 rounded-xl border border-black/10 bg-white p-2 shadow-lg">
+          <div className="flex items-center justify-between px-2 py-2">
+            <span className="rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-foreground">
+              {selectedIds.size} selected
+            </span>
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              ✓ Select All
+            </button>
+          </div>
+
+          <div className="my-1 border-t border-black/5" />
+
+          <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
+            Update Status ({selectedIds.size} selected)
+          </div>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={bulkMarkReadyToShip}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-fg">
+              ✓
+            </span>
+            {bulkBusy ? "Working…" : "Ready to Ship"}
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={bulkCancel}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-xs text-white">
+              ✕
+            </span>
+            Cancel
+          </button>
+
+          <div className="my-1 border-t border-black/5" />
+
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="w-full rounded-lg px-2 py-2 text-left text-sm text-foreground/50 hover:bg-black/5 hover:text-foreground"
+          >
+            Clear selection
+          </button>
+          </div>
+        </div>
+      )}
+
+      {selectedIds.size > 0 && bulkMenuOpen && (
+        <div className="fixed inset-0 z-20" onClick={() => setBulkMenuOpen(false)} />
+      )}
 
       <Card>
         {loadError && (
@@ -469,23 +670,54 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-8 py-4 text-foreground/60">{o.source}</td>
                       <td className="px-8 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            onClick={() => router.push(`/orders/${o.id}`)}
-                            className="text-primary hover:bg-primary/10"
+                        <div className="relative flex justify-end">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId((v) => (v === o.id ? null : o.id));
+                            }}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-foreground/50 hover:bg-black/5 hover:text-foreground"
+                            aria-label="Order actions"
                           >
-                            View
-                          </Button>
-                          {CAN_CANCEL_FROM.has(o.status) && (
-                            <Button
-                              variant="ghost"
-                              disabled={busyId === o.id}
-                              onClick={(e) => cancelOrder(e, o)}
-                              className="text-status-cancelled hover:bg-status-cancelled/10"
-                            >
-                              {busyId === o.id ? "Cancelling…" : "Cancel"}
-                            </Button>
+                            ⋮
+                          </button>
+                          {openMenuId === o.id && (
+                            <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  setDetailsOrderId(o.id);
+                                }}
+                                className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                              >
+                                Order Details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  router.push(`/orders/${o.id}/edit`);
+                                }}
+                                className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                              >
+                                Edit
+                              </button>
+                              {CAN_CANCEL_FROM.has(o.status) && (
+                                <button
+                                  type="button"
+                                  disabled={busyId === o.id}
+                                  onClick={(e) => {
+                                    setOpenMenuId(null);
+                                    cancelOrder(e, o);
+                                  }}
+                                  className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
+                                >
+                                  {busyId === o.id ? "Cancelling…" : "Cancel"}
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>
@@ -497,6 +729,8 @@ export default function OrdersPage() {
           </div>
         )}
       </Card>
+
+      {openMenuId && <div className="fixed inset-0 z-20" onClick={() => setOpenMenuId(null)} />}
 
       {productsModal && (
         <div
@@ -543,6 +777,243 @@ export default function OrdersPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailsOrderId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setDetailsOrderId(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-black/10 px-6 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Order Details</h3>
+                <p className="text-xs text-foreground/50">Full order summary, payments &amp; history</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsOrderId(null)}
+                className="text-foreground/40 hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              {detailsError && (
+                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                  {detailsError}
+                </p>
+              )}
+              {!detailsData && !detailsError && (
+                <p className="py-8 text-center text-sm text-foreground/50">Loading…</p>
+              )}
+              {detailsData && (
+                <>
+                  <div className="rounded-lg border border-black/10 p-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="font-semibold text-foreground">Bill to:</div>
+                        <div className="text-foreground/70">{detailsData.shippingName}</div>
+                        <div className="text-foreground/70">{detailsData.shippingAddress}</div>
+                        <div className="text-foreground/70">{detailsData.shippingPhone}</div>
+                      </div>
+                      <div className="space-y-1 text-right">
+                        <div>
+                          <span className="text-foreground/50">Invoice ID#: </span>
+                          <span className="font-medium text-foreground">{detailsData.orderNumber}</span>
+                        </div>
+                        <div>
+                          <span className="text-foreground/50">Invoice date: </span>
+                          <span className="text-foreground">{formatDateTime(detailsData.createdAt)}</span>
+                        </div>
+                        <div>
+                          <span className="text-foreground/50">Courier Status: </span>
+                          <span className="text-foreground">
+                            {detailsData.shipmentStatus.replaceAll("_", " ")}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-foreground/50">Ref: </span>
+                          <span className="text-foreground">{detailsData.source}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <table className="mt-4 w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-black/10 text-left text-foreground/50">
+                          <th className="py-2 font-medium">Products</th>
+                          <th className="py-2 text-right font-medium">Qty</th>
+                          <th className="py-2 text-right font-medium">Unit price</th>
+                          <th className="py-2 text-right font-medium">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailsData.items.map((item) => (
+                          <tr key={item.id} className="border-b border-black/5">
+                            <td className="py-2 text-foreground">
+                              {item.productName} ({item.sku})
+                            </td>
+                            <td className="py-2 text-right text-foreground/70">{item.quantity}</td>
+                            <td className="py-2 text-right text-foreground/70">{money(item.unitPrice)}</td>
+                            <td className="py-2 text-right text-foreground/70">{money(item.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={3} className="pt-2 text-right text-foreground/50">
+                            Sub-Total
+                          </td>
+                          <td className="pt-2 text-right text-foreground">{money(detailsData.subtotal)}</td>
+                        </tr>
+                        {Number(detailsData.discount) > 0 && (
+                          <tr>
+                            <td colSpan={3} className="pt-1 text-right text-foreground/50">
+                              Discount
+                            </td>
+                            <td className="pt-1 text-right text-foreground">
+                              -{money(detailsData.discount)}
+                            </td>
+                          </tr>
+                        )}
+                        <tr>
+                          <td colSpan={3} className="pt-1 text-right text-foreground/50">
+                            Delivery Charge
+                          </td>
+                          <td className="pt-1 text-right text-foreground">{money(detailsData.shippingFee)}</td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="pt-1 text-right font-semibold text-foreground">
+                            Total
+                          </td>
+                          <td className="pt-1 text-right font-semibold text-foreground">
+                            {money(detailsData.total)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  <div className="rounded-lg border border-black/10 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-foreground">Advance Payment</h4>
+                      {!showRecordPayment && (
+                        <Button variant="secondary" onClick={() => setShowRecordPayment(true)}>
+                          Record Advance Payment
+                        </Button>
+                      )}
+                    </div>
+
+                    {showRecordPayment ? (
+                      <form onSubmit={submitPayment} className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <Input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          placeholder="Amount"
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                        />
+                        <Select
+                          value={paymentMethod}
+                          onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                        >
+                          {(["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"] as PaymentMethod[]).map(
+                            (m) => (
+                              <option key={m} value={m}>
+                                {m.replaceAll("_", " ")}
+                              </option>
+                            ),
+                          )}
+                        </Select>
+                        <Input
+                          placeholder="Transaction ID (optional)"
+                          value={paymentTxnId}
+                          onChange={(e) => setPaymentTxnId(e.target.value)}
+                        />
+                        {paymentError && (
+                          <p className="sm:col-span-3 text-sm text-status-cancelled">{paymentError}</p>
+                        )}
+                        <div className="flex gap-2 sm:col-span-3">
+                          <Button type="submit" disabled={paymentSubmitting}>
+                            {paymentSubmitting ? "Saving…" : "Save Payment"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              setShowRecordPayment(false);
+                              setPaymentError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    ) : detailsData.payments.length === 0 ? (
+                      <p className="mt-2 text-sm text-foreground/50">No advance recorded yet.</p>
+                    ) : (
+                      <div className="mt-2 space-y-1">
+                        {detailsData.payments.map((p) => (
+                          <div key={p.id} className="flex justify-between text-sm">
+                            <span className="text-foreground/70">
+                              {p.method.replaceAll("_", " ")}
+                              {p.transactionId ? ` · ${p.transactionId}` : ""}
+                              {p.paidAt ? ` · ${formatDateTime(p.paidAt)}` : ""}
+                            </span>
+                            <span className="font-medium text-foreground">{money(p.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-black/10 p-4">
+                    <h4 className="mb-3 text-sm font-semibold text-foreground">Products</h4>
+                    <div className="space-y-3">
+                      {detailsData.items.map((item) => (
+                        <div key={item.id} className="flex gap-3 rounded-lg border border-black/5 p-3">
+                          {item.product?.images[0]?.url ? (
+                            <img
+                              src={item.product.images[0].url}
+                              alt={item.productName}
+                              className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/30">
+                              {item.productName.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-foreground">{item.productName}</div>
+                            <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
+                            <div className="mt-1 text-xs text-foreground/50">
+                              Qty: {item.quantity} · Unit: {money(item.unitPrice)} · Total: {money(item.total)}
+                            </div>
+                            <div className="mt-1">
+                              <StatusBadge status={detailsData.status} />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end border-t border-black/10 px-6 py-4">
+              <Button variant="secondary" onClick={() => setDetailsOrderId(null)}>
+                Close
+              </Button>
             </div>
           </div>
         </div>

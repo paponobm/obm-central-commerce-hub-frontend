@@ -257,6 +257,7 @@ export interface Payment {
   method: PaymentMethod;
   amount: string;
   status: PaymentStatus;
+  transactionId: string | null;
   paidAt: string | null;
 }
 
