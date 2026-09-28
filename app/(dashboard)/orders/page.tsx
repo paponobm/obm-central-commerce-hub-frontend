@@ -357,7 +357,7 @@ export default function OrdersPage() {
                             className="text-foreground/30 hover:text-foreground/60"
                             title="Copy invoice number"
                           >
-                            {copiedId === `${o.id}-invoice` ? "✓" : "⧉"}
+                            {/* {copiedId === `${o.id}-invoice` ? "✓" : "⧉"} */}
                           </button>
                         </div>
                       </td>

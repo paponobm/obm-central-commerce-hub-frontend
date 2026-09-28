@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
@@ -71,6 +71,21 @@ export default function NewOrderPage() {
 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const pricingRef = useRef<HTMLDivElement>(null);
+  // Hides the sticky Total bar once the actual pricing/Create Order section
+  // scrolls into view, so it doesn't sit there duplicating a button that's
+  // already on screen.
+  const [pricingInView, setPricingInView] = useState(false);
+
+  useEffect(() => {
+    const el = pricingRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => setPricingInView(entry.isIntersecting), {
+      threshold: 0.2,
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     api.get<Product[]>("/admin/products").then(setProducts).catch(() => {});
@@ -476,6 +491,7 @@ export default function NewOrderPage() {
           </Card>
         </div>
 
+        <div ref={pricingRef}>
         <Card>
           <div
             className={`grid grid-cols-2 gap-3 whitespace-nowrap ${
@@ -565,6 +581,23 @@ export default function NewOrderPage() {
             {submitting ? "Creating Order…" : `Create Order (${money(grandTotal)}৳)`}
           </Button>
         </Card>
+        </div>
+
+        {lineItems.length > 0 && !pricingInView && (
+          <div className="sticky bottom-0 z-10 mt-6 rounded-lg bg-primary px-6 py-1.5 shadow-card">
+            <button
+              type="button"
+              onClick={() => pricingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              className="flex w-full items-center justify-between text-primary-fg"
+            >
+              <span className="text-sm font-medium opacity-80">Total</span>
+              <span className="flex items-center gap-2 text-base font-semibold">
+                {money(orderTotal)}৳
+                <span aria-hidden="true">▲</span>
+              </span>
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );
