@@ -186,7 +186,7 @@ export default function NewOrderPage() {
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-6xl">
       <PageHeader
         title="New Order"
         description="Manual, phone, Facebook, or WhatsApp order — enters the same reservation system as website checkout."
@@ -275,7 +275,7 @@ export default function NewOrderPage() {
           </div>
         </Card>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
           <Card>
             <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-foreground">
               Ordered Products
@@ -286,9 +286,11 @@ export default function NewOrderPage() {
               )}
             </h2>
             {lineItems.length === 0 ? (
-              <p className="text-sm text-status-cancelled">
-                No Products added. Please add products to the order
-              </p>
+              <div className="flex min-h-[24rem] items-center justify-center">
+                <p className="text-sm text-status-cancelled">
+                  No Products added. Please add products to the order
+                </p>
+              </div>
             ) : (
               <div className="space-y-3">
                 {lineItems.map((item) => {
