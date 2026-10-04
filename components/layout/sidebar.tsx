@@ -73,6 +73,7 @@ export function Sidebar() {
         {NAV_ENTRIES.map((rawEntry) => {
           const inStore = !!activeChannel;
           if (inStore && rawEntry.centralOnly) return null;
+          if (!inStore && rawEntry.type === "group" && rawEntry.storeOnly) return null;
           const entry =
             inStore && rawEntry.type === "group"
               ? { ...rawEntry, children: rawEntry.children.filter((c) => !c.centralOnly) }

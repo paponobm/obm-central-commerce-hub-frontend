@@ -11,6 +11,7 @@ export interface NavGroup {
   label: string;
   permission?: string;
   centralOnly?: boolean;
+  storeOnly?: boolean;
   children: { label: string; href: string; centralOnly?: boolean }[];
 }
 
@@ -24,6 +25,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     type: "group",
     label: "Orders",
     permission: "orders.view",
+    storeOnly: true,
     children: [
       { label: "New Order", href: "/orders/new" },
       { label: "All Orders", href: "/orders" },

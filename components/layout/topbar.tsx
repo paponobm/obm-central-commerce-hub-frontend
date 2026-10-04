@@ -3,6 +3,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useChannelScope } from "@/lib/channel-scope-context";
 import { StoreSelector } from "./store-selector";
 
 function NavAction({
@@ -28,6 +29,7 @@ function NavAction({
 
 export function Topbar() {
   const { user, logout, hasPermission } = useAuth();
+  const { activeChannel } = useChannelScope();
   const router = useRouter();
   const [search, setSearch] = useState("");
 
@@ -64,10 +66,10 @@ export function Topbar() {
         </form>
       )}
 
-      {hasPermission("orders.create") && (
+      {activeChannel && hasPermission("orders.create") && (
         <NavAction icon="🛒" label="New Order" onClick={() => router.push("/orders/new")} />
       )}
-      {hasPermission("orders.view") && (
+      {activeChannel && hasPermission("orders.view") && (
         <NavAction icon="📋" label="Orders" onClick={() => router.push("/orders")} />
       )}
 
