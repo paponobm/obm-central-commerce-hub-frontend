@@ -192,6 +192,7 @@ interface OrderBase {
 // GET /admin/orders — customer/channel are select-limited subsets, not the
 // full shapes findOne() returns.
 export interface OrderListItem extends OrderBase {
+  invoicePrinted: boolean;
   customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null; orderCount: number };
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
   createdBy: { id: string; name: string } | null;

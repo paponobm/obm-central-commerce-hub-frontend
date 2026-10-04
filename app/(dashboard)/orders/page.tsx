@@ -13,6 +13,7 @@ import type {
   PaymentMethod,
 } from "@/lib/types";
 import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
+import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
 import { telHref, whatsappHref } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -24,7 +25,6 @@ import { StatusBadge, Pill } from "@/components/ui/badge";
 // their own tab (the reference doesn't show them either) but stay reachable
 // — and countable — via "All".
 const TABS: { label: string; value: OrderStatus | "" }[] = [
-  { label: "All", value: "" },
   { label: "Pending", value: "PENDING" },
   { label: "RTS", value: "READY_TO_SHIP" },
   { label: "Shipped", value: "SHIPPED" },
@@ -36,6 +36,7 @@ const TABS: { label: string; value: OrderStatus | "" }[] = [
   { label: "Pending Cancel", value: "PENDING_CANCEL" },
   { label: "Preorder", value: "PREORDER" },
   { label: "Lost", value: "LOST" },
+  { label: "All", value: "" },
 ];
 
 // Mirrors OrdersService's TRANSITIONS map — which statuses can still reach
@@ -62,10 +63,96 @@ const PATH_TO_RTS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PENDING_CANCEL: ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
 };
 
+type OrderFilters = {
+  printFilter: "all" | "printed" | "not";
+  dateRange: "all" | "today" | "7" | "30";
+  sku: string;
+  name: string;
+  includeOtherProducts: boolean;
+};
+
+function orderMatchesFilters(o: OrderListItem, f: OrderFilters): boolean {
+  if (f.printFilter === "printed" && !o.invoicePrinted) return false;
+  if (f.printFilter === "not" && o.invoicePrinted) return false;
+  if (f.dateRange !== "all") {
+    const days = f.dateRange === "today" ? 1 : Number(f.dateRange);
+    const cutoff = f.dateRange === "today"
+      ? new Date(new Date().setHours(0, 0, 0, 0)).getTime()
+      : Date.now() - days * 24 * 60 * 60 * 1000;
+    if (new Date(o.createdAt).getTime() < cutoff) return false;
+  }
+  if (f.sku || f.name) {
+    const itemMatches = (item: OrderListItem["items"][number]) =>
+      (!f.sku || item.sku.toLowerCase().includes(f.sku)) &&
+      (!f.name || item.productName.toLowerCase().includes(f.name));
+    if (f.includeOtherProducts) {
+      if (!o.items.some(itemMatches)) return false;
+    } else if (!o.items.every(itemMatches)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Standard palette classes (not theme tokens) so each source colour renders reliably.
+const SOURCE_STYLE: Record<OrderSource, string> = {
+  WEBSITE: "bg-indigo-100 text-indigo-700",
+  MANUAL: "bg-violet-100 text-violet-700",
+  FACEBOOK: "bg-blue-100 text-blue-700",
+  PHONE: "bg-emerald-100 text-emerald-700",
+  WHATSAPP: "bg-green-100 text-green-700",
+  OTHER: "bg-amber-100 text-amber-700",
+  UNKNOWN: "bg-gray-200 text-gray-600",
+};
+
 const SOURCES: OrderSource[] = ["WEBSITE", "MANUAL", "FACEBOOK", "PHONE", "WHATSAPP", "OTHER", "UNKNOWN"];
 const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PARTIAL", "PAID", "REFUNDED"];
 
-type SortKey = "createdAt" | "total";
+// Order list date format: 04/10/2026,\n12:48 pm
+function listDate(value: string): string {
+  const d = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hour = d.getHours() % 12 || 12;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()},\n${hour}:${pad(d.getMinutes())} ${d.getHours() < 12 ? "am" : "pm"}`;
+}
+
+function listUpdated(value: string): string {
+  const minutes = (Date.now() - new Date(value).getTime()) / 60000;
+  return minutes < 1 ? "less than a minute ago" : formatRelativeTime(value);
+}
+
+type SortKey = "createdAt" | "total" | "sku" | "quantity" | "shippingFee" | "discount";
+
+const SORT_OPTIONS: { label: string; key: SortKey; dir: "asc" | "desc" }[] = [
+  { label: "Date Created (Newest)", key: "createdAt", dir: "desc" },
+  { label: "Date Created (Oldest)", key: "createdAt", dir: "asc" },
+  { label: "Order Amount (High to Low)", key: "total", dir: "desc" },
+  { label: "Order Amount (Low to High)", key: "total", dir: "asc" },
+  { label: "SKU", key: "sku", dir: "asc" },
+  { label: "Quantity (High to Low)", key: "quantity", dir: "desc" },
+  { label: "Quantity (Low to High)", key: "quantity", dir: "asc" },
+  { label: "Delivery Charge (High to Low)", key: "shippingFee", dir: "desc" },
+  { label: "Delivery Charge (Low to High)", key: "shippingFee", dir: "asc" },
+  { label: "Discount (High to Low)", key: "discount", dir: "desc" },
+  { label: "Discount (Low to High)", key: "discount", dir: "asc" },
+];
+
+function sortValue(o: OrderListItem, key: SortKey): number | string {
+  switch (key) {
+    case "createdAt":
+      return new Date(o.createdAt).getTime();
+    case "total":
+      return Number(o.total);
+    case "shippingFee":
+      return Number(o.shippingFee);
+    case "discount":
+      return Number(o.discount);
+    case "quantity":
+      return o.items.reduce((sum, i) => sum + i.quantity, 0);
+    case "sku":
+      return o.items[0]?.sku ?? "";
+  }
+}
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -80,7 +167,7 @@ export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<OrderListItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<OrderStatus | "">("");
+  const [activeTab, setActiveTab] = useState<OrderStatus | "">("PENDING");
   const [source, setSource] = useState("");
   const [channelId, setChannelId] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
@@ -96,6 +183,15 @@ export default function OrdersPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(true);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
+  const [paperSize, setPaperSize] = useState<PaperSize>("A4");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [printFilter, setPrintFilter] = useState<"all" | "printed" | "not">("all");
+  const [dateRange, setDateRange] = useState<"all" | "today" | "7" | "30">("all");
+  const [skuFilter, setSkuFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [includeOtherProducts, setIncludeOtherProducts] = useState(true);
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [detailsOrderId, setDetailsOrderId] = useState<string | null>(null);
@@ -150,15 +246,24 @@ export default function OrdersPage() {
 
   const visibleOrders = useMemo(() => {
     if (!allOrders) return null;
-    const filtered = activeTab ? allOrders.filter((o) => o.status === activeTab) : allOrders;
+    const tabbed = activeTab ? allOrders.filter((o) => o.status === activeTab) : allOrders;
+    const filtered = tabbed.filter((o) => orderMatchesFilters(o, {
+      printFilter,
+      dateRange,
+      sku: skuFilter.trim().toLowerCase(),
+      name: nameFilter.trim().toLowerCase(),
+      includeOtherProducts,
+    }));
     if (!sort) return filtered;
     const sorted = [...filtered].sort((a, b) => {
-      const av = sort.key === "total" ? Number(a.total) : new Date(a.createdAt).getTime();
-      const bv = sort.key === "total" ? Number(b.total) : new Date(b.createdAt).getTime();
-      return sort.dir === "asc" ? av - bv : bv - av;
+      const av = sortValue(a, sort.key);
+      const bv = sortValue(b, sort.key);
+      if (av === bv) return 0;
+      const cmp = av < bv ? -1 : 1;
+      return sort.dir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [allOrders, activeTab, sort]);
+  }, [allOrders, activeTab, sort, printFilter, dateRange, skuFilter, nameFilter, includeOtherProducts]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) => {
@@ -227,6 +332,22 @@ export default function OrdersPage() {
           .filter(Boolean)
           .join(" "),
       );
+    }
+  }
+
+  function runPrint(mode: InvoiceMode) {
+    const selected = (allOrders ?? []).filter((o) => selectedIds.has(o.id));
+    const storeName = globalChannelId
+      ? channels.find((c) => c.id === globalChannelId)?.name ?? "Invoice"
+      : "Invoice";
+    if (printInvoices(selected, mode, storeName, paperSize)) {
+      setShowPrintDialog(false);
+      api
+        .post("/admin/orders/print-log", { orderIds: selected.map((o) => o.id) })
+        .then(() => loadOrders(search))
+        .catch(() => {});
+    } else {
+      setPrintError("Pop-up blocked. Allow pop-ups for this site to print invoices.");
     }
   }
 
@@ -326,6 +447,63 @@ export default function OrdersPage() {
     }
   }
 
+  function renderActionsCell(o: OrderListItem, menuKey: string) {
+    return (
+          <td className="px-4 py-4">
+            <div className="relative flex justify-end">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenuId((v) => (v === menuKey ? null : menuKey));
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-foreground/50 hover:bg-black/5 hover:text-foreground"
+                aria-label="Order actions"
+              >
+                ⋮
+              </button>
+              {openMenuId === menuKey && (
+                <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenuId(null);
+                      setDetailsOrderId(o.id);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                  >
+                    Order Details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenuId(null);
+                      router.push(`/orders/${o.id}/edit`);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                  >
+                    Edit
+                  </button>
+                  {CAN_CANCEL_FROM.has(o.status) && (
+                    <button
+                      type="button"
+                      disabled={busyId === o.id}
+                      onClick={(e) => {
+                        setOpenMenuId(null);
+                        cancelOrder(e, o);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
+                    >
+                      {busyId === o.id ? "Cancelling…" : "Cancel"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </td>
+    );
+  }
+
   return (
     <div>
       <PageHeader
@@ -374,12 +552,12 @@ export default function OrdersPage() {
             <option value="">All sources</option>
             {SOURCES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {s.charAt(0) + s.slice(1).toLowerCase()}
               </option>
             ))}
           </Select>
         </div>
-        {globalChannelId ? (
+        {/* {globalChannelId ? (
           <div className="rounded-lg bg-black/5 px-3 py-2 text-sm text-foreground/60">
             Store: {channels.find((c) => c.id === globalChannelId)?.name ?? "…"}
           </div>
@@ -394,7 +572,97 @@ export default function OrdersPage() {
               ))}
             </Select>
           </div>
-        )}
+        )} */}
+        <div className="relative">
+          <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
+            Filters
+          </Button>
+
+          {filtersOpen && (
+            <div className="absolute left-0 top-11 z-30 w-72 space-y-4 rounded-xl border border-black/10 bg-white p-4 shadow-lg">
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Date range</div>
+                <Select value={dateRange} onChange={(e) => setDateRange(e.target.value as typeof dateRange)}>
+                  <option value="all">All dates</option>
+                  <option value="today">Today</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                </Select>
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Print status</div>
+                <div className="flex gap-2">
+                  {(
+                    [
+                      { value: "all", label: "All" },
+                      { value: "printed", label: "Printed" },
+                      { value: "not", label: "Not printed" },
+                    ] as { value: typeof printFilter; label: string }[]
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPrintFilter(opt.value)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                        printFilter === opt.value ? "bg-primary text-primary-fg" : "bg-black/5 text-foreground/70"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Product SKU</div>
+                <Input placeholder="Enter SKU to filter" value={skuFilter} onChange={(e) => setSkuFilter(e.target.value)} />
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Product name</div>
+                <Input placeholder="Enter product name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
+              </div>
+              <label className="flex items-start justify-between gap-3 text-sm">
+                <span>
+                  <span className="font-medium text-foreground">Include other products</span>
+                  <span className="block text-xs text-foreground/50">Orders that also contain other products are shown.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={includeOtherProducts}
+                  onChange={(e) => setIncludeOtherProducts(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-primary"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintFilter("all");
+                  setDateRange("all");
+                  setSkuFilter("");
+                  setNameFilter("");
+                  setIncludeOtherProducts(true);
+                }}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Reset filters
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="w-60">
+          <Select
+            value={sort ? `${sort.key}:${sort.dir}` : "createdAt:desc"}
+            onChange={(e) => {
+              const [key, dir] = e.target.value.split(":") as [SortKey, "asc" | "desc"];
+              setSort({ key, dir });
+            }}
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={`${opt.key}:${opt.dir}`} value={`${opt.key}:${opt.dir}`}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+        </div>
         <div className="w-40">
           <Select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}>
             <option value="">All payments</option>
@@ -426,6 +694,26 @@ export default function OrdersPage() {
           <div className="my-1 border-t border-black/5" />
 
           <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
+            Print Options
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setBulkMenuOpen(false);
+              setPrintError(null);
+              setShowPrintDialog(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs text-foreground/60">
+              🧾
+            </span>
+            Invoice
+          </button>
+
+          <div className="my-1 border-t border-black/5" />
+
+          <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
             Update Status ({selectedIds.size} selected)
           </div>
           <button
@@ -437,7 +725,7 @@ export default function OrdersPage() {
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-fg">
               ✓
             </span>
-            {bulkBusy ? "Working…" : "Ready to Ship"}
+            {bulkBusy ? "Working…" : "Sent to RTS"}
           </button>
           <button
             type="button"
@@ -497,7 +785,7 @@ export default function OrdersPage() {
                       className="h-4 w-4 rounded border-black/20 accent-primary"
                     />
                   </th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <button
                       type="button"
                       onClick={() => toggleSort("createdAt")}
@@ -506,14 +794,16 @@ export default function OrdersPage() {
                       Date {sort?.key === "createdAt" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
                     </button>
                   </th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Invoice</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Shipping Note</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Products</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status Tags</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
-                  <th className="px-8 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Invoice</th>
+                  <th className="px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Shipping Note</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Products</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status Tags</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Print</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
+                  <th className="px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <button
                       type="button"
                       onClick={() => toggleSort("total")}
@@ -522,14 +812,14 @@ export default function OrdersPage() {
                       Total {sort?.key === "total" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
                     </button>
                   </th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>User</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Source</th>
-                  <th className="rounded-r-lg px-8 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>User</th>
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Source</th>
+                  <th className="rounded-r-lg px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleOrders.map((o) => {
-                  const visibleItems = o.items.slice(0, 2);
+                  const visibleItems = o.items.slice(0, 3);
                   const hiddenCount = o.items.length - visibleItems.length;
                   return (
                     <tr
@@ -544,15 +834,18 @@ export default function OrdersPage() {
                           className="h-4 w-4 rounded border-black/20 accent-primary"
                         />
                       </td>
-                      <td className="px-8 py-4 whitespace-nowrap">
-                        <div className="text-foreground/70">{formatDateTime(o.createdAt)}</div>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="whitespace-pre-line text-foreground/70">{listDate(o.createdAt)}</div>
                         <div className="text-xs text-foreground/40">
-                          Updated {formatRelativeTime(o.updatedAt)}
+                          Updated {listUpdated(o.updatedAt)}
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-8 py-4">
+                      <td className="whitespace-nowrap px-4 py-4">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-foreground">{o.orderNumber}</span>
+                          <span className="font-medium text-foreground">
+                            {o.orderNumber.split("-")[0]}-<br />
+                            {o.orderNumber.split("-").slice(1).join("-")}
+                          </span>
                           <button
                             type="button"
                             onClick={(e) => copyToClipboard(e, o.orderNumber, `${o.id}-invoice`)}
@@ -563,7 +856,8 @@ export default function OrdersPage() {
                           </button>
                         </div>
                       </td>
-                      <td className="px-8 py-4 text-foreground/70">
+                      {renderActionsCell(o, `${o.id}-top`)}
+                      <td className="px-4 py-4 text-foreground/70">
                         <div className="flex items-center gap-1.5">
                           <span title="Customer">👤</span>
                           <span className="font-medium text-foreground">{o.customer.name}</span>
@@ -609,7 +903,7 @@ export default function OrdersPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="max-w-[160px] px-8 py-4 text-xs text-foreground/50">
+                      <td className="max-w-[160px] px-4 py-4 text-xs text-foreground/50">
                         {o.notes ? <span title={o.notes}>{o.notes}</span> : "—"}
                       </td>
                       <td
@@ -642,20 +936,20 @@ export default function OrdersPage() {
                             </div>
                           ))}
                         </div>
-                        {o.items.length > 2 && (
+                        {o.items.length > 3 && (
                           <span className="mt-1 block text-xs font-medium text-primary">
                             +{hiddenCount} more products
                           </span>
                         )}
                       </td>
-                      <td className="px-8 py-4">
+                      <td className="px-4 py-4">
                         {o.customer.orderCount > 1 && (
                           <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
                             REPEAT
                           </span>
                         )}
                       </td>
-                      <td className="px-8 py-4">
+                      <td className="px-4 py-4">
                         {Number(o.discount) > 0 && (
                           <span className="inline-flex max-w-[140px] items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-xs leading-snug text-sky-700">
                             <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
@@ -663,7 +957,14 @@ export default function OrdersPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-8 py-4">
+                      <td className="px-4 py-4 text-center text-base font-bold">
+                        {o.invoicePrinted ? (
+                          <span className="text-status-delivered" title="Invoice printed">✓</span>
+                        ) : (
+                          <span className="text-status-cancelled" title="Not printed">✕</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
                         <Pill
                           tone={
                             o.paymentStatus === "PAID"
@@ -678,65 +979,18 @@ export default function OrdersPage() {
                           {o.paymentStatus}
                         </Pill>
                       </td>
-                      <td className="whitespace-nowrap px-8 py-4 text-right font-medium text-foreground">
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-foreground">
                         {formatAmount(o.total)}
                       </td>
-                      <td className="whitespace-nowrap px-8 py-4 text-foreground/60">
+                      <td className="whitespace-nowrap px-4 py-4 text-foreground/60">
                         {o.createdBy?.name ?? "—"}
                       </td>
-                      <td className="px-8 py-4 text-foreground/60">{o.source}</td>
-                      <td className="px-8 py-4">
-                        <div className="relative flex justify-end">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenMenuId((v) => (v === o.id ? null : o.id));
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-foreground/50 hover:bg-black/5 hover:text-foreground"
-                            aria-label="Order actions"
-                          >
-                            ⋮
-                          </button>
-                          {openMenuId === o.id && (
-                            <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  setDetailsOrderId(o.id);
-                                }}
-                                className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
-                              >
-                                Order Details
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  router.push(`/orders/${o.id}/edit`);
-                                }}
-                                className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
-                              >
-                                Edit
-                              </button>
-                              {CAN_CANCEL_FROM.has(o.status) && (
-                                <button
-                                  type="button"
-                                  disabled={busyId === o.id}
-                                  onClick={(e) => {
-                                    setOpenMenuId(null);
-                                    cancelOrder(e, o);
-                                  }}
-                                  className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
-                                >
-                                  {busyId === o.id ? "Cancelling…" : "Cancel"}
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                      <td className="px-4 py-4">
+                        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${SOURCE_STYLE[o.source]}`}>
+                          {o.source.charAt(0) + o.source.slice(1).toLowerCase()}
+                        </span>
                       </td>
+                      {renderActionsCell(o, o.id)}
                     </tr>
                   );
                 })}
@@ -747,6 +1001,7 @@ export default function OrdersPage() {
       </Card>
 
       {openMenuId && <div className="fixed inset-0 z-20" onClick={() => setOpenMenuId(null)} />}
+      {filtersOpen && <div className="fixed inset-0 z-20" onClick={() => setFiltersOpen(false)} />}
 
       {productsModal && (
         <div
@@ -793,6 +1048,79 @@ export default function OrdersPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPrintDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowPrintDialog(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Print Invoice</h3>
+                <p className="mt-1 text-sm text-foreground/60">{selectedIds.size} orders selected</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrintDialog(false)}
+                className="text-foreground/40 hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-5">
+              <label className="mb-1 block text-xs font-medium text-foreground/70">Paper size</label>
+              <Select value={paperSize} onChange={(e) => setPaperSize(e.target.value as PaperSize)}>
+                <option value="A4">A4</option>
+                <option value="A5">A5</option>
+                <option value="Letter">Letter</option>
+              </Select>
+            </div>
+            <div className="mt-4 space-y-2">
+              {(
+                [
+                  { mode: "by-invoice", label: "Print Invoice (By Invoice)" },
+                  { mode: "grouped-by-sku", label: "Print Invoice (Grouped by SKU)" },
+                ] as { mode: InvoiceMode; label: string }[]
+              ).map((opt) => (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => runPrint(opt.mode)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-black/10 px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-black/5"
+                >
+                  <span aria-hidden="true">🧾</span>
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => runPrint("by-invoice")}
+                className="flex w-full items-center gap-3 rounded-lg border border-black/10 px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-black/5"
+              >
+                <span aria-hidden="true">📄</span>
+                Download PDF
+              </button>
+            </div>
+            <p className="mt-3 text-xs text-foreground/50">
+              PDF downloads through the print dialog — choose “Save as PDF” as the destination.
+            </p>
+            {printError && (
+              <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                {printError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end">
+              <Button variant="secondary" onClick={() => setShowPrintDialog(false)}>
+                Close
+              </Button>
             </div>
           </div>
         </div>

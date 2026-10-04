@@ -291,7 +291,7 @@ export default function NewOrderPage() {
                 <Select value={source} onChange={(e) => setSource(e.target.value as OrderSource)}>
                   {SOURCES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {s.charAt(0) + s.slice(1).toLowerCase()}
                     </option>
                   ))}
                 </Select>
