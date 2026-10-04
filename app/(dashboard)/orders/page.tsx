@@ -12,7 +12,7 @@ import type {
   PaymentStatus,
   PaymentMethod,
 } from "@/lib/types";
-import { money, formatDateTime, formatRelativeTime } from "@/lib/format";
+import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { telHref, whatsappHref } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -62,7 +62,7 @@ const PATH_TO_RTS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PENDING_CANCEL: ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
 };
 
-const SOURCES: OrderSource[] = ["WEBSITE", "MANUAL", "FACEBOOK", "PHONE", "WHATSAPP", "OTHER"];
+const SOURCES: OrderSource[] = ["WEBSITE", "MANUAL", "FACEBOOK", "PHONE", "WHATSAPP", "OTHER", "UNKNOWN"];
 const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PARTIAL", "PAID", "REFUNDED"];
 
 type SortKey = "createdAt" | "total";
@@ -485,7 +485,7 @@ export default function OrdersPage() {
         ) : visibleOrders.length === 0 ? (
           <p className="text-sm text-foreground/50">No orders match these filters.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="max-h-[calc(100vh-19rem)] overflow-auto">
             <table className="w-full min-w-[1800px] text-sm">
               <thead>
                 <tr className="text-left text-sm font-semibold text-primary">
@@ -508,9 +508,10 @@ export default function OrdersPage() {
                   </th>
                   <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Invoice</th>
                   <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Shipping Note</th>
                   <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Products</th>
-                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
+                  <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status Tags</th>
                   <th className="px-8 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
                   <th className="px-8 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <button
@@ -615,6 +616,9 @@ export default function OrdersPage() {
                         className="cursor-pointer px-8 py-4 text-foreground/60 hover:text-foreground"
                         onClick={() => setProductsModal(o)}
                       >
+                        <div className="mb-2">
+                          <StatusBadge status={o.status} compact />
+                        </div>
                         <div className="space-y-1.5">
                           {visibleItems.map((item) => (
                             <div key={item.id} className="flex items-start gap-2">
@@ -645,7 +649,19 @@ export default function OrdersPage() {
                         )}
                       </td>
                       <td className="px-8 py-4">
-                        <StatusBadge status={o.status} />
+                        {o.customer.orderCount > 1 && (
+                          <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                            REPEAT
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-8 py-4">
+                        {Number(o.discount) > 0 && (
+                          <span className="inline-flex max-w-[140px] items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-xs leading-snug text-sky-700">
+                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                            <span>Employee Discount Order · {formatAmount(o.discount)}</span>
+                          </span>
+                        )}
                       </td>
                       <td className="px-8 py-4">
                         <Pill
@@ -663,7 +679,7 @@ export default function OrdersPage() {
                         </Pill>
                       </td>
                       <td className="whitespace-nowrap px-8 py-4 text-right font-medium text-foreground">
-                        {money(o.total)}
+                        {formatAmount(o.total)}
                       </td>
                       <td className="whitespace-nowrap px-8 py-4 text-foreground/60">
                         {o.createdBy?.name ?? "—"}
@@ -772,7 +788,7 @@ export default function OrdersPage() {
                     <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
                     <div className="text-xs text-foreground/50">Quantity: {item.quantity}</div>
                     <div className="mt-1">
-                      <StatusBadge status={productsModal.status} />
+                      <StatusBadge status={productsModal.status} compact />
                     </div>
                   </div>
                 </div>
@@ -862,8 +878,8 @@ export default function OrdersPage() {
                               {item.productName} ({item.sku})
                             </td>
                             <td className="py-2 text-right text-foreground/70">{item.quantity}</td>
-                            <td className="py-2 text-right text-foreground/70">{money(item.unitPrice)}</td>
-                            <td className="py-2 text-right text-foreground/70">{money(item.total)}</td>
+                            <td className="py-2 text-right text-foreground/70">{formatAmount(item.unitPrice)}</td>
+                            <td className="py-2 text-right text-foreground/70">{formatAmount(item.total)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -872,7 +888,7 @@ export default function OrdersPage() {
                           <td colSpan={3} className="pt-2 text-right text-foreground/50">
                             Sub-Total
                           </td>
-                          <td className="pt-2 text-right text-foreground">{money(detailsData.subtotal)}</td>
+                          <td className="pt-2 text-right text-foreground">{formatAmount(detailsData.subtotal)}</td>
                         </tr>
                         {Number(detailsData.discount) > 0 && (
                           <tr>
@@ -880,7 +896,7 @@ export default function OrdersPage() {
                               Discount
                             </td>
                             <td className="pt-1 text-right text-foreground">
-                              -{money(detailsData.discount)}
+                              -{formatAmount(detailsData.discount)}
                             </td>
                           </tr>
                         )}
@@ -888,14 +904,14 @@ export default function OrdersPage() {
                           <td colSpan={3} className="pt-1 text-right text-foreground/50">
                             Delivery Charge
                           </td>
-                          <td className="pt-1 text-right text-foreground">{money(detailsData.shippingFee)}</td>
+                          <td className="pt-1 text-right text-foreground">{formatAmount(detailsData.shippingFee)}</td>
                         </tr>
                         <tr>
                           <td colSpan={3} className="pt-1 text-right font-semibold text-foreground">
                             Total
                           </td>
                           <td className="pt-1 text-right font-semibold text-foreground">
-                            {money(detailsData.total)}
+                            {formatAmount(detailsData.total)}
                           </td>
                         </tr>
                       </tfoot>
@@ -969,42 +985,51 @@ export default function OrdersPage() {
                               {p.transactionId ? ` · ${p.transactionId}` : ""}
                               {p.paidAt ? ` · ${formatDateTime(p.paidAt)}` : ""}
                             </span>
-                            <span className="font-medium text-foreground">{money(p.amount)}</span>
+                            <span className="font-medium text-foreground">{formatAmount(p.amount)}</span>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  <div className="rounded-lg border border-black/10 p-4">
-                    <h4 className="mb-3 text-sm font-semibold text-foreground">Products</h4>
-                    <div className="space-y-3">
-                      {detailsData.items.map((item) => (
-                        <div key={item.id} className="flex gap-3 rounded-lg border border-black/5 p-3">
-                          {item.product?.images[0]?.url ? (
-                            <img
-                              src={item.product.images[0].url}
-                              alt={item.productName}
-                              className="h-14 w-14 shrink-0 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/30">
-                              {item.productName.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="font-medium text-foreground">{item.productName}</div>
-                            <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
-                            <div className="mt-1 text-xs text-foreground/50">
-                              Qty: {item.quantity} · Unit: {money(item.unitPrice)} · Total: {money(item.total)}
-                            </div>
-                            <div className="mt-1">
-                              <StatusBadge status={detailsData.status} />
-                            </div>
+                  <div className="rounded-lg border border-black/10">
+                    <h4 className="border-b border-black/10 px-4 py-3 text-sm font-semibold text-foreground">Products</h4>
+                    {detailsData.items.map((item) => (
+                      <div key={item.id} className="flex items-center gap-4 border-b border-black/5 px-4 py-3 last:border-b-0">
+                        {item.product?.images[0]?.url ? (
+                          <img
+                            src={item.product.images[0].url}
+                            alt={item.productName}
+                            className="h-14 w-14 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/30">
+                            {item.productName.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium text-foreground">{item.productName}</div>
+                          <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
+                          <div className="mt-1 text-xs text-foreground/60">
+                            Status: {detailsData.status.charAt(0) + detailsData.status.slice(1).toLowerCase().replaceAll("_", " ")}
                           </div>
                         </div>
-                      ))}
-                    </div>
+                        <div className="grid shrink-0 grid-cols-3 gap-x-6 text-right text-sm">
+                          <div>
+                            <div className="text-xs text-foreground/50">Qty</div>
+                            <div className="text-foreground">{item.quantity}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-foreground/50">Unit</div>
+                            <div className="text-foreground">{formatAmount(item.unitPrice)}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-foreground/50">Total</div>
+                            <div className="text-foreground">{formatAmount(item.total)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}

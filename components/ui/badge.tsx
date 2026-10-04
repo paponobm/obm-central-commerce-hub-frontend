@@ -21,16 +21,21 @@ const STATUS_DOT: Record<string, string> = {
 // everywhere else (Order Detail, dashboard charts).
 const STATUS_LABEL: Record<string, string> = {
   READY_TO_SHIP: "RTS",
-  PENDING_RETURN: "Pending Return",
-  PENDING_CANCEL: "Pending Cancel",
 };
 
-export function StatusBadge({ status }: { status: string }) {
+function sentenceCase(value: string): string {
+  const text = value.replaceAll("_", " ").toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export function StatusBadge({ status, compact = false }: { status: string; compact?: boolean }) {
   const dot = STATUS_DOT[status] ?? "bg-gray-400";
-  const label = STATUS_LABEL[status] ?? status.replaceAll("_", " ");
+  const label = STATUS_LABEL[status] ?? sentenceCase(status);
+  const size = compact ? "gap-1 px-1.5 py-0.5 text-[10px]" : "gap-1.5 px-2.5 py-1 text-xs";
+  const dotSize = compact ? "h-1 w-1" : "h-1.5 w-1.5";
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-foreground">
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+    <span className={`inline-flex items-center rounded-full bg-black/5 font-[family-name:var(--font-status)] font-medium text-foreground ${size}`}>
+      <span className={`rounded-full ${dotSize} ${dot}`} />
       {label}
     </span>
   );

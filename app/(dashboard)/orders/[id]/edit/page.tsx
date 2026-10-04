@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { Product, OrderDetail } from "@/lib/types";
-import { money } from "@/lib/format";
+import { formatAmount } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -356,7 +356,7 @@ export default function EditOrderPage() {
                           </div>
                           <div className="text-xs font-medium text-primary">SKU: {item.sku}</div>
                           <div className="mt-1 flex items-center gap-3 text-xs">
-                            <span className="text-foreground/60">{money(unitPrice)}</span>
+                            <span className="text-foreground/60">{formatAmount(unitPrice)}</span>
                             {available !== null && (
                               <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
                                 Stock: {available}
@@ -429,10 +429,15 @@ export default function EditOrderPage() {
                               type="number"
                               min="0"
                               step="0.01"
-                              value={item.unitPrice}
+                              value={item.unitPrice !== "" ? String(Number(item.unitPrice)) : ""}
+                              onBlur={(e) => {
+                                if (e.target.value !== "") {
+                                  updateLineItem(item.productId, { unitPrice: String(Number(e.target.value)) });
+                                }
+                              }}
                               placeholder={product?.basePrice}
                               onChange={(e) => updateLineItem(item.productId, { unitPrice: e.target.value })}
-                              className="w-0 min-w-0 flex-1 text-center"
+                              className="w-0 min-w-0 flex-1 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               title="Unit price (blank = storefront/base price)"
                             />
                             <button
@@ -448,7 +453,7 @@ export default function EditOrderPage() {
                         <div>
                           <Label>Total</Label>
                           <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-center text-sm text-foreground/70">
-                            {lineTotal.toFixed(2)}
+                            {formatAmount(lineTotal)}
                           </div>
                         </div>
                       </div>
@@ -492,7 +497,7 @@ export default function EditOrderPage() {
                       <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
                       <div className="text-xs font-medium text-primary">SKU: {p.sku}</div>
                       <div className="mt-1 flex items-center justify-between text-xs">
-                        <span className="text-foreground/60">Price: {money(p.basePrice)}</span>
+                        <span className="text-foreground/60">Price: {formatAmount(p.basePrice)}</span>
                         <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
                           Stock: {available}
                         </span>
@@ -525,7 +530,7 @@ export default function EditOrderPage() {
               <div>
                 <Label>Sub Total</Label>
                 <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-sm text-foreground/50">
-                  {subTotal.toFixed(2)}
+                  {formatAmount(subTotal)}
                 </div>
               </div>
               <div>
@@ -542,7 +547,7 @@ export default function EditOrderPage() {
               <div>
                 <Label className="text-status-cancelled">Total</Label>
                 <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 px-3 py-2 text-sm font-semibold text-status-cancelled">
-                  {orderTotal.toFixed(2)}
+                  {formatAmount(orderTotal)}
                 </div>
               </div>
             </div>
@@ -554,7 +559,7 @@ export default function EditOrderPage() {
             )}
 
             <Button type="submit" disabled={submitting} className="mt-4 w-full">
-              {submitting ? "Saving…" : `Save Changes (${money(orderTotal)}৳)`}
+              {submitting ? "Saving…" : `Save Changes (${formatAmount(orderTotal)}৳)`}
             </Button>
           </Card>
         </div>
@@ -568,7 +573,7 @@ export default function EditOrderPage() {
             >
               <span className="text-sm font-medium opacity-80">Total</span>
               <span className="flex items-center gap-2 text-base font-semibold">
-                {money(orderTotal)}৳
+                {formatAmount(orderTotal)}৳
                 <span aria-hidden="true">▲</span>
               </span>
             </button>

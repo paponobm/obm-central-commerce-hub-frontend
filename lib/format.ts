@@ -33,3 +33,13 @@ export function formatRelativeTime(value: string): string {
   const days = Math.round(hours / 24);
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
+
+// Whole amounts show without decimals ("200"), fractional ones keep up to
+// two places ("0.04") so a real sub-unit price is never rounded away.
+export function formatAmount(value: string | number): string {
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(num);
+}

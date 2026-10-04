@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import type { OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
-import { money } from "@/lib/format";
+import { formatAmount } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 
-const SOURCES: OrderSource[] = ["MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
+const SOURCES: OrderSource[] = ["UNKNOWN", "MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 // Free-text on the order, purely informational (see Order.deliveryMethod) —
 // not tied to any courier integration, so this list is just a starting set.
@@ -45,7 +45,7 @@ export default function NewOrderPage() {
   const [customerPhone, setCustomerPhone] = useState("");
 
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS[0]);
-  const [source, setSource] = useState<OrderSource>("MANUAL");
+  const [source, setSource] = useState<OrderSource>("UNKNOWN");
   const [channelId, setChannelId] = useState(globalChannelId ?? "");
 
   // Follows the global Store Selector — creating an order while a specific
@@ -70,6 +70,7 @@ export default function NewOrderPage() {
   const hasAdvance = Number(advanceAmount) > 0;
 
   const [formError, setFormError] = useState<string | null>(null);
+  const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const pricingRef = useRef<HTMLDivElement>(null);
   // Hides the sticky Total bar once the actual pricing/Create Order section
@@ -192,7 +193,16 @@ export default function NewOrderPage() {
         advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
         transactionId: hasAdvance ? transactionId || undefined : undefined,
       });
-      router.push(`/orders/${order.id}`);
+      setCreatedOrderNumber(order.orderNumber);
+      setCustomerName("");
+      setCustomerPhone("");
+      setShippingAddress("");
+      setShippingNote("");
+      setLineItems([]);
+      setDiscount("");
+      setAdvanceAmount("");
+      setShippingFee("");
+      setTransactionId("");
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
@@ -339,7 +349,7 @@ export default function NewOrderPage() {
                           </div>
                           <div className="text-xs font-medium text-primary">SKU: {item.sku}</div>
                           <div className="mt-1 flex items-center gap-3 text-xs">
-                            <span className="text-foreground/60">{money(unitPrice)}</span>
+                            <span className="text-foreground/60">{formatAmount(unitPrice)}</span>
                             {available !== null && (
                               <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
                                 Stock: {available}
@@ -350,11 +360,16 @@ export default function NewOrderPage() {
                         <button
                           type="button"
                           onClick={() => removeLineItem(item.productId)}
-                          className="shrink-0 text-status-cancelled hover:opacity-70"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-status-cancelled/20 bg-status-cancelled/5 text-status-cancelled transition-colors hover:bg-status-cancelled hover:text-white"
                           aria-label="Remove"
                           title="Remove"
                         >
-                          🗑
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                          </svg>
                         </button>
                       </div>
 
@@ -412,10 +427,14 @@ export default function NewOrderPage() {
                               type="number"
                               min="0"
                               step="0.01"
-                              value={item.unitPrice}
-                              placeholder={product?.basePrice}
+                              value={String(Number(item.unitPrice !== "" ? item.unitPrice : (product?.basePrice ?? 0)))}
+                              onBlur={(e) => {
+                                if (e.target.value !== "") {
+                                  updateLineItem(item.productId, { unitPrice: String(Number(e.target.value)) });
+                                }
+                              }}
                               onChange={(e) => updateLineItem(item.productId, { unitPrice: e.target.value })}
-                              className="w-0 min-w-0 flex-1 text-center"
+                              className="w-0 min-w-0 flex-1 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               title="Unit price (blank = storefront/base price)"
                             />
                             <button
@@ -431,7 +450,7 @@ export default function NewOrderPage() {
                         <div>
                           <Label>Total</Label>
                           <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-center text-sm text-foreground/70">
-                            {lineTotal.toFixed(2)}
+                            {formatAmount(lineTotal)}
                           </div>
                         </div>
                       </div>
@@ -475,7 +494,7 @@ export default function NewOrderPage() {
                       <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
                       <div className="text-xs font-medium text-primary">SKU: {p.sku}</div>
                       <div className="mt-1 flex items-center justify-between text-xs">
-                        <span className="text-foreground/60">Price: {money(p.basePrice)}</span>
+                        <span className="text-foreground/60">Price: {formatAmount(p.basePrice)}</span>
                         <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
                           Stock: {available}
                         </span>
@@ -523,7 +542,7 @@ export default function NewOrderPage() {
             <div>
               <Label>Sub Total</Label>
               <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-sm text-foreground/50">
-                {subTotal.toFixed(2)}
+                {formatAmount(subTotal)}
               </div>
             </div>
             <div>
@@ -540,7 +559,7 @@ export default function NewOrderPage() {
             <div>
               <Label className="text-status-cancelled">Grand Total</Label>
               <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 px-3 py-2 text-sm font-semibold text-status-cancelled">
-                {grandTotal.toFixed(2)}
+                {formatAmount(grandTotal)}
               </div>
             </div>
             {hasAdvance && (
@@ -578,13 +597,13 @@ export default function NewOrderPage() {
           )}
 
           <Button type="submit" disabled={submitting} className="mt-4 w-full">
-            {submitting ? "Creating Order…" : `Create Order (${money(grandTotal)}৳)`}
+            {submitting ? "Creating Order…" : `Create Order (${formatAmount(grandTotal)}৳)`}
           </Button>
         </Card>
         </div>
 
         {lineItems.length > 0 && !pricingInView && (
-          <div className="sticky bottom-0 z-10 mt-6 rounded-lg bg-primary px-6 py-1.5 shadow-card">
+          <div className="sticky bottom-0 z-10 mt-6 cursor-pointer rounded-lg bg-primary px-6 py-1.5 shadow-card transition-colors hover:bg-status-cancelled">
             <button
               type="button"
               onClick={() => pricingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
@@ -592,13 +611,36 @@ export default function NewOrderPage() {
             >
               <span className="text-sm font-medium opacity-80">Total</span>
               <span className="flex items-center gap-2 text-base font-semibold">
-                {money(orderTotal)}৳
+                {formatAmount(orderTotal)}৳
                 <span aria-hidden="true">▲</span>
               </span>
             </button>
           </div>
         )}
       </form>
+
+      {createdOrderNumber && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setCreatedOrderNumber(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-2xl text-primary">
+              ✓
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Order created</h3>
+            <p className="mt-1 text-sm text-foreground/60">
+              Order {createdOrderNumber} has been created successfully.
+            </p>
+            <Button className="mt-5 w-full" onClick={() => setCreatedOrderNumber(null)}>
+              OK
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ export type OrderStatus =
   | "PREORDER"
   | "LOST";
 
-export type OrderSource = "WEBSITE" | "MANUAL" | "FACEBOOK" | "PHONE" | "WHATSAPP" | "OTHER";
+export type OrderSource = "WEBSITE" | "MANUAL" | "FACEBOOK" | "PHONE" | "WHATSAPP" | "OTHER" | "UNKNOWN";
 export type CustomerResponseStatus =
   | "NO_RESPONSE"
   | "CALL_BACK"
@@ -192,7 +192,7 @@ interface OrderBase {
 // GET /admin/orders — customer/channel are select-limited subsets, not the
 // full shapes findOne() returns.
 export interface OrderListItem extends OrderBase {
-  customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null };
+  customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null; orderCount: number };
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
   createdBy: { id: string; name: string } | null;
 }
