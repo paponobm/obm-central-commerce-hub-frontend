@@ -7,7 +7,6 @@ import { useChannelScope } from "@/lib/channel-scope-context";
 import { isBlockedInStore } from "@/components/layout/nav-config";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { AnnouncementBanner } from "@/components/layout/announcement-banner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
