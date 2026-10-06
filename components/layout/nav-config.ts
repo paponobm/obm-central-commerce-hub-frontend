@@ -28,6 +28,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     storeOnly: true,
     children: [
       { label: "New Order", href: "/orders/new" },
+      { label: "Web Orders", href: "/web-orders" },
       { label: "All Orders", href: "/orders" },
     ],
   },

@@ -70,6 +70,9 @@ export function Topbar() {
         <NavAction icon="🛒" label="New Order" onClick={() => router.push("/orders/new")} />
       )}
       {activeChannel && hasPermission("orders.view") && (
+        <NavAction icon="🌐" label="Web Orders" onClick={() => router.push("/web-orders")} />
+      )}
+      {activeChannel && hasPermission("orders.view") && (
         <NavAction icon="📋" label="Orders" onClick={() => router.push("/orders")} />
       )}
 
