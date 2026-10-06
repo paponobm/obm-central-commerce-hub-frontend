@@ -16,6 +16,9 @@ export type OrderStatus =
 export type OrderSource = "WEBSITE" | "MANUAL" | "FACEBOOK" | "PHONE" | "WHATSAPP" | "OTHER" | "UNKNOWN";
 export type CustomerResponseStatus =
   | "NO_RESPONSE"
+  | "ON_HOLD"
+  | "ADVANCE_PAYMENT"
+  | "GOOD_BUT_NO_RESPONSE"
   | "CALL_BACK"
   | "INTERESTED"
   | "NOT_INTERESTED"
@@ -194,6 +197,10 @@ interface OrderBase {
 export interface OrderListItem extends OrderBase {
   invoicePrinted: boolean;
   webApproved: boolean;
+  // Notes added from Order actions, oldest first.
+  adminNotes: { id: string; note: string; createdAt: string; user: { name: string } | null }[];
+  // The latest change (status, response, note or approval) and who made it.
+  lastUpdate: { at: string; by: string | null };
   customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null; orderCount: number };
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
   createdBy: { id: string; name: string } | null;
@@ -201,6 +208,12 @@ export interface OrderListItem extends OrderBase {
 
 // GET /admin/orders/:id — full nested shapes plus history/payments/shipment.
 export interface OrderDetail extends OrderBase {
+  // Set by the API: whether the order has been approved from Web Orders, and
+  // whether it was first saved as an Incomplete checkout.
+  webApproved?: boolean;
+  createdFromLead?: boolean;
+  // Leads only: whether a response has been set from Order actions.
+  leadResponseSet?: boolean;
   customer: Customer;
   channel: Channel | null;
   statusHistory: OrderStatusHistoryEntry[];

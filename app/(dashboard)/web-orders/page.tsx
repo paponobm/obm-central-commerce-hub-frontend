@@ -3,14 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderListItem, OrderStatus } from "@/lib/types";
+import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { isCompleteWebOrder } from "@/lib/web-orders";
+import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
 import { useAuth } from "@/lib/auth-context";
 
-type TabKey = "processing" | "incomplete" | "approved" | "cancelled" | "all";
+type TabKey =
+  | "processing"
+  | "incomplete"
+  | "goodNoResponse"
+  | "noResponse"
+  | "advancePayment"
+  | "onHold"
+  | "approved"
+  | "cancelled"
+  | "all";
 
 const TAB_STORAGE_KEY = "web-orders-tab";
 const SEARCH_STORAGE_KEY = "web-orders-search";
@@ -20,11 +29,14 @@ const SEARCH_STORAGE_KEY = "web-orders-search";
 interface CheckoutLead {
   id: string;
   channelId: string;
+  customerResponse: CustomerResponseStatus | null;
+  lastUpdate: { at: string; by: string | null };
   phone: string;
   name: string | null;
   address: string | null;
   createdAt: string;
   updatedAt: string;
+  adminNotes: { id: string; note: string; createdAt: string; user: { name: string } | null }[];
   total: number;
   items: {
     productId: string;
@@ -36,7 +48,7 @@ interface CheckoutLead {
   }[];
 }
 
-type WebRow = OrderListItem & { isLead?: boolean };
+type WebRow = OrderListItem & { isLead?: boolean; hasResponse?: boolean };
 
 function leadToRow(lead: CheckoutLead): WebRow {
   return {
@@ -49,7 +61,8 @@ function leadToRow(lead: CheckoutLead): WebRow {
     status: "PENDING",
     paymentStatus: "UNPAID",
     shipmentStatus: "NOT_SHIPPED",
-    customerResponse: "NO_RESPONSE",
+    customerResponse: lead.customerResponse ?? "NO_RESPONSE",
+    hasResponse: lead.customerResponse !== null,
     subtotal: String(lead.total),
     discount: "0",
     shippingFee: "0",
@@ -64,6 +77,8 @@ function leadToRow(lead: CheckoutLead): WebRow {
     createdBy: null,
     invoicePrinted: false,
     webApproved: false,
+    adminNotes: lead.adminNotes,
+    lastUpdate: lead.lastUpdate,
     customer: { id: "", name: lead.name ?? "", phone: lead.phone, successRate: null, orderCount: 0 },
     items: lead.items.map((i) => ({
       id: i.productId,
@@ -79,37 +94,18 @@ function leadToRow(lead: CheckoutLead): WebRow {
   };
 }
 
-const APPROVED_STATUSES = new Set<OrderStatus>([
-  "CONFIRMED",
-  "PROCESSING",
-  "READY_TO_SHIP",
-  "SHIPPED",
-  "PARTIAL",
-  "DELIVERED",
-  "PENDING_RETURN",
-  "RETURNED",
-  "LOST",
-]);
-
 function matchesTab(o: WebRow, tab: TabKey): boolean {
-  switch (tab) {
-    // Checkout leads never become Processing: they have no order to approve.
-    case "processing":
-      return !o.isLead && o.status === "PENDING" && !o.webApproved && isCompleteWebOrder(o);
-    case "incomplete":
-      return o.isLead || (o.status === "PENDING" && !o.webApproved && !isCompleteWebOrder(o));
-    case "approved":
-      return o.webApproved || APPROVED_STATUSES.has(o.status);
-    case "cancelled":
-      return o.status === "CANCELLED";
-    case "all":
-      return true;
-  }
+  if (tab === "all") return true;
+  return webOrderStage(o) === tab;
 }
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "processing", label: "Processing" },
   { key: "incomplete", label: "Incomplete" },
+  { key: "goodNoResponse", label: "Good But No Response" },
+  { key: "noResponse", label: "No Response" },
+  { key: "advancePayment", label: "Advance Payment" },
+  { key: "onHold", label: "On Hold" },
   { key: "approved", label: "Approved" },
   { key: "cancelled", label: "Cancel" },
   { key: "all", label: "All" },
@@ -255,7 +251,10 @@ export default function WebOrdersPage() {
                   </th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Created At</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
+                                    <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
+                  {tab === "incomplete" && (
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Last Update</th>
+                  )}
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Order Items</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Success Rate</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
@@ -302,7 +301,21 @@ export default function WebOrdersPage() {
                       <div className="max-w-[200px] truncate text-xs text-foreground/40">{o.shippingAddress}</div>
                       {!isCompleteWebOrder(o) && <div className="mt-1 text-xs text-red-600">Details missing</div>}
                     </td>
-                    <td className="max-w-[160px] px-4 py-4 text-xs text-foreground/50">{o.notes ?? "—"}</td>
+                                        <td className="max-w-[220px] px-4 py-4 text-xs text-foreground/50">
+                      {o.notes && <div>{o.notes}</div>}
+                      {o.adminNotes.map((n) => (
+                        <div key={n.id} className="mt-1">
+                          <span className="font-medium text-foreground/60">{n.user?.name ?? "Unknown"}:</span> {n.note}
+                        </div>
+                      ))}
+                      {!o.notes && o.adminNotes.length === 0 && "—"}
+                    </td>
+                    {tab === "incomplete" && (
+                    <td className="whitespace-nowrap px-4 py-4 text-xs">
+                      <div className="text-foreground/70">{formatDateTime(o.lastUpdate.at)}</div>
+                      <div className="text-foreground/50">{o.lastUpdate.by ?? "—"}</div>
+                    </td>
+                    )}
                     <td className="px-4 py-4">
                       <div className="space-y-2">
                         {o.items.map((item) => (

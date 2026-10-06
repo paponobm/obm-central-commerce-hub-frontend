@@ -3,25 +3,30 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderStatus, PaymentMethod, Product, OrderDetail, OrderListItem } from "@/lib/types";
+import type { CustomerResponseStatus, PaymentMethod, Product, OrderDetail, OrderListItem } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
+import { WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 
 // An Incomplete storefront checkout, as returned by /admin/orders/checkout-leads.
 interface LeadRecord {
   id: string;
   channelId: string;
+  customerResponse: CustomerResponseStatus | null;
   phone: string;
   name: string | null;
   address: string | null;
   createdAt: string;
   updatedAt: string;
   total: number;
+  // The customer's cart, as ordered on the website.
   items: { productId: string; productName: string; sku: string; image: string | null; quantity: number; unitPrice: number }[];
+  // The admin's edited list in Ordered products, when it has been saved.
+  adminItems: { productId: string; productName: string; sku: string; image: string | null; quantity: number; unitPrice: number }[] | null;
 }
 
 // Shapes a lead like an order so the same form and totals can be used. A lead
@@ -36,7 +41,8 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
     status: "PENDING",
     paymentStatus: "UNPAID",
     shipmentStatus: "NOT_SHIPPED",
-    customerResponse: "NO_RESPONSE",
+    customerResponse: lead.customerResponse ?? "NO_RESPONSE",
+    leadResponseSet: lead.customerResponse !== null,
     subtotal: String(lead.total),
     discount: "0",
     shippingFee: "0",
@@ -67,6 +73,31 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
   };
 }
 
+// How many Activity log entries show before "See more".
+const ACTIVITY_PREVIEW = 3;
+
+function ActivityRow({ entry }: { entry: ActivityEntry }) {
+  return (
+    <div className="text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/50">
+        <span>{formatDateTime(entry.at)}</span>
+        {entry.by && (
+          <span className="rounded bg-black/5 px-1.5 py-0.5 font-medium text-foreground/70">{entry.by}</span>
+        )}
+      </div>
+      <div className="whitespace-pre-line">{entry.text}</div>
+    </div>
+  );
+}
+
+// One line of the Activity log, as the server describes it.
+interface ActivityEntry {
+  key: string;
+  at: string;
+  by: string | null;
+  text: string;
+}
+
 interface OrderNote {
   id: string;
   createdAt: string;
@@ -79,7 +110,24 @@ const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delive
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 // Mirrors OrdersService's TRANSITIONS for PENDING. The backend enforces the
 // same rule; this only limits the dropdown to valid choices.
-const PENDING_NEXT_STATUSES: OrderStatus[] = ["CONFIRMED", "PREORDER", "PENDING_CANCEL", "CANCELLED"];
+type CustomerResponse = CustomerResponseStatus;
+// The only choices Order actions offers.
+const CUSTOMER_RESPONSES: CustomerResponse[] = [
+  "GOOD_BUT_NO_RESPONSE",
+  "NO_RESPONSE",
+  "ADVANCE_PAYMENT",
+  "ON_HOLD",
+];
+const RESPONSE_LABELS: Record<CustomerResponse, string> = {
+  NO_RESPONSE: "No Response",
+  ON_HOLD: "On Hold",
+  ADVANCE_PAYMENT: "Advance Payment",
+  GOOD_BUT_NO_RESPONSE: "Good But No Response",
+  CALL_BACK: "Call Back",
+  INTERESTED: "Interested",
+  NOT_INTERESTED: "Not Interested",
+  CONFIRMED: "Confirmed",
+};
 
 interface LineItem {
   productId: string;
@@ -105,6 +153,8 @@ export default function WebOrderDetailsPage() {
   // Incomplete checkouts are opened with a "lead-" id from the Web Orders list.
   const isLead = orderId.startsWith("lead-");
   const leadId = isLead ? orderId.slice("lead-".length) : null;
+  const notesPath = isLead ? `/admin/orders/checkout-leads/${leadId}/notes` : `/admin/orders/${orderId}/notes`;
+  const activityPath = isLead ? `/admin/orders/checkout-leads/${leadId}/activity` : `/admin/orders/${orderId}/activity`;
   const { user } = useAuth();
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
@@ -132,10 +182,12 @@ export default function WebOrderDetailsPage() {
 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
-  const [statusSaving, setStatusSaving] = useState(false);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  const [nextResponse, setNextResponse] = useState<CustomerResponse | "">("");
+  const [responseSaving, setResponseSaving] = useState(false);
+  const [responseError, setResponseError] = useState<string | null>(null);
   const [notes, setNotes] = useState<OrderNote[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [showAllActivity, setShowAllActivity] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -146,8 +198,9 @@ export default function WebOrderDetailsPage() {
     setNoteError(null);
     setNoteSaving(true);
     try {
-      const created = await api.post<OrderNote>(`/admin/orders/${orderId}/notes`, { note: text });
+      const created = await api.post<OrderNote>(notesPath, { note: text });
       setNotes((list) => [created, ...list]);
+      api.get<ActivityEntry[]>(activityPath).then(setActivity).catch(() => {});
       setNoteText("");
     } catch (err) {
       setNoteError(err instanceof ApiError ? err.message : "Failed to add note");
@@ -156,20 +209,41 @@ export default function WebOrderDetailsPage() {
     }
   }
 
-  async function updateStatus() {
-    if (!order || !nextStatus) return;
-    if (nextStatus === "CANCELLED" && !window.confirm(`Cancel order ${order.orderNumber}?`)) return;
-    setStatusError(null);
-    setStatusSaving(true);
+  // Saves the chosen response on the order, or on the checkout lead while it
+  // is still incomplete.
+  async function updateResponse() {
+    if (!order || !nextResponse) return;
+    setResponseError(null);
+    setResponseSaving(true);
     try {
-      await api.patch(`/admin/orders/${orderId}/status`, { status: nextStatus });
-      // Leaving PENDING switches the page to its read-only notice.
-      setOrder({ ...order, status: nextStatus });
-      setNextStatus("");
+      if (isLead) {
+        // Saves what is on the page as well, so edits to Ordered products are
+        // not lost when the response is set.
+        const validItems = lineItems.filter((i) => i.quantity > 0);
+        if (validItems.length === 0) {
+          setResponseError("Add at least one product.");
+          return;
+        }
+        await api.patch(`/admin/orders/checkout-leads/${leadId}`, {
+          customerName: customerName || undefined,
+          shippingAddress: shippingAddress || undefined,
+          items: validItems.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+          })),
+        });
+      }
+      const path = isLead
+        ? `/admin/orders/checkout-leads/${leadId}/customer-response`
+        : `/admin/orders/${orderId}/customer-response`;
+      await api.patch(path, { customerResponse: nextResponse });
+      // Back to the list; it reopens on the tab this order was opened from.
+      router.push("/web-orders");
     } catch (err) {
-      setStatusError(err instanceof ApiError ? err.message : "Failed to update status");
+      setResponseError(err instanceof ApiError ? err.message : "Failed to update");
     } finally {
-      setStatusSaving(false);
+      setResponseSaving(false);
     }
   }
   const pricingRef = useRef<HTMLDivElement>(null);
@@ -197,20 +271,35 @@ export default function WebOrderDetailsPage() {
   useEffect(() => {
     if (!user) return;
     api.get<Product[]>("/admin/products").then(setProducts).catch(() => {});
-    if (!isLead) api.get<OrderNote[]>(`/admin/orders/${orderId}/notes`).then(setNotes).catch(() => {});
-  }, [orderId, user, isLead]);
+    api.get<OrderNote[]>(notesPath).then(setNotes).catch(() => {});
+    api.get<ActivityEntry[]>(activityPath).then(setActivity).catch(() => {});
+  }, [notesPath, activityPath, user]);
 
   useEffect(() => {
     if (!user) return;
-    const load: Promise<OrderDetail> = isLead
+    // formItems: what Ordered products starts with. For a lead that is the
+    // admin's saved list, if any; otherwise the customer's cart.
+    type Loaded = { order: OrderDetail; formItems: LineItem[] | null };
+    const load: Promise<Loaded> = isLead
       ? api.get<LeadRecord[]>("/admin/orders/checkout-leads").then((list) => {
           const lead = list.find((l) => l.id === leadId);
           if (!lead) throw new Error("This checkout is no longer incomplete.");
-          return leadAsOrder(lead);
+          const source = lead.adminItems ?? lead.items;
+          return {
+            order: leadAsOrder(lead),
+            formItems: source.map((i) => ({
+              productId: i.productId,
+              productName: i.productName,
+              sku: i.sku,
+              image: i.image ?? undefined,
+              quantity: i.quantity,
+              unitPrice: String(i.unitPrice),
+            })),
+          };
         })
-      : api.get<OrderDetail>(`/admin/orders/${orderId}`);
+      : api.get<OrderDetail>(`/admin/orders/${orderId}`).then((order) => ({ order, formItems: null }));
     load
-      .then((o) => {
+      .then(({ order: o, formItems }) => {
         setOrder(o);
         setCustomerName(o.shippingName);
         setCustomerPhone(o.shippingPhone);
@@ -220,14 +309,15 @@ export default function WebOrderDetailsPage() {
         setDiscount(Number(o.discount) > 0 ? o.discount : "");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
         setLineItems(
-          o.items.map((item) => ({
-            productId: item.productId,
-            productName: item.productName,
-            sku: item.sku,
-            image: item.product?.images[0]?.url,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-          })),
+          formItems ??
+            o.items.map((item) => ({
+              productId: item.productId,
+              productName: item.productName,
+              sku: item.sku,
+              image: item.product?.images[0]?.url,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            })),
         );
         if (isLead) return null;
         return api.get<OrderListItem[]>(`/admin/orders?customerId=${o.customer.id}`);
@@ -238,15 +328,20 @@ export default function WebOrderDetailsPage() {
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Failed to load order"));
   }, [orderId, user, isLead, leadId]);
 
+  // Only products published on this order's store can be added to it.
+  const storeChannelId = order?.channelId ?? null;
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
+    const onStore = storeChannelId
+      ? products.filter((p) => p.channels?.some((c) => c.channelId === storeChannelId))
+      : products;
     const pool = q
-      ? products.filter(
+      ? onStore.filter(
           (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
         )
-      : products;
+      : onStore;
     return pool.slice(0, 20);
-  }, [products, productSearch]);
+  }, [products, productSearch, storeChannelId]);
 
   function addProduct(p: Product) {
     setLineItems((rows) => {
@@ -318,13 +413,13 @@ export default function WebOrderDetailsPage() {
 
     setSubmitting(true);
     if (isLead) {
-      // The order is created from the lead's details, then approved. The lead
-      // is removed straight after creation so a failed approval can't leave a
-      // duplicate Incomplete entry behind.
+      // The order is created from the lead's details, which removes the lead
+      // and moves its notes in the same step. Then it is approved.
       let createdId: string | null = null;
       try {
         const created = await api.post<OrderDetail>("/admin/orders", {
           source: "WEBSITE",
+          checkoutLeadId: leadId ?? undefined,
           channelId: order?.channelId ?? undefined,
           customerName,
           customerPhone,
@@ -345,7 +440,6 @@ export default function WebOrderDetailsPage() {
           transactionId: hasAdvance ? transactionId || undefined : undefined,
         });
         createdId = created.id;
-        await api.delete(`/admin/orders/checkout-leads/${leadId}`);
         await api.post(`/admin/orders/${created.id}/web-approve`);
         router.push("/web-orders");
       } catch (err) {
@@ -413,31 +507,19 @@ export default function WebOrderDetailsPage() {
     return <p className="text-sm text-foreground/60">Loading…</p>;
   }
 
-  // Status and customer-response changes from the order timeline, plus notes,
-  // newest first.
-  const activity = [
-    ...order.timeline.map((t) =>
-      t.type === "status"
-        ? {
-            key: `s-${t.id}`,
-            at: t.createdAt,
-            by: t.changedBy?.name ?? null,
-            text: `Order status changed to ${t.toStatus.replaceAll("_", " ")}`,
-          }
-        : {
-            key: `c-${t.id}`,
-            at: t.createdAt,
-            by: t.changedBy?.name ?? null,
-            text: `Customer response changed to ${(t.toResponse ?? "none").replaceAll("_", " ")}`,
-          },
-    ),
-    ...notes.map((n) => ({
-      key: `n-${n.id}`,
-      at: n.createdAt,
-      by: n.user?.name ?? null,
-      text: `Note added: ${n.after?.note ?? ""}`,
-    })),
-  ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  // Where the order is now: the same stage that decides its Web Orders tab.
+  const stage = webOrderStage({
+    ...order,
+    isLead,
+    webApproved: order.webApproved ?? false,
+    hasResponse: isLead ? (order.leadResponseSet ?? false) : true,
+  });
+  const stageLabel = stage ? WEB_STAGE_LABELS[stage] : order.status.replaceAll("_", " ");
+  // The response shown as selected in Order actions. A lead that has never
+  // had one set shows the placeholder instead.
+  const currentResponse: CustomerResponse | "" =
+    isLead && !order.leadResponseSet ? "" : order.customerResponse;
+
 
   return (
     <div className="space-y-4">
@@ -862,7 +944,7 @@ export default function WebOrderDetailsPage() {
                   </div>
                   <div>
                     <div className="text-xs text-foreground/50">Status</div>
-                    <div className="font-medium">{order.status.replaceAll("_", " ")}</div>
+                    <div className="font-medium">{stageLabel}</div>
                   </div>
                   <div>
                     <div className="text-xs text-foreground/50">Payment</div>
@@ -870,7 +952,7 @@ export default function WebOrderDetailsPage() {
                   </div>
                   <div>
                     <div className="text-xs text-foreground/50">Source</div>
-                    <div className="font-medium">{order.source}</div>
+                    <div className="font-medium">{isLead || order.createdFromLead ? "Incomplete" : "Processing"}</div>
                   </div>
                 </div>
 
@@ -930,34 +1012,33 @@ export default function WebOrderDetailsPage() {
               </div>
             </Card>
 
-            {!isLead && (
             <Card>
               <h2 className="mb-3 text-base font-semibold text-foreground">Order actions</h2>
               <select
-                value={nextStatus}
-                onChange={(e) => setNextStatus(e.target.value as OrderStatus | "")}
+                value={nextResponse || currentResponse}
+                onChange={(e) => setNextResponse(e.target.value as CustomerResponse | "")}
                 className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm"
               >
-                <option value="">Change status</option>
-                {PENDING_NEXT_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replaceAll("_", " ")}
+                <option value="">Select response</option>
+                {CUSTOMER_RESPONSES.map((r) => (
+                  <option key={r} value={r}>
+                    {RESPONSE_LABELS[r]}
                   </option>
                 ))}
               </select>
-              {statusError && (
+              {responseError && (
                 <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-                  {statusError}
+                  {responseError}
                 </p>
               )}
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!nextStatus || statusSaving}
-                onClick={updateStatus}
+                disabled={!nextResponse || responseSaving}
+                onClick={updateResponse}
                 className="mt-3 w-full"
               >
-                {statusSaving ? "Updating…" : "Update"}
+                {responseSaving ? "Updating…" : "Update"}
               </Button>
 
               <div className="mt-4 rounded-lg border border-black/10 p-3">
@@ -996,7 +1077,7 @@ export default function WebOrderDetailsPage() {
                 )}
               </div>
             </Card>
-            )}
+
 
           <Card>
             <h2 className="mb-3 text-base font-semibold text-foreground">Activity log</h2>
@@ -1004,17 +1085,18 @@ export default function WebOrderDetailsPage() {
               <p className="text-sm text-foreground/50">No activity yet.</p>
             ) : (
               <div className="space-y-3">
-                {activity.map((a) => (
-                  <div key={a.key} className="text-sm">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/50">
-                      <span>{formatDateTime(a.at)}</span>
-                      {a.by && (
-                        <span className="rounded bg-black/5 px-1.5 py-0.5 font-medium text-foreground/70">{a.by}</span>
-                      )}
-                    </div>
-                    <div className="whitespace-pre-line">{a.text}</div>
-                  </div>
+                {activity.slice(0, ACTIVITY_PREVIEW).map((a) => (
+                  <ActivityRow key={a.key} entry={a} />
                 ))}
+                {activity.length > ACTIVITY_PREVIEW && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllActivity(true)}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    See more ({activity.length - ACTIVITY_PREVIEW} more)
+                  </button>
+                )}
               </div>
             )}
           </Card>
@@ -1036,6 +1118,35 @@ export default function WebOrderDetailsPage() {
             </div>
           )}
         </form>
+      )}
+
+      {showAllActivity && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowAllActivity(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="activity-log-title"
+            className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-card bg-card p-5 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="activity-log-title" className="mb-4 text-base font-semibold text-foreground">
+              Activity log
+            </h2>
+            <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+              {activity.map((a) => (
+                <ActivityRow key={a.key} entry={a} />
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setShowAllActivity(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
