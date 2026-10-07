@@ -8,7 +8,7 @@ import { formatAmount, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
+import { WEB_STAGE_COLORS, WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 
 // An Incomplete storefront checkout, as returned by /admin/orders/checkout-leads.
@@ -16,6 +16,7 @@ interface LeadRecord {
   id: string;
   channelId: string;
   customerResponse: CustomerResponseStatus | null;
+  cancelled: boolean;
   phone: string;
   name: string | null;
   address: string | null;
@@ -42,6 +43,7 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
     shipmentStatus: "NOT_SHIPPED",
     customerResponse: lead.customerResponse ?? "NO_RESPONSE",
     leadResponseSet: lead.customerResponse !== null,
+    leadCancelled: lead.cancelled,
     subtotal: String(lead.total),
     discount: "0",
     shippingFee: "0",
@@ -76,6 +78,34 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
 const ACTIVITY_PREVIEW = 3;
 
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
+  if (entry.toStatus === "CANCELLED") {
+    // The reason is the note's first line; anything after that is the
+    // optional free-text note (see cancelOrder).
+    const [reason, ...rest] = (entry.note ?? "").split("\n");
+    const extra = rest.join("\n").trim();
+    return (
+      <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-status-cancelled">⛔ Order cancelled</span>
+          <span className="text-xs text-foreground/50">{formatDateTime(entry.at)}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          {reason && (
+            <span className="rounded-full bg-status-cancelled/10 px-2 py-1 font-medium text-status-cancelled">
+              Reason: {reason}
+            </span>
+          )}
+          {entry.by && (
+            <span className="rounded-full bg-black/5 px-2 py-1 font-medium text-foreground/70">
+              Cancelled by: {entry.by}
+            </span>
+          )}
+        </div>
+        {extra && <div className="mt-2 whitespace-pre-line text-sm text-foreground">{extra}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="text-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/50">
@@ -95,6 +125,9 @@ interface ActivityEntry {
   at: string;
   by: string | null;
   text: string;
+  // Status entries only — lets a cancellation get its own highlighted card.
+  toStatus?: string;
+  note?: string | null;
 }
 
 interface OrderNote {
@@ -127,6 +160,20 @@ const RESPONSE_LABELS: Record<CustomerResponse, string> = {
   NOT_INTERESTED: "Not Interested",
   CONFIRMED: "Confirmed",
 };
+
+// Matches the reference's Cancellation Details reason list.
+const CANCEL_REASONS = [
+  "Customer Request",
+  "Out of Stock",
+  "Duplicate Order",
+  "Wrong Number",
+  "Phone Off",
+  "No Answer",
+  "Fraudulent Order",
+  "Price Issue",
+  "Advance Payment Issue",
+  "Other",
+];
 
 interface LineItem {
   productId: string;
@@ -183,6 +230,8 @@ export default function WebOrderDetailsPage() {
   const [submitting, setSubmitting] = useState(false);
   // "CANCEL" is a choice in the dropdown, not a customer response.
   const [nextResponse, setNextResponse] = useState<CustomerResponse | "CANCEL" | "">("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelNote, setCancelNote] = useState("");
   const [responseSaving, setResponseSaving] = useState(false);
   const [responseError, setResponseError] = useState<string | null>(null);
   const [notes, setNotes] = useState<OrderNote[]>([]);
@@ -211,23 +260,71 @@ export default function WebOrderDetailsPage() {
 
   // Saves the chosen response on the order, or on the checkout lead while it
   // is still incomplete.
-  async function updateResponse() {
-    if (!order || !nextResponse) return;
-    if (nextResponse === "CANCEL") {
-      // Cancelling leaves the web stages and releases the order's reserved stock.
-      if (!window.confirm(`Cancel order ${order.orderNumber}?`)) return;
-      setResponseError(null);
-      setResponseSaving(true);
-      try {
-        await api.patch(`/admin/orders/${orderId}/status`, { status: "CANCELLED" });
-        router.push("/web-orders");
-      } catch (err) {
-        setResponseError(err instanceof ApiError ? err.message : "Failed to cancel order");
-      } finally {
-        setResponseSaving(false);
+  // Cancelling has its own panel and button below the dropdown (see JSX),
+  // not the generic Update button — a reason is required there.
+  async function cancelOrder() {
+    if (!order || !cancelReason) return;
+    setResponseError(null);
+    setResponseSaving(true);
+    const note = cancelReason + (cancelNote.trim() ? `\n${cancelNote.trim()}` : "");
+    try {
+      if (isLead) {
+        // A lead with enough on it to be a real order becomes one — same as
+        // Approve — and that order is cancelled, so Cancel leaves a real
+        // order behind just like every other stage. A lead with no product
+        // or no address can't become an order, so it's cancelled in place.
+        const validItems = lineItems.filter((i) => i.quantity > 0);
+        const canBecomeOrder = validItems.length > 0 && customerName && customerPhone && shippingAddress;
+        if (canBecomeOrder) {
+          let createdId: string | null = null;
+          try {
+            const created = await api.post<OrderDetail>("/admin/orders", {
+              source: "WEBSITE",
+              checkoutLeadId: leadId ?? undefined,
+              channelId: order?.channelId ?? undefined,
+              customerName,
+              customerPhone,
+              shippingName: customerName,
+              shippingPhone: customerPhone,
+              shippingAddress,
+              deliveryMethod: deliveryMethod || undefined,
+              items: validItems.map((i) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+              })),
+              discount: discount ? Number(discount) : undefined,
+              shippingFee: shippingFee ? Number(shippingFee) : undefined,
+              notes: shippingNote || undefined,
+            });
+            createdId = created.id;
+            await api.patch(`/admin/orders/${created.id}/status`, { status: "CANCELLED", note });
+          } catch (err) {
+            setResponseError(
+              createdId
+                ? "The order was created but could not be cancelled. Open it from Processing to cancel it."
+                : err instanceof ApiError
+                  ? err.message
+                  : "Failed to cancel order",
+            );
+            return;
+          }
+        } else {
+          await api.patch(`/admin/orders/checkout-leads/${leadId}/cancel`, { note });
+        }
+      } else {
+        await api.patch(`/admin/orders/${orderId}/status`, { status: "CANCELLED", note });
       }
-      return;
+      router.push("/web-orders");
+    } catch (err) {
+      setResponseError(err instanceof ApiError ? err.message : "Failed to cancel order");
+    } finally {
+      setResponseSaving(false);
     }
+  }
+
+  async function updateResponse() {
+    if (!order || !nextResponse || nextResponse === "CANCEL") return;
     setResponseError(null);
     setResponseSaving(true);
     try {
@@ -247,6 +344,14 @@ export default function WebOrderDetailsPage() {
             quantity: i.quantity,
             unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
           })),
+        });
+      } else if (order.status === "CANCELLED") {
+        // Setting a response on a cancelled order picks it back up, same as
+        // Approve does — it needs a real reactivation (stock re-reserved),
+        // not just a response change on an order with nothing held for it.
+        await api.patch(`/admin/orders/${orderId}/status`, {
+          status: "PENDING",
+          note: "Reactivated from Web Orders",
         });
       }
       const path = isLead
@@ -407,6 +512,7 @@ export default function WebOrderDetailsPage() {
 
   async function handleApprove(e: FormEvent) {
     e.preventDefault();
+    if (!order || (isLead ? order.leadCancelled : !["PENDING", "CANCELLED"].includes(order.status))) return;
     setFormError(null);
 
     const validItems = lineItems.filter((i) => i.quantity > 0);
@@ -473,6 +579,15 @@ export default function WebOrderDetailsPage() {
     }
 
     try {
+      if (order.status === "CANCELLED") {
+        // Reactivates it (re-reserving its stock) before any item edits are
+        // saved, so the edit below has a PENDING order to edit, same as any
+        // other order here.
+        await api.patch(`/admin/orders/${orderId}/status`, {
+          status: "PENDING",
+          note: "Reactivated from Web Orders",
+        });
+      }
       await api.patch(`/admin/orders/${orderId}`, {
         customerName,
         customerPhone,
@@ -529,12 +644,30 @@ export default function WebOrderDetailsPage() {
     isLead,
     webApproved: order.webApproved ?? false,
     hasResponse: isLead ? (order.leadResponseSet ?? false) : true,
+    leadCancelled: order.leadCancelled ?? false,
   });
   const stageLabel = stage ? WEB_STAGE_LABELS[stage] : order.status.replaceAll("_", " ");
   // The response shown as selected in Order actions. A lead that has never
   // had one set shows the placeholder instead.
-  const currentResponse: CustomerResponse | "" =
-    isLead && !order.leadResponseSet ? "" : (order.customerResponse ?? "");
+  // Shows "Cancel" as selected whenever the thing is actually cancelled right
+  // now, rather than whatever response it happened to have before that —
+  // the dropdown should reflect where it is, not stale history.
+  const currentResponse: CustomerResponse | "CANCEL" | "" = isLead
+    ? order.leadCancelled
+      ? "CANCEL"
+      : order.leadResponseSet
+        ? (order.customerResponse ?? "")
+        : ""
+    : order.status === "CANCELLED"
+      ? "CANCEL"
+      : (order.customerResponse ?? "");
+  // Only a real order past PENDING is locked — cancelling it releases stock
+  // and the backend's status rules never let it move again. A cancelled
+  // lead has no order yet, so it stays fully usable, same as Processing;
+  // the cancellation still shows, as a card in the Activity log below.
+  // CANCELLED is reactivatable (see handleApprove), so it stays usable too —
+  // only a real order that has moved past PENDING some other way is locked.
+  const done = !isLead && order.status !== "PENDING" && order.status !== "CANCELLED";
 
 
   // Clock cursor while something is being saved on this page.
@@ -563,7 +696,9 @@ export default function WebOrderDetailsPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full bg-black/5 px-3 py-1 font-semibold text-foreground/70">{stageLabel}</span>
+          <span className={`rounded-full px-3 py-1 font-semibold ${stage ? WEB_STAGE_COLORS[stage] : "bg-black/5 text-foreground/70"}`}>
+            {stageLabel}
+          </span>
           <span className="rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-700">WEB</span>
           <span className="rounded-full border border-black/10 px-3 py-1 text-foreground/70">
             Created {formatDateTime(order.createdAt)}
@@ -571,12 +706,12 @@ export default function WebOrderDetailsPage() {
         </div>
       </div>
 
-      {order.status !== "PENDING" ? (
+      {done && (
         <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
           Order {order.orderNumber} is already past web approval (status: {order.status.replaceAll("_", " ")}).
         </p>
-      ) : (
-        <form onSubmit={handleApprove} className="grid gap-4 lg:grid-cols-3">
+      )}
+      <form onSubmit={handleApprove} className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
             <Card>
               <h2 className="mb-4 text-base font-semibold text-foreground">Customer details</h2>
@@ -585,6 +720,7 @@ export default function WebOrderDetailsPage() {
                   <Label>Mobile Number</Label>
                   <Input
                     required
+                    disabled={done}
                     placeholder="Mobile Number"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
@@ -594,6 +730,7 @@ export default function WebOrderDetailsPage() {
                   <Label>Name</Label>
                   <Input
                     required
+                    disabled={done}
                     placeholder="Customer Name"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
@@ -601,7 +738,7 @@ export default function WebOrderDetailsPage() {
                 </div>
                 <div>
                   <Label>Delivery Method</Label>
-                  <Select value={deliveryMethod} onChange={(e) => setDeliveryMethod(e.target.value)}>
+                  <Select value={deliveryMethod} disabled={done} onChange={(e) => setDeliveryMethod(e.target.value)}>
                     {DELIVERY_METHODS.map((m) => (
                       <option key={m} value={m}>
                         {m}
@@ -616,6 +753,7 @@ export default function WebOrderDetailsPage() {
                   <Label>Address</Label>
                   <Textarea
                     required
+                    disabled={done}
                     rows={3}
                     placeholder="Enter address"
                     value={shippingAddress}
@@ -625,6 +763,7 @@ export default function WebOrderDetailsPage() {
                 <div>
                   <Label>Shipping Note</Label>
                   <Textarea
+                    disabled={done}
                     rows={3}
                     placeholder="Enter shipping note"
                     value={shippingNote}
@@ -634,6 +773,7 @@ export default function WebOrderDetailsPage() {
               </div>
             </Card>
 
+            {!done && (
             <Card>
               <h2 className="mb-4 text-base font-semibold text-foreground">Add products</h2>
               <div ref={pickerRef} className="relative">
@@ -690,6 +830,7 @@ export default function WebOrderDetailsPage() {
                 )}
               </div>
             </Card>
+            )}
 
             <Card>
               <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-foreground">
@@ -747,41 +888,46 @@ export default function WebOrderDetailsPage() {
                               )}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => removeLineItem(item.productId)}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-status-cancelled/20 bg-status-cancelled/5 text-status-cancelled transition-colors hover:bg-status-cancelled hover:text-white"
-                            aria-label="Remove"
-                            title="Remove"
-                          >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M3 6h18" />
-                              <path d="M8 6V4h8v2" />
-                              <path d="M19 6l-1 14H6L5 6" />
-                              <path d="M10 11v6M14 11v6" />
-                            </svg>
-                          </button>
+                          {!done && (
+                            <button
+                              type="button"
+                              onClick={() => removeLineItem(item.productId)}
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-status-cancelled/20 bg-status-cancelled/5 text-status-cancelled transition-colors hover:bg-status-cancelled hover:text-white"
+                              aria-label="Remove"
+                              title="Remove"
+                            >
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v6M14 11v6" />
+                              </svg>
+                            </button>
+                          )}
                         </div>
 
                         <div className="mt-3 grid grid-cols-3 gap-3">
                           <div>
                             <Label>Qty</Label>
                             <div className="flex min-w-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateLineItem(item.productId, {
-                                    quantity: Math.max(1, item.quantity - 1),
-                                  })
-                                }
-                                className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
-                                aria-label="Decrease quantity"
-                              >
-                                −
-                              </button>
+                              {!done && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateLineItem(item.productId, {
+                                      quantity: Math.max(1, item.quantity - 1),
+                                    })
+                                  }
+                                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                                  aria-label="Decrease quantity"
+                                >
+                                  −
+                                </button>
+                              )}
                               <Input
                                 type="number"
                                 min="1"
+                                disabled={done}
                                 value={item.quantity}
                                 onChange={(e) =>
                                   updateLineItem(item.productId, {
@@ -790,33 +936,38 @@ export default function WebOrderDetailsPage() {
                                 }
                                 className="w-0 min-w-0 flex-1 text-center"
                               />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateLineItem(item.productId, { quantity: item.quantity + 1 })
-                                }
-                                className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
-                                aria-label="Increase quantity"
-                              >
-                                +
-                              </button>
+                              {!done && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateLineItem(item.productId, { quantity: item.quantity + 1 })
+                                  }
+                                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                                  aria-label="Increase quantity"
+                                >
+                                  +
+                                </button>
+                              )}
                             </div>
                           </div>
                           <div>
                             <Label>Price</Label>
                             <div className="flex min-w-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setPrice(unitPrice - 1)}
-                                className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
-                                aria-label="Decrease price"
-                              >
-                                −
-                              </button>
+                              {!done && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPrice(unitPrice - 1)}
+                                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                                  aria-label="Decrease price"
+                                >
+                                  −
+                                </button>
+                              )}
                               <Input
                                 type="number"
                                 min="0"
                                 step="0.01"
+                                disabled={done}
                                 value={item.unitPrice !== "" ? String(Number(item.unitPrice)) : ""}
                                 onBlur={(e) => {
                                   if (e.target.value !== "") {
@@ -828,14 +979,16 @@ export default function WebOrderDetailsPage() {
                                 className="w-0 min-w-0 flex-1 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 title="Unit price (blank = storefront/base price)"
                               />
-                              <button
-                                type="button"
-                                onClick={() => setPrice(unitPrice + 1)}
-                                className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
-                                aria-label="Increase price"
-                              >
-                                +
-                              </button>
+                              {!done && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPrice(unitPrice + 1)}
+                                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg border border-black/10 text-foreground/60 hover:bg-black/5"
+                                  aria-label="Increase price"
+                                >
+                                  +
+                                </button>
+                              )}
                             </div>
                           </div>
                           <div>
@@ -865,6 +1018,7 @@ export default function WebOrderDetailsPage() {
                       type="number"
                       min="0"
                       step="0.01"
+                      disabled={done}
                       placeholder="0.00"
                       value={discount}
                       onChange={(e) => setDiscount(e.target.value)}
@@ -876,6 +1030,7 @@ export default function WebOrderDetailsPage() {
                       type="number"
                       min="0"
                       step="0.01"
+                      disabled={done}
                       placeholder="0.00"
                       value={advanceAmount}
                       onChange={(e) => setAdvanceAmount(e.target.value)}
@@ -893,6 +1048,7 @@ export default function WebOrderDetailsPage() {
                       type="number"
                       min="0"
                       step="0.01"
+                      disabled={done}
                       placeholder="0.00"
                       value={shippingFee}
                       onChange={(e) => setShippingFee(e.target.value)}
@@ -932,15 +1088,17 @@ export default function WebOrderDetailsPage() {
                   </div>
                 )}
 
-                {formError && (
+                {!done && formError && (
                   <p className="mt-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
                     {formError}
                   </p>
                 )}
 
-                <Button type="submit" disabled={submitting} className="mt-4 w-full">
-                  {submitting ? "Approving…" : `Approve Order (${formatAmount(grandTotal)}৳)`}
-                </Button>
+                {!done && (
+                  <Button type="submit" disabled={submitting} className="mt-4 w-full">
+                    {submitting ? "Approving…" : `Approve Order (${formatAmount(grandTotal)}৳)`}
+                  </Button>
+                )}
               </Card>
             </div>
           </div>
@@ -1029,6 +1187,8 @@ export default function WebOrderDetailsPage() {
 
             <Card>
               <h2 className="mb-3 text-base font-semibold text-foreground">Order actions</h2>
+              {!done && (
+              <>
               <select
                 value={nextResponse || currentResponse}
                 onChange={(e) => setNextResponse(e.target.value as CustomerResponse | "CANCEL" | "")}
@@ -1040,22 +1200,69 @@ export default function WebOrderDetailsPage() {
                     {RESPONSE_LABELS[r]}
                   </option>
                 ))}
-                {!isLead && <option value="CANCEL">Cancel</option>}
+                <option value="CANCEL">Cancel</option>
               </select>
-              {responseError && (
-                <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-                  {responseError}
-                </p>
+
+              {nextResponse === "CANCEL" ? (
+                <div className="mt-3 rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 p-3">
+                  <p className="mb-2 text-sm font-semibold text-status-cancelled">Cancellation Details</p>
+                  <Label>Cancel reason</Label>
+                  <select
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">Select cancel reason</option>
+                    {CANCEL_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2">
+                    <Label>Note (optional)</Label>
+                    <Textarea
+                      rows={2}
+                      placeholder="Add note about cancellation (optional)"
+                      value={cancelNote}
+                      onChange={(e) => setCancelNote(e.target.value)}
+                    />
+                  </div>
+                  {responseError && (
+                    <p className="mt-2 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                      {responseError}
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={!cancelReason || responseSaving}
+                    onClick={cancelOrder}
+                    className="mt-3 w-full"
+                  >
+                    {responseSaving ? "Cancelling…" : "Cancel Order"}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {responseError && (
+                    <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                      {responseError}
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!nextResponse || responseSaving}
+                    onClick={updateResponse}
+                    className="mt-3 w-full"
+                  >
+                    {responseSaving ? "Updating…" : "Update"}
+                  </Button>
+                </>
               )}
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={!nextResponse || responseSaving}
-                onClick={updateResponse}
-                className="mt-3 w-full"
-              >
-                {responseSaving ? "Updating…" : "Update"}
-              </Button>
+              </>
+              )}
 
 
               <div className="mt-4 rounded-lg border border-black/10 p-3">
@@ -1119,7 +1326,7 @@ export default function WebOrderDetailsPage() {
           </Card>
           </div>
 
-          {lineItems.length > 0 && !pricingInView && (
+          {!done && lineItems.length > 0 && !pricingInView && (
             <div className="sticky bottom-0 z-10 rounded-lg bg-primary px-6 py-1.5 shadow-card lg:col-span-3">
               <button
                 type="button"
@@ -1134,8 +1341,7 @@ export default function WebOrderDetailsPage() {
               </button>
             </div>
           )}
-        </form>
-      )}
+      </form>
 
       {showAllActivity && (
         <div

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api-client";
 import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
 import { telHref, whatsappHref } from "@/lib/phone";
-import { formatAmount, formatDateTime } from "@/lib/format";
+import { formatAmount, formatRelativeTime } from "@/lib/format";
 
 function listDate(value: string): string {
   const d = new Date(value);
@@ -38,6 +38,7 @@ interface CheckoutLead {
   id: string;
   channelId: string;
   customerResponse: CustomerResponseStatus | null;
+  cancelled: boolean;
   lastUpdate: { at: string; by: string | null };
   phone: string;
   name: string | null;
@@ -56,7 +57,7 @@ interface CheckoutLead {
   }[];
 }
 
-type WebRow = OrderListItem & { isLead?: boolean; hasResponse?: boolean };
+type WebRow = OrderListItem & { isLead?: boolean; hasResponse?: boolean; leadCancelled?: boolean };
 
 function leadToRow(lead: CheckoutLead): WebRow {
   return {
@@ -71,6 +72,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
     shipmentStatus: "NOT_SHIPPED",
     customerResponse: lead.customerResponse ?? "NO_RESPONSE",
     hasResponse: lead.customerResponse !== null,
+    leadCancelled: lead.cancelled,
     subtotal: String(lead.total),
     discount: "0",
     shippingFee: "0",
@@ -259,10 +261,7 @@ export default function WebOrdersPage() {
                   </th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Created At</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
-                                    <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
-                  {tab === "incomplete" && (
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Last Update</th>
-                  )}
+                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Order Items</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Success Rate</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
@@ -329,21 +328,18 @@ export default function WebOrdersPage() {
                       </div>
                       {!isCompleteWebOrder(o) && <div className="mt-1 text-xs text-red-600">Details missing</div>}
                     </td>
-                                        <td className="max-w-[220px] px-4 py-4 text-xs text-foreground">
-                      {o.notes && <div>{o.notes}</div>}
+                    <td className="max-w-[220px] px-4 py-4 text-xs text-foreground">
+                      <div className="text-foreground/50">
+                        Updated {formatRelativeTime(o.lastUpdate.at)}
+                        {o.lastUpdate.by ? ` · ${o.lastUpdate.by}` : ""}
+                      </div>
+                      {o.notes && <div className="mt-1">{o.notes}</div>}
                       {o.adminNotes.map((n) => (
                         <div key={n.id} className="mt-1">
                           <span className="font-medium text-foreground/60">{n.user?.name ?? "Unknown"}:</span> {n.note}
                         </div>
                       ))}
-                      {!o.notes && o.adminNotes.length === 0 && "—"}
                     </td>
-                    {tab === "incomplete" && (
-                    <td className="whitespace-nowrap px-4 py-4 text-xs">
-                      <div className="text-foreground/70">{formatDateTime(o.lastUpdate.at)}</div>
-                      <div className="text-foreground/50">{o.lastUpdate.by ?? "—"}</div>
-                    </td>
-                    )}
                     <td className="px-4 py-4">
                       <div className="space-y-2">
                         {o.items.map((item) => (

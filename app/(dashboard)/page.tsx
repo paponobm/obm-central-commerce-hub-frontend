@@ -9,8 +9,9 @@ import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
-import { StackedBarChart } from "@/components/ui/stacked-bar-chart";
+import { DonutChart } from "@/components/ui/donut-chart";
 import { BarTrendChart } from "@/components/ui/bar-trend-chart";
+import { WebOrderReport } from "@/components/dashboard/web-order-report";
 
 function shortDay(dateStr: string): string {
   return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-US", {
@@ -138,20 +139,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Status</h2>
-          <StackedBarChart
-            segments={Object.entries(data.ordersByStatus).map(([status, count]) => ({
-              label: status.replaceAll("_", " "),
-              value: count,
-            }))}
-          />
-        </Card>
+      {/* Web Order Report is store-specific (a web order funnel only means
+          something for one store at a time), so it only joins this row
+          when a store is active; otherwise Orders by Source takes it alone. */}
+      <div className={`mt-6 grid grid-cols-1 gap-6 ${activeChannel ? "lg:grid-cols-2" : ""}`}>
+        {activeChannel && <WebOrderReport channelId={activeChannel.id} />}
 
         <Card>
           <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Source</h2>
-          <StackedBarChart
+          <DonutChart
             segments={data.ordersBySource.map((s) => ({
               label: s.source,
               value: s.orderCount,

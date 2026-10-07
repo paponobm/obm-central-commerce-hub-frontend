@@ -36,6 +36,20 @@ export const WEB_STAGE_LABELS: Record<WebStage, string> = {
   cancelled: "Cancel",
 };
 
+// One solid, saturated color per stage — eye-catching on purpose, not a
+// pale tint — so the stage badge reads at a glance next to the (always-sky)
+// WEB badge.
+export const WEB_STAGE_COLORS: Record<WebStage, string> = {
+  incomplete: "bg-amber-500 text-white",
+  processing: "bg-indigo-600 text-white",
+  goodNoResponse: "bg-teal-600 text-white",
+  noResponse: "bg-gray-500 text-white",
+  advancePayment: "bg-purple-600 text-white",
+  onHold: "bg-orange-500 text-white",
+  approved: "bg-green-600 text-white",
+  cancelled: "bg-red-600 text-white",
+};
+
 const APPROVED_STATUSES = new Set<OrderStatus>([
   "CONFIRMED",
   "PROCESSING",
@@ -63,8 +77,11 @@ export function webOrderStage(o: {
   // Leads only: whether a response has been set from Order actions. Until
   // then the lead stays in Incomplete regardless of its response field.
   hasResponse?: boolean;
+  // Leads only: cancelled from Order actions — takes priority over everything else.
+  leadCancelled?: boolean;
 }): WebStage | null {
   if (o.isLead) {
+    if (o.leadCancelled) return "cancelled";
     if (!o.hasResponse) return "incomplete";
     if (o.customerResponse === "ON_HOLD") return "onHold";
     if (o.customerResponse === "ADVANCE_PAYMENT") return "advancePayment";

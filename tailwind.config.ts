@@ -5,6 +5,10 @@ const config: Config = {
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    // lib/ holds class-name lookup tables (e.g. WEB_STAGE_COLORS) — without
+    // this, Tailwind's scanner never sees those strings and silently
+    // generates no CSS for them at all.
+    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {

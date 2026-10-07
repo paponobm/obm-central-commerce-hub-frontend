@@ -215,6 +215,8 @@ export interface OrderDetail extends OrderBase {
   createdFromLead?: boolean;
   // Leads only: whether a response has been set from Order actions.
   leadResponseSet?: boolean;
+  // Leads only: whether the checkout has been cancelled from Order actions.
+  leadCancelled?: boolean;
   customer: Customer;
   channel: Channel | null;
   statusHistory: OrderStatusHistoryEntry[];
