@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { StoreSelector } from "./store-selector";
+import { ThemeToggle } from "./theme-toggle";
 
 function NavAction({
   icon,
@@ -77,6 +78,7 @@ export function Topbar() {
       )}
 
       <div className="ml-auto flex items-center gap-3">
+        <ThemeToggle />
         <span className="text-sm text-sidebar-fg/70">{user?.email}</span>
         <div
           className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-fg"

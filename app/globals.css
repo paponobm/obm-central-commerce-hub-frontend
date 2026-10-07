@@ -42,8 +42,96 @@
   --chart-text-muted: #898781;
 }
 
+/* Dark mode: only the content area changes — the navy sidebar/topbar is
+   already dark in both modes. Toggled by ThemeToggle, which sets
+   data-theme on <html> and persists it (see lib/theme.ts). */
+:root[data-theme="dark"] {
+  --background: #0e1420;
+  --foreground: #e5e7eb;
+  --card-bg: #19202f;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+
+  --status-pending: #fbbf24;
+  --status-processing: #5b8def;
+  --status-delivered: #34d399;
+  --status-cancelled: #f87171;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: var(--font-sans);
+}
+
+/* text-foreground/NN: Tailwind's /NN opacity suffix doesn't apply to a
+   CSS-variable color like --foreground, so these utilities render at full,
+   too-dark opacity in light mode too (e.g. muted labels, an order number
+   under a date, icon buttons such as a row's copy button). Restated here as
+   real rgba so they're actually lighter, in both modes — dark mode's
+   versions further down override these when active. */
+.text-foreground\/70 {
+  color: rgba(16, 24, 40, 0.85);
+}
+.text-foreground\/60,
+.hover\:text-foreground\/60:hover {
+  color: rgba(16, 24, 40, 0.72);
+}
+.text-foreground\/50 {
+  color: rgba(16, 24, 40, 0.6);
+}
+.text-foreground\/40 {
+  color: rgba(16, 24, 40, 0.48);
+}
+.text-foreground\/30 {
+  color: rgba(16, 24, 40, 0.36);
+}
+
+/* Most of the app's content pages reach for plain Tailwind black/white
+   utilities (bg-white cards, border-black/10 dividers, bg-black/5 chips)
+   rather than the --card-bg / --foreground tokens above. Repainting those
+   here covers the app without touching every page individually; a page
+   that wants a true dark-native look can still override locally. */
+:root[data-theme="dark"] .bg-white {
+  background-color: var(--card-bg);
+}
+:root[data-theme="dark"] .border-black\/5,
+:root[data-theme="dark"] .border-black\/10,
+:root[data-theme="dark"] .border-black\/20 {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme="dark"] .bg-black\/5 {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+:root[data-theme="dark"] .bg-black\/10 {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+:root[data-theme="dark"] .hover\:bg-black\/5:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+:root[data-theme="dark"] .text-black,
+:root[data-theme="dark"] .text-black\/70,
+:root[data-theme="dark"] .text-black\/60 {
+  color: var(--foreground);
+}
+
+/* text-foreground/NN: Tailwind's /NN opacity suffix doesn't apply to a
+   CSS-variable color like --foreground, so these utilities render at full,
+   too-dark opacity against a dark background (e.g. muted labels, the order
+   number under a date, icon buttons such as the row copy button). Restated
+   here as real rgba so dark mode actually lightens them. */
+:root[data-theme="dark"] .text-foreground\/70 {
+  color: rgba(229, 231, 235, 0.85);
+}
+:root[data-theme="dark"] .text-foreground\/60,
+:root[data-theme="dark"] .hover\:text-foreground\/60:hover {
+  color: rgba(229, 231, 235, 0.72);
+}
+:root[data-theme="dark"] .text-foreground\/50 {
+  color: rgba(229, 231, 235, 0.6);
+}
+:root[data-theme="dark"] .text-foreground\/40 {
+  color: rgba(229, 231, 235, 0.48);
+}
+:root[data-theme="dark"] .text-foreground\/30 {
+  color: rgba(229, 231, 235, 0.36);
 }

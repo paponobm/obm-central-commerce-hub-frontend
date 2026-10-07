@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, ApiError } from "@/lib/api-client";
 import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
+import { telHref, whatsappHref } from "@/lib/phone";
 import { formatAmount, formatDateTime } from "@/lib/format";
 
 function listDate(value: string): string {
@@ -292,8 +293,9 @@ export default function WebOrdersPage() {
                       <div className="whitespace-pre-line text-foreground/70">{listDate(o.createdAt)}</div>
                       <div className="text-xs text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4 text-foreground/70">
                       <div className="flex items-center gap-1.5">
+                        <span className="opacity-70" title="Customer">👤</span>
                         <span className="font-medium text-foreground">{o.shippingName || o.customer.name}</span>
                         <button
                           type="button"
@@ -304,11 +306,30 @@ export default function WebOrdersPage() {
                           {copiedId === o.id ? "✓" : "⧉"}
                         </button>
                       </div>
-                      <div className="text-xs text-foreground/50">{o.shippingPhone || o.customer.phone}</div>
-                      <div className="max-w-[200px] truncate text-xs text-foreground/40">{o.shippingAddress}</div>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-foreground">
+                        <a href={telHref(o.shippingPhone || o.customer.phone)} className="text-blue-500 hover:text-blue-700" title="Call">
+                          📞
+                        </a>
+                        <a
+                          href={whatsappHref(o.shippingPhone || o.customer.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-status-delivered hover:opacity-80"
+                          title="WhatsApp"
+                        >
+                          💬
+                        </a>
+                        <span>{o.shippingPhone || o.customer.phone}</span>
+                      </div>
+                      <div className="mt-1 flex items-start gap-1 text-xs text-foreground">
+                        <span className="opacity-70">📍</span>
+                        <span className="max-w-[180px] truncate" title={o.shippingAddress}>
+                          {o.shippingAddress}
+                        </span>
+                      </div>
                       {!isCompleteWebOrder(o) && <div className="mt-1 text-xs text-red-600">Details missing</div>}
                     </td>
-                                        <td className="max-w-[220px] px-4 py-4 text-xs text-foreground/50">
+                                        <td className="max-w-[220px] px-4 py-4 text-xs text-foreground">
                       {o.notes && <div>{o.notes}</div>}
                       {o.adminNotes.map((n) => (
                         <div key={n.id} className="mt-1">

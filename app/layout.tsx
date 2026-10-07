@@ -19,6 +19,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Sets data-theme before paint, so there's no flash of the wrong
+            theme on load. Keep in sync with lib/theme.ts's storage key. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{if(localStorage.getItem('obm-theme')==='dark'){document.documentElement.dataset.theme='dark';}}catch(e){}})();",
+          }}
+        />
+      </head>
       <body className={`${inter.variable} ${notoSans.variable} font-sans antialiased`}>
         <AuthProvider>
           <ChannelScopeProvider>{children}</ChannelScopeProvider>
