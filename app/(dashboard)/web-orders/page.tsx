@@ -5,6 +5,13 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api-client";
 import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
+
+function listDate(value: string): string {
+  const d = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hour = d.getHours() % 12 || 12;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()},\n${hour}:${pad(d.getMinutes())} ${d.getHours() < 12 ? "am" : "pm"}`;
+}
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
@@ -149,7 +156,7 @@ export default function WebOrdersPage() {
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      api.get<OrderListItem[]>("/admin/orders?source=WEBSITE"),
+      api.get<OrderListItem[]>("/admin/orders?source=WEBSITE&includeWebUnapproved=true"),
       api.get<CheckoutLead[]>("/admin/orders/checkout-leads"),
     ])
       .then(([orderRows, leads]) => setOrders([...orderRows, ...leads.map(leadToRow)]))
@@ -282,7 +289,7 @@ export default function WebOrdersPage() {
                       />
                     </td>
                     <td className="whitespace-nowrap px-4 py-4">
-                      <div className="text-foreground/70">{formatDateTime(o.createdAt)}</div>
+                      <div className="whitespace-pre-line text-foreground/70">{listDate(o.createdAt)}</div>
                       <div className="text-xs text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
                     </td>
                     <td className="px-4 py-4">

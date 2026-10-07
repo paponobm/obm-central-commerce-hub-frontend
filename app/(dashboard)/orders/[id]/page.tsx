@@ -68,7 +68,7 @@ export default function OrderDetailPage() {
     try {
       const data = await api.get<OrderDetail>(`/admin/orders/${orderId}`);
       setOrder(data);
-      setResponseValue(data.customerResponse);
+      setResponseValue(data.customerResponse ?? "NO_RESPONSE");
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to load order");
     }
@@ -150,7 +150,7 @@ export default function OrderDetailPage() {
         </Pill>
         <Pill>Shipment: {order.shipmentStatus.replaceAll("_", " ")}</Pill>
         <Pill tone={order.customerResponse === "CONFIRMED" ? "primary" : "default"}>
-          Response: {responseLabel(order.customerResponse)}
+          Response: {responseLabel(order.customerResponse ?? "NO_RESPONSE")}
         </Pill>
         <Pill>{order.source}</Pill>
         {order.channel && <Pill>{order.channel.name}</Pill>}
@@ -317,7 +317,7 @@ export default function OrderDetailPage() {
                 variant="secondary"
                 disabled={
                   respondingSaving ||
-                  (responseValue === order.customerResponse && !responseNote)
+                  (responseValue === (order.customerResponse ?? "NO_RESPONSE") && !responseNote)
                 }
                 className="w-full"
               >

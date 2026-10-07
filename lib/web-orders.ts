@@ -54,7 +54,7 @@ export function webOrderStage(o: {
   isLead?: boolean;
   status: OrderStatus;
   webApproved: boolean;
-  customerResponse: CustomerResponseStatus;
+  customerResponse: CustomerResponseStatus | null;
   paymentStatus: PaymentStatus;
   shippingName: string;
   shippingPhone: string;

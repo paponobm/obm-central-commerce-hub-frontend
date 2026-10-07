@@ -177,7 +177,8 @@ interface OrderBase {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   shipmentStatus: ShipmentStatus;
-  customerResponse: CustomerResponseStatus;
+  // Empty until someone sets it from Web Orders.
+  customerResponse: CustomerResponseStatus | null;
   subtotal: string;
   discount: string;
   shippingFee: string;

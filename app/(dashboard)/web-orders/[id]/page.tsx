@@ -8,7 +8,6 @@ import { formatAmount, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/badge";
 import { WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 
@@ -182,7 +181,8 @@ export default function WebOrderDetailsPage() {
 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [nextResponse, setNextResponse] = useState<CustomerResponse | "">("");
+  // "CANCEL" is a choice in the dropdown, not a customer response.
+  const [nextResponse, setNextResponse] = useState<CustomerResponse | "CANCEL" | "">("");
   const [responseSaving, setResponseSaving] = useState(false);
   const [responseError, setResponseError] = useState<string | null>(null);
   const [notes, setNotes] = useState<OrderNote[]>([]);
@@ -213,6 +213,21 @@ export default function WebOrderDetailsPage() {
   // is still incomplete.
   async function updateResponse() {
     if (!order || !nextResponse) return;
+    if (nextResponse === "CANCEL") {
+      // Cancelling leaves the web stages and releases the order's reserved stock.
+      if (!window.confirm(`Cancel order ${order.orderNumber}?`)) return;
+      setResponseError(null);
+      setResponseSaving(true);
+      try {
+        await api.patch(`/admin/orders/${orderId}/status`, { status: "CANCELLED" });
+        router.push("/web-orders");
+      } catch (err) {
+        setResponseError(err instanceof ApiError ? err.message : "Failed to cancel order");
+      } finally {
+        setResponseSaving(false);
+      }
+      return;
+    }
     setResponseError(null);
     setResponseSaving(true);
     try {
@@ -359,7 +374,8 @@ export default function WebOrderDetailsPage() {
           sku: p.sku,
           image: p.images?.[0]?.url,
           quantity: 1,
-          unitPrice: "",
+          // Starts at the price the picker shows, so it can be edited like the rest.
+          unitPrice: String(Number(p.basePrice)),
         },
       ];
     });
@@ -518,11 +534,14 @@ export default function WebOrderDetailsPage() {
   // The response shown as selected in Order actions. A lead that has never
   // had one set shows the placeholder instead.
   const currentResponse: CustomerResponse | "" =
-    isLead && !order.leadResponseSet ? "" : order.customerResponse;
+    isLead && !order.leadResponseSet ? "" : (order.customerResponse ?? "");
 
+
+  // Clock cursor while something is being saved on this page.
+  const busy = submitting || responseSaving || noteSaving;
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${busy ? "cursor-wait" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -544,11 +563,7 @@ export default function WebOrderDetailsPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {isLead ? (
-            <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700">Incomplete</span>
-          ) : (
-            <StatusBadge status={order.status} />
-          )}
+          <span className="rounded-full bg-black/5 px-3 py-1 font-semibold text-foreground/70">{stageLabel}</span>
           <span className="rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-700">WEB</span>
           <span className="rounded-full border border-black/10 px-3 py-1 text-foreground/70">
             Created {formatDateTime(order.createdAt)}
@@ -1016,7 +1031,7 @@ export default function WebOrderDetailsPage() {
               <h2 className="mb-3 text-base font-semibold text-foreground">Order actions</h2>
               <select
                 value={nextResponse || currentResponse}
-                onChange={(e) => setNextResponse(e.target.value as CustomerResponse | "")}
+                onChange={(e) => setNextResponse(e.target.value as CustomerResponse | "CANCEL" | "")}
                 className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm"
               >
                 <option value="">Select response</option>
@@ -1025,6 +1040,7 @@ export default function WebOrderDetailsPage() {
                     {RESPONSE_LABELS[r]}
                   </option>
                 ))}
+                {!isLead && <option value="CANCEL">Cancel</option>}
               </select>
               {responseError && (
                 <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
@@ -1040,6 +1056,7 @@ export default function WebOrderDetailsPage() {
               >
                 {responseSaving ? "Updating…" : "Update"}
               </Button>
+
 
               <div className="mt-4 rounded-lg border border-black/10 p-3">
                 <Label>Note</Label>
