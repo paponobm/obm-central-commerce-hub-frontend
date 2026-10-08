@@ -63,25 +63,24 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: "Suppliers", href: "/suppliers" },
     ],
   },
-  { type: "link", label: "Customers", href: "/customers", permission: "customers.view", centralOnly: true },
+  { type: "link", label: "Customers", href: "/customers", permission: "customers.view" },
   { type: "link", label: "Channels", href: "/channels", permission: "channels.view", centralOnly: true },
-  { type: "link", label: "Reports", href: "/reports", permission: "reports.view", centralOnly: true },
+  { type: "link", label: "Reports", href: "/reports", permission: "reports.view" },
   { type: "link", label: "Users", href: "/users", permission: "users.manage", centralOnly: true },
   { type: "link", label: "Roles", href: "/roles", permission: "users.manage", centralOnly: true },
   { type: "link", label: "Settings", href: "/settings", permission: "users.manage", centralOnly: true },
 ];
 
-// Inside a storefront (a specific store selected) only Dashboard, Orders and
-// that store's Products are available. Everything below is the shared,
-// cross-store side of the business — hidden from the sidebar and redirected
-// away from if reached by URL. The server enforces the same boundary for
-// store-assigned users (CentralOnlyGuard); this is the matching UI mode.
+// Inside a storefront (a specific store selected), Dashboard, Orders,
+// Products, Customers, and Reports are all available, each scoped to that
+// store. Everything below is the shared, cross-store side of the business —
+// hidden from the sidebar and redirected away from if reached by URL. The
+// server enforces the same boundary for store-assigned users
+// (CentralOnlyGuard); this is the matching UI mode.
 export const STORE_BLOCKED_PREFIXES = [
   "/inventory",
   "/purchases",
   "/suppliers",
-  "/customers",
-  "/reports",
   "/users",
   "/roles",
   "/settings",
@@ -95,4 +94,17 @@ export function isBlockedInStore(pathname: string): boolean {
   }
   // Store workspace tabs that are central-only: /channels/:id/{customers,inventory,reports}
   return /^\/channels\/[^/]+\/(customers|inventory|reports)(\/|$)/.test(pathname);
+}
+
+// The reverse boundary: Web Orders (the checkout-lead funnel) is inherently
+// per-channel — its own nav link and topbar shortcut only ever appear once a
+// specific store is active — so landing back on "All Stores" while still on
+// one of its pages (e.g. by switching stores mid-visit) sends you to the
+// Dashboard instead of leaving an orphaned page open. Orders and New Order
+// are deliberately NOT here — both already have their own "All Stores" /
+// "no channel" modes.
+export const STORE_ONLY_PREFIXES = ["/web-orders"];
+
+export function isBlockedWithoutStore(pathname: string): boolean {
+  return STORE_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 
@@ -8,8 +9,18 @@ export function StoreSelector() {
   const { channels, loading, activeChannelId, activeChannel, setActiveChannelId } =
     useChannelScope();
   const { hasPermission } = useAuth();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // Picking a store from this dropdown always lands on its Dashboard,
+  // regardless of which page you were on — whatever that page was scoped
+  // to no longer applies under the new store.
+  function selectStore(channelId: string | null) {
+    setActiveChannelId(channelId);
+    setOpen(false);
+    router.push("/");
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -52,10 +63,7 @@ export function StoreSelector() {
         <div className="absolute left-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
           <button
             type="button"
-            onClick={() => {
-              setActiveChannelId(null);
-              setOpen(false);
-            }}
+            onClick={() => selectStore(null)}
             className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-black/5 ${
               activeChannelId === null
                 ? "font-medium text-foreground"
@@ -70,10 +78,7 @@ export function StoreSelector() {
             <button
               key={channel.id}
               type="button"
-              onClick={() => {
-                setActiveChannelId(channel.id);
-                setOpen(false);
-              }}
+              onClick={() => selectStore(channel.id)}
               className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-black/5 ${
                 activeChannelId === channel.id
                   ? "font-medium text-foreground"

@@ -99,8 +99,11 @@ export default function NewOrderPage() {
           (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
         )
       : products;
-    return pool.slice(0, 20);
-  }, [products, productSearch]);
+    // Already-added products drop out of the picker instead of staying
+    // clickable — adjust the Qty on the left to add more of the same item.
+    const notAdded = pool.filter((p) => !lineItems.some((li) => li.productId === p.id));
+    return notAdded.slice(0, 20);
+  }, [products, productSearch, lineItems]);
 
   function addProduct(p: Product) {
     setLineItems((rows) => {
@@ -349,7 +352,11 @@ export default function NewOrderPage() {
                           </div>
                           <div className="text-xs font-medium text-primary">SKU: {item.sku}</div>
                           <div className="mt-1 flex items-center gap-3 text-xs">
-                            <span className="text-foreground/60">{formatAmount(unitPrice)}</span>
+                            {/* Always the product's catalog price, not the
+                                (possibly edited) unitPrice below — so editing
+                                this line's price never looks like it changed
+                                the product's actual price. */}
+                            <span className="text-foreground/60">{formatAmount(product?.basePrice ?? 0)}</span>
                             {available !== null && (
                               <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
                                 Stock: {available}

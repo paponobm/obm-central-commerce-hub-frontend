@@ -1,8 +1,7 @@
 export function money(value: string | number): string {
   const num = typeof value === "string" ? parseFloat(value) : value;
   return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(num);
 }
 
@@ -34,12 +33,10 @@ export function formatRelativeTime(value: string): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-// Whole amounts show without decimals ("200"), fractional ones keep up to
-// two places ("0.04") so a real sub-unit price is never rounded away.
+// Always a whole number ("200") — no decimal point anywhere in the app.
 export function formatAmount(value: string | number): string {
   const num = typeof value === "string" ? parseFloat(value) : value;
   return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(num);
 }

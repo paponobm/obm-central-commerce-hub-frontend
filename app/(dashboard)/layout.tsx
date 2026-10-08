@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
-import { isBlockedInStore } from "@/components/layout/nav-config";
+import { isBlockedInStore, isBlockedWithoutStore } from "@/components/layout/nav-config";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 
@@ -13,7 +13,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { activeChannelId } = useChannelScope();
-  const blocked = !!activeChannelId && isBlockedInStore(pathname);
+  const blocked = activeChannelId
+    ? isBlockedInStore(pathname)
+    : isBlockedWithoutStore(pathname);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -21,7 +23,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   }, [loading, user, router]);
 
-  // A storefront has no access to the central pages — send it home.
+  // A storefront has no access to the central pages, and a store-only page
+  // (e.g. Web Orders) has nothing to show once scope drops back to "All
+  // Stores" — either way, send it home.
   useEffect(() => {
     if (blocked) router.replace("/");
   }, [blocked, router]);
