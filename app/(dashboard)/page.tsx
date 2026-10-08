@@ -5,13 +5,14 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import type { DashboardData, TopProduct } from "@/lib/types";
-import { money, formatDateTime } from "@/lib/format";
+import { formatAmount, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { DonutChart } from "@/components/ui/donut-chart";
 import { BarTrendChart } from "@/components/ui/bar-trend-chart";
 import { WebOrderReport } from "@/components/dashboard/web-order-report";
+import { OrdersBySourceReport } from "@/components/dashboard/orders-by-source-report";
 
 function shortDay(dateStr: string): string {
   return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-US", {
@@ -107,7 +108,7 @@ export default function DashboardPage() {
         className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${activeChannel ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}
       >
         <StatCard label="Today's Orders" value={String(data.today.orderCount)} delta={orderDelta} />
-        <StatCard label="Today's Sales" value={money(data.today.salesTotal)} />
+        <StatCard label="Today's Sales" value={formatAmount(data.today.salesTotal)} />
         <StatCard label="Pending Orders" value={String(pending)} />
         {!activeChannel && (
           <StatCard
@@ -130,7 +131,7 @@ export default function DashboardPage() {
           {data.ordersByChannel.map((c) => (
             <Card key={c.channelId ?? "none"}>
               <div className="truncate text-sm text-foreground/60">{c.channelName}</div>
-              <div className="mt-2 text-2xl font-semibold text-foreground">{money(c.salesTotal)}</div>
+              <div className="mt-2 text-2xl font-semibold text-foreground">{formatAmount(c.salesTotal)}</div>
               <div className="mt-1 text-xs text-foreground/50">
                 {c.orderCount} {c.orderCount === 1 ? "order" : "orders"}
               </div>
@@ -145,16 +146,23 @@ export default function DashboardPage() {
       <div className={`mt-6 grid grid-cols-1 gap-6 ${activeChannel ? "lg:grid-cols-2" : ""}`}>
         {activeChannel && <WebOrderReport channelId={activeChannel.id} />}
 
-        <Card>
-          <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Source</h2>
-          <DonutChart
-            segments={data.ordersBySource.map((s) => ({
-              label: s.source,
-              value: s.orderCount,
-              secondaryLabel: money(s.salesTotal),
-            }))}
-          />
-        </Card>
+        {activeChannel ? (
+          // Store-scoped and filterable, same "Today ▾" control as Web Order
+          // Report. The all-stores view below has no single channel to scope
+          // a live order fetch to, so it keeps the original unfiltered stat.
+          <OrdersBySourceReport channelId={activeChannel.id} />
+        ) : (
+          <Card>
+            <h2 className="mb-4 text-sm font-semibold text-foreground">Orders by Source</h2>
+            <DonutChart
+              segments={data.ordersBySource.map((s) => ({
+                label: s.source,
+                value: s.orderCount,
+                secondaryLabel: formatAmount(s.salesTotal),
+              }))}
+            />
+          </Card>
+        )}
       </div>
 
       <Card className="mt-6">
@@ -199,7 +207,7 @@ export default function DashboardPage() {
                     <td className="py-2.5">
                       <StatusBadge status={o.status} />
                     </td>
-                    <td className="py-2.5 text-right font-medium">{money(o.total)}</td>
+                    <td className="py-2.5 text-right font-medium">{formatAmount(o.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -237,7 +245,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="text-sm font-semibold text-foreground">{p.quantitySold}</div>
-                    <div className="text-xs text-foreground/40">{money(p.revenue)}</div>
+                    <div className="text-xs text-foreground/40">{formatAmount(p.revenue)}</div>
                   </div>
                 </div>
               ))}

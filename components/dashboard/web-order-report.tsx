@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api-client";
 import type { CustomerResponseStatus, OrderListItem, OrderStatus, PaymentStatus } from "@/lib/types";
 import { webOrderStage, WEB_STAGE_LABELS, type WebStage } from "@/lib/web-orders";
+import { dateRangeCutoff, type DateRange } from "@/lib/date-range";
 import { Card } from "@/components/ui/card";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { DateRangeSelect } from "@/components/ui/date-range-select";
 
 // Just the checkout-lead fields this card needs to place a lead on a stage
 // (see /admin/orders/checkout-leads).
@@ -44,22 +46,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "incomplete", label: "Incomplete Orders" },
 ];
 
-type DateRange = "today" | "7d" | "30d" | "all";
-const DATE_RANGES: { key: DateRange; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "7d", label: "Last 7 days" },
-  { key: "30d", label: "Last 30 days" },
-  { key: "all", label: "All time" },
-];
-
-function rangeCutoff(range: DateRange): Date | null {
-  const now = new Date();
-  if (range === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (range === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  if (range === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return null;
-}
-
 // Same stage order used throughout Web Orders, minus Incomplete — that one
 // gets its own breakdown below instead of a single slice here.
 const WEB_STAGES: WebStage[] = [
@@ -89,16 +75,6 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("web");
   const [range, setRange] = useState<DateRange>("today");
-  const [rangeOpen, setRangeOpen] = useState(false);
-  const rangeRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (rangeRef.current && !rangeRef.current.contains(e.target as Node)) setRangeOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
 
   useEffect(() => {
     setRows(null);
@@ -147,7 +123,7 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
 
   const rangedRows = useMemo(() => {
     if (!rows) return null;
-    const cutoff = rangeCutoff(range);
+    const cutoff = dateRangeCutoff(range);
     return cutoff ? rows.filter((r) => new Date(r.createdAt) >= cutoff) : rows;
   }, [rows, range]);
 
@@ -175,41 +151,12 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
 
   const segments = tab === "web" ? webSegments : incompleteSegments;
   const total = segments.reduce((sum, s) => sum + s.value, 0);
-  const rangeLabel = DATE_RANGES.find((r) => r.key === range)!.label;
 
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">Web Order Report</h2>
-        <div ref={rangeRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setRangeOpen((v) => !v)}
-            className="flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-black/5"
-          >
-            📅 {rangeLabel}
-            <span aria-hidden>▾</span>
-          </button>
-          {rangeOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-lg border border-black/10 bg-card py-1 shadow-card">
-              {DATE_RANGES.map((r) => (
-                <button
-                  key={r.key}
-                  type="button"
-                  onClick={() => {
-                    setRange(r.key);
-                    setRangeOpen(false);
-                  }}
-                  className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-black/5 ${
-                    r.key === range ? "font-medium text-primary" : "text-foreground/70"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <DateRangeSelect value={range} onChange={setRange} />
       </div>
 
       {/* Underline tabs, same pattern as the Web Orders page's own tabs —

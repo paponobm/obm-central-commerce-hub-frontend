@@ -1017,9 +1017,9 @@ export default function WebOrderDetailsPage() {
                     <Input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="1"
                       disabled={done}
-                      placeholder="0.00"
+                      placeholder="0"
                       value={discount}
                       onChange={(e) => setDiscount(e.target.value)}
                     />
@@ -1029,9 +1029,9 @@ export default function WebOrderDetailsPage() {
                     <Input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="1"
                       disabled={done}
-                      placeholder="0.00"
+                      placeholder="0"
                       value={advanceAmount}
                       onChange={(e) => setAdvanceAmount(e.target.value)}
                     />
@@ -1047,9 +1047,9 @@ export default function WebOrderDetailsPage() {
                     <Input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="1"
                       disabled={done}
-                      placeholder="0.00"
+                      placeholder="0"
                       value={shippingFee}
                       onChange={(e) => setShippingFee(e.target.value)}
                     />

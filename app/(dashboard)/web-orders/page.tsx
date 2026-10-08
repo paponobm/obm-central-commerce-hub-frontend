@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
 import { telHref, whatsappHref } from "@/lib/phone";
@@ -29,8 +30,6 @@ type TabKey =
   | "cancelled"
   | "all";
 
-const TAB_STORAGE_KEY = "web-orders-tab";
-const SEARCH_STORAGE_KEY = "web-orders-search";
 
 // An unfinished storefront checkout (phone entered, details missing). It has
 // no order yet, so it is shown as a row in the same shape as an order.
@@ -122,25 +121,49 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 export default function WebOrdersPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [orders, setOrders] = useState<WebRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("processing");
-  // Remembered per browser tab, so Back from an order's details returns to the
-  // same tab and search rather than resetting to Processing.
-  useEffect(() => {
-    try {
-      const savedTab = sessionStorage.getItem(TAB_STORAGE_KEY) as TabKey | null;
-      if (savedTab && TABS.some((t) => t.key === savedTab)) setTab(savedTab);
-      const savedSearch = sessionStorage.getItem(SEARCH_STORAGE_KEY);
-      if (savedSearch) setSearch(savedSearch);
-    } catch {
-      // Storage unavailable (private mode or blocked): default to Processing.
-    }
-  }, []);
   // Row selection works on every tab, styled like the Order List checkboxes.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const { user } = useAuth();
+
+  // Tab and search live in the URL, not sessionStorage — a fresh visit (the
+  // sidebar link, etc.) always points at the plain /web-orders URL, so it
+  // defaults to Processing. Only Back/Forward restores a different tab,
+  // because that's the browser returning to the exact prior URL on its own.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlTab = params.get("tab") as TabKey | null;
+    if (urlTab && TABS.some((t) => t.key === urlTab)) setTab(urlTab);
+    const urlSearch = params.get("q");
+    if (urlSearch) setSearch(urlSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read once on mount only
+  }, []);
+
+  function updateUrl(nextTab: TabKey, nextSearch: string) {
+    const params = new URLSearchParams();
+    if (nextTab !== "processing") params.set("tab", nextTab);
+    if (nextSearch) params.set("q", nextSearch);
+    const qs = params.toString();
+    // replace, not push — switching tabs shouldn't pile up Back-stops; the
+    // single Web Orders history entry just reflects wherever you last were.
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function selectTab(key: TabKey) {
+    setTab(key);
+    setSelected(new Set());
+    updateUrl(key, search);
+  }
+
+  function updateSearch(value: string) {
+    setSearch(value);
+    updateUrl(tab, value);
+  }
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   async function copyCustomer(o: OrderListItem) {
@@ -158,12 +181,34 @@ export default function WebOrdersPage() {
   // direct page load (before session restore, the token isn't set yet).
   useEffect(() => {
     if (!user) return;
-    Promise.all([
-      api.get<OrderListItem[]>("/admin/orders?source=WEBSITE&includeWebUnapproved=true"),
-      api.get<CheckoutLead[]>("/admin/orders/checkout-leads"),
-    ])
-      .then(([orderRows, leads]) => setOrders([...orderRows, ...leads.map(leadToRow)]))
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load web orders"));
+
+    let cancelled = false;
+    function load() {
+      Promise.all([
+        api.get<OrderListItem[]>("/admin/orders?source=WEBSITE&includeWebUnapproved=true"),
+        api.get<CheckoutLead[]>("/admin/orders/checkout-leads"),
+      ])
+        .then(([orderRows, leads]) => {
+          if (!cancelled) setOrders([...orderRows, ...leads.map(leadToRow)]);
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof ApiError ? err.message : "Failed to load web orders");
+        });
+    }
+
+    load();
+    // No push channel from the backend (REST only), so a short poll stands
+    // in for real-time: a new storefront order shows up here within one
+    // interval, no manual refresh needed. Paused while the tab is hidden so
+    // it doesn't keep hitting the API when nobody's looking at the page.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [user]);
 
   const counts = useMemo(() => {
@@ -196,15 +241,7 @@ export default function WebOrdersPage() {
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => {
-              setTab(t.key);
-              try {
-                sessionStorage.setItem(TAB_STORAGE_KEY, t.key);
-              } catch {
-                // Storage unavailable: the tab still switches, it just won't be remembered.
-              }
-              setSelected(new Set());
-            }}
+            onClick={() => selectTab(t.key)}
             className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
               tab === t.key ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
             }`}
@@ -218,14 +255,7 @@ export default function WebOrdersPage() {
       <div className="mb-4 w-72">
         <input
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            try {
-              sessionStorage.setItem(SEARCH_STORAGE_KEY, e.target.value);
-            } catch {
-              // Storage unavailable: search still works, it just won't be remembered.
-            }
-          }}
+          onChange={(e) => updateSearch(e.target.value)}
           placeholder="Search order #, customer, phone…"
           className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
         />

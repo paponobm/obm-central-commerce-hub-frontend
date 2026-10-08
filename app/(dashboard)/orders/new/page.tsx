@@ -522,8 +522,8 @@ export default function NewOrderPage() {
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                placeholder="0.00"
+                step="1"
+                placeholder="0"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
               />
@@ -533,8 +533,8 @@ export default function NewOrderPage() {
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                placeholder="0.00"
+                step="1"
+                placeholder="0"
                 value={advanceAmount}
                 onChange={(e) => setAdvanceAmount(e.target.value)}
               />
@@ -550,8 +550,8 @@ export default function NewOrderPage() {
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                placeholder="0.00"
+                step="1"
+                placeholder="0"
                 value={shippingFee}
                 onChange={(e) => setShippingFee(e.target.value)}
               />

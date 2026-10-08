@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { Product, OrderDetail } from "@/lib/types";
+import type { OrderSource, PaymentMethod, Product, OrderDetail, Payment } from "@/lib/types";
 import { formatAmount } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 
+const SOURCES: OrderSource[] = ["UNKNOWN", "MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
+const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 // Free-text on the order, purely informational (see Order.deliveryMethod) —
 // not tied to any courier integration, so this list is just a starting set.
 const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delivery", "Other"];
@@ -52,6 +54,7 @@ export default function EditOrderPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS[0]);
+  const [source, setSource] = useState<OrderSource>("UNKNOWN");
   const [shippingAddress, setShippingAddress] = useState("");
   const [shippingNote, setShippingNote] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
@@ -59,6 +62,13 @@ export default function EditOrderPage() {
   const [discount, setDiscount] = useState("");
   const [shippingFee, setShippingFee] = useState("");
 
+  // Advance Payment rows — editable in place, saved per-row via its own
+  // "Update" button rather than the main form submit, since a payment edit
+  // goes through a different endpoint (PATCH .../payments/:paymentId).
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [paymentDrafts, setPaymentDrafts] = useState<
+    Record<string, { amount: string; method: PaymentMethod; transactionId: string }>
+  >({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const pricingRef = useRef<HTMLDivElement>(null);
@@ -86,10 +96,24 @@ export default function EditOrderPage() {
         setCustomerName(o.shippingName);
         setCustomerPhone(o.shippingPhone);
         setDeliveryMethod(o.deliveryMethod ?? DELIVERY_METHODS[0]);
+        setSource(o.source);
         setShippingAddress(o.shippingAddress);
         setShippingNote(o.notes ?? "");
         setDiscount(Number(o.discount) > 0 ? o.discount : "");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
+        setPayments(o.payments);
+        setPaymentDrafts(
+          Object.fromEntries(
+            o.payments.map((p) => [
+              p.id,
+              {
+                amount: String(Math.round(Number(p.amount))),
+                method: p.method,
+                transactionId: p.transactionId ?? "",
+              },
+            ]),
+          ),
+        );
         setLineItems(
           o.items.map((item) => ({
             productId: item.productId,
@@ -146,6 +170,32 @@ export default function EditOrderPage() {
     setLineItems((rows) => rows.filter((r) => r.productId !== productId));
   }
 
+  // Saves every Advance Payment row whose draft actually changed, as part of
+  // the single Save Changes submit rather than a separate button per row.
+  async function savePaymentDrafts() {
+    let latestPayments = payments;
+    for (const p of payments) {
+      const draft = paymentDrafts[p.id];
+      if (!draft) continue;
+      const amount = Math.round(Number(draft.amount));
+      const transactionId = draft.transactionId || null;
+      const unchanged =
+        amount === Math.round(Number(p.amount)) &&
+        draft.method === p.method &&
+        transactionId === p.transactionId;
+      if (unchanged) continue;
+      if (!amount || amount < 1) {
+        throw new Error("Advance payment amount must be a whole number of at least 1.");
+      }
+      const updated = await api.patch<OrderDetail>(
+        `/admin/orders/${orderId}/payments/${p.id}`,
+        { amount, method: draft.method, transactionId },
+      );
+      latestPayments = updated.payments;
+    }
+    setPayments(latestPayments);
+  }
+
   // Mirrors OrdersService.updateOrder's exact formula, same as New Order.
   const subTotal = lineItems.reduce((sum, item) => {
     const unitPrice = item.unitPrice
@@ -183,6 +233,7 @@ export default function EditOrderPage() {
         customerPhone,
         shippingAddress,
         deliveryMethod: deliveryMethod || undefined,
+        source,
         items: validItems.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -192,9 +243,14 @@ export default function EditOrderPage() {
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
         notes: shippingNote || undefined,
       });
-      router.push(`/orders/${orderId}`);
+      await savePaymentDrafts();
+      router.push("/orders");
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+      setFormError(
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : "Something went wrong. Try again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -245,7 +301,7 @@ export default function EditOrderPage() {
         title="Edit Order"
         description={`Update items, customer info, and charges for order ${order.orderNumber}.`}
         actions={
-          <Button variant="secondary" onClick={() => router.push(`/orders/${orderId}`)}>
+          <Button variant="secondary" onClick={() => router.push("/orders")}>
             Cancel
           </Button>
         }
@@ -284,7 +340,7 @@ export default function EditOrderPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
               <Label>Address</Label>
               <Textarea
@@ -303,6 +359,22 @@ export default function EditOrderPage() {
                 value={shippingNote}
                 onChange={(e) => setShippingNote(e.target.value)}
               />
+            </div>
+            <div>
+              <Label>Extra Options</Label>
+              <div className="space-y-3 rounded-lg border border-black/10 p-3">
+                {/* Channel is set once at order creation (it's baked into
+                    the line items' channel-scoped pricing) and isn't part
+                    of UpdateOrderDto, so it's not editable here. Source is
+                    just a tag, so it's editable, same as at creation. */}
+                <Select value={source} onChange={(e) => setSource(e.target.value as OrderSource)}>
+                  {SOURCES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.charAt(0) + s.slice(1).toLowerCase()}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
           </div>
         </Card>
@@ -367,11 +439,16 @@ export default function EditOrderPage() {
                         <button
                           type="button"
                           onClick={() => removeLineItem(item.productId)}
-                          className="shrink-0 text-status-cancelled hover:opacity-70"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-status-cancelled/20 bg-status-cancelled/5 text-status-cancelled transition-colors hover:bg-status-cancelled hover:text-white"
                           aria-label="Remove"
                           title="Remove"
                         >
-                          🗑
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                          </svg>
                         </button>
                       </div>
 
@@ -521,8 +598,8 @@ export default function EditOrderPage() {
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
-                  placeholder="0.00"
+                  step="1"
+                  placeholder="0"
                   value={discount}
                   onChange={(e) => setDiscount(e.target.value)}
                 />
@@ -538,8 +615,8 @@ export default function EditOrderPage() {
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
-                  placeholder="0.00"
+                  step="1"
+                  placeholder="0"
                   value={shippingFee}
                   onChange={(e) => setShippingFee(e.target.value)}
                 />
@@ -551,6 +628,74 @@ export default function EditOrderPage() {
                 </div>
               </div>
             </div>
+
+            {payments.length > 0 && (
+              <div className="mt-4 border-t border-black/5 pt-4">
+                <Label>Advance Payment</Label>
+                {/* Each payment is saved independently via its own Update
+                    PATCH, folded into the single Save Changes submit below
+                    rather than a separate button per row. Amount is whole
+                    numbers only, no decimal point. */}
+                <div className="mt-1 space-y-3">
+                  {payments.map((p) => {
+                    const draft = paymentDrafts[p.id];
+                    if (!draft) return null;
+                    return (
+                      <div key={p.id} className="rounded-lg border border-black/10 p-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div>
+                            <Label>Amount</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={draft.amount}
+                              onChange={(e) =>
+                                setPaymentDrafts((prev) => ({
+                                  ...prev,
+                                  [p.id]: { ...prev[p.id], amount: e.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label>Payment Method</Label>
+                            <Select
+                              value={draft.method}
+                              onChange={(e) =>
+                                setPaymentDrafts((prev) => ({
+                                  ...prev,
+                                  [p.id]: { ...prev[p.id], method: e.target.value as PaymentMethod },
+                                }))
+                              }
+                            >
+                              {PAYMENT_METHODS.map((m) => (
+                                <option key={m} value={m}>
+                                  {m.replaceAll("_", " ")}
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Transaction ID</Label>
+                            <Input
+                              placeholder="Enter transaction ID"
+                              value={draft.transactionId}
+                              onChange={(e) =>
+                                setPaymentDrafts((prev) => ({
+                                  ...prev,
+                                  [p.id]: { ...prev[p.id], transactionId: e.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {formError && (
               <p className="mt-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">

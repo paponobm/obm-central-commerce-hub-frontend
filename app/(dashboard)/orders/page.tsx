@@ -509,11 +509,11 @@ export default function OrdersPage() {
       <PageHeader
         title="Orders"
         description="Every order, from every storefront and every manual channel, in one place."
-        actions={
-          <Button variant="primary" onClick={() => router.push("/orders/new")}>
-            New Order
-          </Button>
-        }
+        // actions={
+        //   <Button variant="primary" onClick={() => router.push("/orders/new")}>
+        //     New Order
+        //   </Button>
+        // }
       />
 
       <div className="mb-4 flex gap-1 overflow-x-auto border-b border-black/5">
