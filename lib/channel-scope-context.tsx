@@ -17,6 +17,13 @@ const STORAGE_KEY = "obm.activeChannelId";
 interface ChannelScopeContextValue {
   channels: ChannelWithStats[] | null;
   loading: boolean;
+  // True once the persisted store selection has actually been applied (or
+  // determined not to apply) — distinct from `loading`, which flips to
+  // false as soon as the channel list itself arrives, one render BEFORE
+  // this restore step runs. Code that treats a null activeChannelId as
+  // meaningful (e.g. "no store is active") should wait for this, or it'll
+  // act on a transient null that's about to be overwritten.
+  restored: boolean;
   activeChannelId: string | null; // null = "All Stores"
   activeChannel: ChannelWithStats | null;
   setActiveChannelId: (channelId: string | null) => void;
@@ -28,12 +35,13 @@ const ChannelScopeContext = createContext<ChannelScopeContextValue | undefined>(
 );
 
 export function ChannelScopeProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [channels, setChannels] = useState<ChannelWithStats[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeChannelId, setActiveChannelIdState] = useState<string | null>(
     null,
   );
+  const [restored, setRestored] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -54,15 +62,23 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
   // fetch returns only their assigned stores, so stale state from a
   // previous session must never leak across a re-login.
   useEffect(() => {
+    // While auth itself is still rehydrating (e.g. the refresh-token call
+    // right after a hard page reload), `user` is transiently null even for
+    // someone who's genuinely signed in — treating that as "logged out"
+    // here would finalize "no store" (restored=true) before the real
+    // channel list and saved selection ever get a chance to load.
+    if (authLoading) return;
     if (!user) {
       setChannels(null);
       setActiveChannelIdState(null);
       setLoading(false);
+      setRestored(true);
       return;
     }
     setLoading(true);
+    setRestored(false);
     load();
-  }, [user, load]);
+  }, [user, authLoading, load]);
 
   // Restore the persisted store selection once the channel list is in,
   // dropping it back to "All Stores" if it no longer resolves — e.g. the
@@ -75,6 +91,7 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
     // (manual) orders that a single-store scope would hide.
     if (channels.length === 1 && !user?.permissions.includes("channels.all_access")) {
       setActiveChannelIdState(channels[0].id);
+      setRestored(true);
       return;
     }
     const stored =
@@ -85,6 +102,7 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
       setActiveChannelIdState(null);
       if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
     }
+    setRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-derive when the channel list itself changes
   }, [channels, user]);
 
@@ -104,6 +122,7 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
       value={{
         channels,
         loading,
+        restored,
         activeChannelId,
         activeChannel,
         setActiveChannelId,

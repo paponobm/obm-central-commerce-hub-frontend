@@ -50,18 +50,34 @@ const CAN_CANCEL_FROM = new Set<OrderStatus>([
   "PREORDER",
 ]);
 
-// The shortest chain of valid transitions (per OrdersService's TRANSITIONS
-// state machine) from each status to READY_TO_SHIP — lets the bulk action
-// walk an order straight there in one click instead of only accepting
-// orders already sitting in PROCESSING. Statuses with no path here (already
-// shipped, cancelled, returned, etc.) genuinely can't reach RTS at all.
-const PATH_TO_RTS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  PENDING: ["CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
-  CONFIRMED: ["PROCESSING", "READY_TO_SHIP"],
-  PROCESSING: ["READY_TO_SHIP"],
-  PREORDER: ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
-  PENDING_CANCEL: ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP"],
+// The plain fulfillment pipeline. Bulk status moves only ever step to an
+// order's own immediate neighbor here — never jump ahead or behind several
+// stages at once, in either direction.
+const PIPELINE: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP", "SHIPPED"];
+const PIPELINE_LABEL: Partial<Record<OrderStatus, string>> = {
+  PENDING: "Pending",
+  CONFIRMED: "Confirmed",
+  PROCESSING: "Processing",
+  READY_TO_SHIP: "RTS",
+  SHIPPED: "Shipped",
 };
+
+// The steps to walk for the bulk "move forward" action. Every stage steps
+// to just its immediate neighbor — except PENDING, which goes straight to
+// RTS: Confirmed and Processing have no tab of their own to stop at, so
+// there's nothing there for a bulk action to land on. An order already
+// sitting in Confirmed or Processing (reached some other way) still only
+// moves one step at a time from there.
+function nextPathInPipeline(status: OrderStatus): OrderStatus[] | null {
+  if (status === "PENDING") return ["CONFIRMED", "PROCESSING", "READY_TO_SHIP"];
+  const i = PIPELINE.indexOf(status);
+  return i >= 0 && i < PIPELINE.length - 1 ? [PIPELINE[i + 1]] : null;
+}
+
+function prevInPipeline(status: OrderStatus): OrderStatus | null {
+  const i = PIPELINE.indexOf(status);
+  return i > 0 ? PIPELINE[i - 1] : null;
+}
 
 type OrderFilters = {
   printFilter: "all" | "printed" | "not";
@@ -265,11 +281,44 @@ export default function OrdersPage() {
     return sorted;
   }, [allOrders, activeTab, sort, printFilter, dateRange, skuFilter, nameFilter, includeOtherProducts]);
 
+  // Drives which bulk "Update Status" buttons even show — e.g. selecting
+  // only orders already sitting in RTS has nothing for "Sent to RTS" to do,
+  // so that button (and the others, by the same rule) just doesn't appear.
+  const selectedOrders = useMemo(
+    () => (allOrders ?? []).filter((o) => selectedIds.has(o.id)),
+    [allOrders, selectedIds],
+  );
+  // Each selected order moves to ITS OWN immediate next/previous stage, not
+  // a single fixed target — these just collect that per-order target so the
+  // button can show a specific name when the selection is all one status,
+  // and fall back to a generic label when it's a mixed bag.
+  const nextTargets = selectedOrders
+    .map((o) => nextPathInPipeline(o.status)?.at(-1) ?? null)
+    .filter((s): s is OrderStatus => s !== null);
+  const canBulkNext = nextTargets.length > 0;
+  const nextLabel = nextTargets.every((s) => s === nextTargets[0]) ? PIPELINE_LABEL[nextTargets[0]] : null;
+
+  const prevTargets = selectedOrders
+    .map((o) => prevInPipeline(o.status))
+    .filter((s): s is OrderStatus => s !== null);
+  const canBulkPrev = prevTargets.length > 0;
+  const prevLabel = prevTargets.every((s) => s === prevTargets[0]) ? PIPELINE_LABEL[prevTargets[0]] : null;
+
+  const canBulkCancel = selectedOrders.some((o) => CAN_CANCEL_FROM.has(o.status));
+
   function toggleSort(key: SortKey) {
     setSort((prev) => {
       if (!prev || prev.key !== key) return { key, dir: "desc" };
       return { key, dir: prev.dir === "desc" ? "asc" : "desc" };
     });
+  }
+
+  // A selection only ever makes sense against the tab you made it on —
+  // switching tabs drops it, so coming back to a tab never shows stale
+  // checkmarks left over from before you navigated away.
+  function selectTab(value: OrderStatus | "") {
+    setActiveTab(value);
+    setSelectedIds(new Set());
   }
 
   function toggleRowSelected(orderId: string) {
@@ -290,24 +339,26 @@ export default function OrdersPage() {
     );
   }
 
-  // Walks each selected order through every intermediate status on the way
-  // to READY_TO_SHIP (see PATH_TO_RTS) instead of only accepting orders
-  // already in PROCESSING — e.g. a PENDING order goes PENDING → CONFIRMED →
-  // PROCESSING → READY_TO_SHIP as three sequential calls. Orders that can't
-  // reach RTS at all (already shipped, cancelled, returned, etc.) are
-  // skipped and reported, not silently dropped.
-  async function bulkMarkReadyToShip() {
+  // Moves each selected order exactly one step along PIPELINE — never
+  // multiple stages in one click. Each order advances from ITS OWN current
+  // status, so a mixed selection (some Pending, some Processing) ends up at
+  // different targets, each just one step ahead of where it started.
+  async function bulkMoveNext() {
     if (!allOrders) return;
     const targets = allOrders.filter((o) => selectedIds.has(o.id));
     if (targets.length === 0) return;
 
+    // Cleared up front, not after the walk + reload finish — each status
+    // step is a real network round trip, so waiting until the very end left
+    // the checkboxes looking "stuck" selected for several seconds after the
+    // action had already been kicked off.
+    setSelectedIds(new Set());
     setBulkBusy(true);
     setRowError(null);
     let failed = 0;
     let ineligible = 0;
     for (const o of targets) {
-      if (o.status === "READY_TO_SHIP") continue;
-      const path = PATH_TO_RTS[o.status];
+      const path = nextPathInPipeline(o.status);
       if (!path) {
         ineligible++;
         continue;
@@ -321,13 +372,48 @@ export default function OrdersPage() {
       }
     }
     await loadOrders(search);
+    setBulkBusy(false);
+    if (failed > 0 || ineligible > 0) {
+      setRowError(
+        [
+          failed > 0 ? `${failed} failed (likely out of stock).` : null,
+          ineligible > 0 ? `${ineligible} skipped (no next stage from their current status).` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+  }
+
+  async function bulkMovePrev() {
+    if (!allOrders) return;
+    const targets = allOrders.filter((o) => selectedIds.has(o.id));
+    if (targets.length === 0) return;
+
     setSelectedIds(new Set());
+    setBulkBusy(true);
+    setRowError(null);
+    let failed = 0;
+    let ineligible = 0;
+    for (const o of targets) {
+      const prev = prevInPipeline(o.status);
+      if (!prev) {
+        ineligible++;
+        continue;
+      }
+      try {
+        await api.patch(`/admin/orders/${o.id}/status`, { status: prev });
+      } catch {
+        failed++;
+      }
+    }
+    await loadOrders(search);
     setBulkBusy(false);
     if (failed > 0 || ineligible > 0) {
       setRowError(
         [
           failed > 0 ? `${failed} failed.` : null,
-          ineligible > 0 ? `${ineligible} skipped (already shipped, cancelled, or returned).` : null,
+          ineligible > 0 ? `${ineligible} skipped (no previous stage from their current status).` : null,
         ]
           .filter(Boolean)
           .join(" "),
@@ -359,6 +445,7 @@ export default function OrdersPage() {
       return;
     }
     if (!confirm(`Cancel ${targets.length} order(s)? This releases their reserved stock.`)) return;
+    setSelectedIds(new Set());
     setBulkBusy(true);
     setRowError(null);
     let failed = 0;
@@ -370,7 +457,6 @@ export default function OrdersPage() {
       }
     }
     await loadOrders(search);
-    setSelectedIds(new Set());
     setBulkBusy(false);
     if (failed > 0) setRowError(`${failed} order(s) failed to cancel.`);
   }
@@ -520,7 +606,7 @@ export default function OrdersPage() {
         {TABS.map((t) => (
           <button
             key={t.value || "all"}
-            onClick={() => setActiveTab(t.value)}
+            onClick={() => selectTab(t.value)}
             className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
               activeTab === t.value
                 ? "border-primary text-primary"
@@ -716,28 +802,50 @@ export default function OrdersPage() {
           <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
             Update Status ({selectedIds.size} selected)
           </div>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={bulkMarkReadyToShip}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-fg">
-              ✓
-            </span>
-            {bulkBusy ? "Working…" : "Sent to RTS"}
-          </button>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={bulkCancel}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-xs text-white">
-              ✕
-            </span>
-            Cancel
-          </button>
+          {canBulkNext && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkMoveNext}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-fg">
+                ✓
+              </span>
+              {bulkBusy ? "Working…" : nextLabel ? `Sent to ${nextLabel}` : "Move to Next Status"}
+            </button>
+          )}
+          {canBulkPrev && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkMovePrev}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs text-foreground/60">
+                ↺
+              </span>
+              {bulkBusy ? "Working…" : prevLabel ? `Sent back to ${prevLabel}` : "Move to Previous Status"}
+            </button>
+          )}
+          {canBulkCancel && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkCancel}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-xs text-white">
+                ✕
+              </span>
+              Cancel
+            </button>
+          )}
+          {!canBulkNext && !canBulkPrev && !canBulkCancel && (
+            <p className="px-2 py-2 text-sm text-foreground/50">
+              No status actions available for this selection.
+            </p>
+          )}
 
           <div className="my-1 border-t border-black/5" />
 
@@ -871,7 +979,7 @@ export default function OrdersPage() {
                           </button>
                         </div>
                         <div
-                          className="mt-1 flex items-center gap-2 text-xs text-foreground/50"
+                          className="mt-1 flex items-center gap-2 text-xs text-foreground"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <a href={telHref(o.customer.phone)} className="text-blue-500 hover:text-blue-700" title="Call">
@@ -896,8 +1004,8 @@ export default function OrdersPage() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-1 flex items-start gap-1 text-xs text-foreground/40">
-                          <span>📍</span>
+                        <div className="mt-1 flex items-start gap-1 text-xs text-foreground">
+                          <span className="opacity-70">📍</span>
                           <span className="max-w-[180px] truncate" title={o.shippingAddress}>
                             {o.shippingAddress}
                           </span>

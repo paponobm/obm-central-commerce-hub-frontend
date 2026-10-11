@@ -57,6 +57,7 @@ export interface Category {
   slug: string;
   imageUrl: string | null;
   parentId: string | null;
+  isPublished: boolean;
 }
 
 export interface Brand {

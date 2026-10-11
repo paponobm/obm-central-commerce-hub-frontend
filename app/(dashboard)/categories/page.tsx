@@ -51,6 +51,7 @@ interface FormState {
   slugTouched: boolean;
   imageUrl: string;
   parentId: string;
+  isPublished: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -60,6 +61,7 @@ const EMPTY_FORM: FormState = {
   slugTouched: false,
   imageUrl: "",
   parentId: "",
+  isPublished: true,
 };
 
 function CategoryThumb({ imageUrl, name }: { imageUrl: string | null; name: string }) {
@@ -91,6 +93,7 @@ export default function CategoriesPage() {
   const [previewFailed, setPreviewFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [publishBusyId, setPublishBusyId] = useState<string | null>(null);
 
   async function loadCategories() {
     try {
@@ -123,6 +126,7 @@ export default function CategoriesPage() {
       slugTouched: true, // editing an existing slug shouldn't auto-regenerate under the admin
       imageUrl: category.imageUrl ?? "",
       parentId: category.parentId ?? "",
+      isPublished: category.isPublished,
     });
   }
 
@@ -182,6 +186,7 @@ export default function CategoriesPage() {
       slug: form.slug,
       imageUrl: form.imageUrl.trim() || undefined,
       parentId: form.parentId || undefined,
+      isPublished: form.isPublished,
     };
 
     try {
@@ -196,6 +201,23 @@ export default function CategoriesPage() {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function togglePublish(category: Category) {
+    setPublishBusyId(category.id);
+    setLoadError(null);
+    try {
+      await api.patch(`/admin/categories/${category.id}`, {
+        isPublished: !category.isPublished,
+      });
+      await loadCategories();
+    } catch (err) {
+      setLoadError(
+        err instanceof ApiError ? err.message : "Failed to update category",
+      );
+    } finally {
+      setPublishBusyId(null);
     }
   }
 
@@ -249,6 +271,7 @@ export default function CategoriesPage() {
               <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
                 <th className="pb-2 font-medium">Name</th>
                 <th className="pb-2 font-medium">Slug</th>
+                <th className="pb-2 font-medium">Published</th>
                 <th className="pb-2 font-medium text-right">Actions</th>
               </tr>
             </thead>
@@ -266,6 +289,19 @@ export default function CategoriesPage() {
                     </div>
                   </td>
                   <td className="py-2.5 text-foreground/60">{c.slug}</td>
+                  <td className="py-2.5">
+                    <label className="inline-flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={c.isPublished}
+                        disabled={publishBusyId === c.id}
+                        onChange={() => togglePublish(c)}
+                      />
+                      <span className="text-xs text-foreground/60">
+                        {c.isPublished ? "Published" : "Unpublished"}
+                      </span>
+                    </label>
+                  </td>
                   <td className="py-2.5 text-right">
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" onClick={() => openEditForm(c)}>
@@ -379,6 +415,23 @@ export default function CategoriesPage() {
                   </option>
                 ))}
               </Select>
+            </div>
+
+            <div>
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.isPublished}
+                  onChange={(e) =>
+                    setForm((prev) =>
+                      prev ? { ...prev, isPublished: e.target.checked } : prev,
+                    )
+                  }
+                />
+                <span className="text-sm text-foreground">
+                  Published (visible on the storefront)
+                </span>
+              </label>
             </div>
 
             {formError && (

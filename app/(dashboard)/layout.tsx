@@ -12,10 +12,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const { activeChannelId } = useChannelScope();
-  const blocked = activeChannelId
-    ? isBlockedInStore(pathname)
-    : isBlockedWithoutStore(pathname);
+  const { activeChannelId, restored: scopeRestored } = useChannelScope();
+  // Gated on scopeRestored, not just "not loading": activeChannelId starts
+  // out null on every mount (a fresh page load included), and stays null for
+  // one render even after the channel list itself has arrived — only once
+  // the persisted store selection has actually been re-applied is a null
+  // activeChannelId trustworthy. Checking isBlockedWithoutStore against that
+  // earlier, transient null would wrongly bounce a page like Web Orders away
+  // before its real (store-scoped) state ever loads in.
+  const blocked =
+    scopeRestored &&
+    (activeChannelId ? isBlockedInStore(pathname) : isBlockedWithoutStore(pathname));
 
   useEffect(() => {
     if (!loading && !user) {
