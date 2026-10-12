@@ -49,6 +49,7 @@ export default function ProductDetailPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [channelRows, setChannelRows] = useState<ProductChannelOverride[] | null>(null);
   const [orderHistory, setOrderHistory] = useState<OrderListItem[] | null>(null);
+  const [showAllOrderHistory, setShowAllOrderHistory] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [master, setMaster] = useState<MasterForm | null>(null);
@@ -307,6 +308,7 @@ export default function ProductDetailPage() {
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                      {!c.isPublished ? " (Unpublished — not shown in storefront)" : ""}
                     </option>
                   ))}
                 </Select>
@@ -502,7 +504,7 @@ export default function ProductDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {orderHistory.map((o) => {
+              {(showAllOrderHistory ? orderHistory : orderHistory.slice(0, 4)).map((o) => {
                 const line = o.items.find((i) => i.productId === productId);
                 return (
                   <tr
@@ -530,6 +532,15 @@ export default function ProductDetailPage() {
               })}
             </tbody>
           </table>
+        )}
+        {orderHistory && orderHistory.length > 4 && !showAllOrderHistory && (
+          <button
+            type="button"
+            onClick={() => setShowAllOrderHistory(true)}
+            className="mt-3 text-sm font-medium text-primary hover:underline"
+          >
+            See more ({orderHistory.length - 4} more)
+          </button>
         )}
       </Card>
 

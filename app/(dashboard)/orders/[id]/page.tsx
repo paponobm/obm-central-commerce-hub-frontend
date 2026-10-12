@@ -1,45 +1,14 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderDetail, OrderStatus, CustomerResponseStatus } from "@/lib/types";
+import type { OrderDetail, CustomerResponseStatus } from "@/lib/types";
 import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label, Select, Textarea } from "@/components/ui/input";
 import { StatusBadge, Pill } from "@/components/ui/badge";
-
-// Mirrors OrdersService's TRANSITIONS map — server enforces this
-// regardless, but showing only valid next steps here avoids a round trip
-// just to be told "no."
-const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ["CONFIRMED", "PREORDER", "PENDING_CANCEL", "CANCELLED"],
-  CONFIRMED: ["PROCESSING", "PENDING_CANCEL", "CANCELLED"],
-  PROCESSING: ["READY_TO_SHIP", "PENDING_CANCEL", "CANCELLED"],
-  READY_TO_SHIP: ["SHIPPED", "PENDING_CANCEL", "CANCELLED"],
-  SHIPPED: ["DELIVERED", "PARTIAL", "PENDING_RETURN", "LOST"],
-  PARTIAL: ["DELIVERED", "PENDING_RETURN", "RETURNED"],
-  DELIVERED: ["PENDING_RETURN", "RETURNED"],
-  PENDING_RETURN: ["RETURNED"],
-  RETURNED: [],
-  PENDING_CANCEL: ["PENDING", "CANCELLED"],
-  CANCELLED: [],
-  PREORDER: ["PENDING", "CANCELLED"],
-  LOST: [],
-};
-
-// Independent of order status — no state machine, any value can follow any
-// value (a call can go PENDING -> INTERESTED -> CALL_BACK -> CONFIRMED in
-// any order the conversation actually takes).
-const CUSTOMER_RESPONSES: CustomerResponseStatus[] = [
-  "NO_RESPONSE",
-  "CALL_BACK",
-  "INTERESTED",
-  "NOT_INTERESTED",
-  "CONFIRMED",
-];
 
 function responseLabel(r: CustomerResponseStatus | null): string {
   return r ? r.replaceAll("_", " ") : "—";
@@ -53,22 +22,10 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [nextStatus, setNextStatus] = useState("");
-  const [returnAction, setReturnAction] = useState<"restock" | "write_off">("restock");
-  const [note, setNote] = useState("");
-  const [transitioning, setTransitioning] = useState(false);
-  const [transitionError, setTransitionError] = useState<string | null>(null);
-
-  const [responseValue, setResponseValue] = useState<CustomerResponseStatus>("NO_RESPONSE");
-  const [responseNote, setResponseNote] = useState("");
-  const [respondingSaving, setRespondingSaving] = useState(false);
-  const [responseError, setResponseError] = useState<string | null>(null);
-
   async function loadOrder() {
     try {
       const data = await api.get<OrderDetail>(`/admin/orders/${orderId}`);
       setOrder(data);
-      setResponseValue(data.customerResponse ?? "NO_RESPONSE");
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to load order");
     }
@@ -79,57 +36,12 @@ export default function OrderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
-  async function handleTransition(e: FormEvent) {
-    e.preventDefault();
-    if (!nextStatus) return;
-    setTransitionError(null);
-    setTransitioning(true);
-    try {
-      await api.patch(`/admin/orders/${orderId}/status`, {
-        status: nextStatus,
-        note: note || undefined,
-        ...(nextStatus === "RETURNED" ? { returnAction } : {}),
-      });
-      setNextStatus("");
-      setNote("");
-      await loadOrder();
-    } catch (err) {
-      setTransitionError(
-        err instanceof ApiError ? err.message : "Something went wrong. Try again.",
-      );
-    } finally {
-      setTransitioning(false);
-    }
-  }
-
-  async function handleResponseUpdate(e: FormEvent) {
-    e.preventDefault();
-    setResponseError(null);
-    setRespondingSaving(true);
-    try {
-      await api.patch(`/admin/orders/${orderId}/customer-response`, {
-        customerResponse: responseValue,
-        note: responseNote || undefined,
-      });
-      setResponseNote("");
-      await loadOrder();
-    } catch (err) {
-      setResponseError(
-        err instanceof ApiError ? err.message : "Something went wrong. Try again.",
-      );
-    } finally {
-      setRespondingSaving(false);
-    }
-  }
-
   if (loadError) {
     return <p className="text-sm text-status-cancelled">{loadError}</p>;
   }
   if (!order) {
     return <p className="text-sm text-foreground/60">Loading…</p>;
   }
-
-  const validNextStatuses = TRANSITIONS[order.status];
 
   return (
     <div>
@@ -278,110 +190,6 @@ export default function OrderDetailPage() {
             </Card>
           )}
 
-          <Card>
-            <h2 className="mb-3 text-sm font-semibold text-foreground">Customer Response</h2>
-            <p className="mb-3 text-xs text-foreground/50">
-              Whether the customer has been reached and how — separate from order status.
-            </p>
-            <form onSubmit={handleResponseUpdate} className="space-y-3">
-              <div>
-                <Label>Response</Label>
-                <Select
-                  value={responseValue}
-                  onChange={(e) =>
-                    setResponseValue(e.target.value as CustomerResponseStatus)
-                  }
-                >
-                  {CUSTOMER_RESPONSES.map((r) => (
-                    <option key={r} value={r}>
-                      {r.replaceAll("_", " ")}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <Label>Note (optional)</Label>
-                <Textarea
-                  rows={2}
-                  value={responseNote}
-                  onChange={(e) => setResponseNote(e.target.value)}
-                />
-              </div>
-              {responseError && (
-                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-                  {responseError}
-                </p>
-              )}
-              <Button
-                type="submit"
-                variant="secondary"
-                disabled={
-                  respondingSaving ||
-                  (responseValue === (order.customerResponse ?? "NO_RESPONSE") && !responseNote)
-                }
-                className="w-full"
-              >
-                {respondingSaving ? "Saving…" : "Save Response"}
-              </Button>
-            </form>
-          </Card>
-
-          <Card>
-            <h2 className="mb-3 text-sm font-semibold text-foreground">Update Status</h2>
-            {validNextStatuses.length === 0 ? (
-              <p className="text-sm text-foreground/50">
-                This order is in a final state — no further transitions possible.
-              </p>
-            ) : (
-              <form onSubmit={handleTransition} className="space-y-3">
-                <div>
-                  <Label>New Status</Label>
-                  <Select
-                    required
-                    value={nextStatus}
-                    onChange={(e) => setNextStatus(e.target.value)}
-                  >
-                    <option value="">Choose…</option>
-                    {validNextStatuses.map((s) => (
-                      <option key={s} value={s}>
-                        {s.replaceAll("_", " ")}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                {nextStatus === "RETURNED" && (
-                  <div>
-                    <Label>Return Action</Label>
-                    <Select
-                      value={returnAction}
-                      onChange={(e) =>
-                        setReturnAction(e.target.value as "restock" | "write_off")
-                      }
-                    >
-                      <option value="restock">Restock (goods came back sellable)</option>
-                      <option value="write_off">Write off (damaged / unsellable)</option>
-                    </Select>
-                  </div>
-                )}
-
-                <div>
-                  <Label>Note (optional)</Label>
-                  <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
-
-                {transitionError && (
-                  <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-                    {transitionError}
-                  </p>
-                )}
-
-                <Button type="submit" disabled={!nextStatus || transitioning} className="w-full">
-                  {transitioning ? "Updating…" : "Update Status"}
-                </Button>
-              </form>
-            )}
-          </Card>
         </div>
       </div>
     </div>
