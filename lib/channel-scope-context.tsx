@@ -14,6 +14,15 @@ import type { ChannelWithStats } from "./types";
 
 const STORAGE_KEY = "obm.activeChannelId";
 
+// Scoped per signed-in user — the plain key used to be shared by every
+// account on the same browser, so logging in as a different user could
+// silently inherit whichever store the PREVIOUS user last had active
+// (e.g. an unrestricted Admin landing on "Online Burmese Market" instead
+// of "All Stores" just because Papon had picked that store earlier).
+function storageKeyFor(userId: string): string {
+  return `${STORAGE_KEY}.${userId}`;
+}
+
 interface ChannelScopeContextValue {
   channels: ChannelWithStats[] | null;
   loading: boolean;
@@ -94,25 +103,52 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
       setRestored(true);
       return;
     }
+    // An all-access user's scope always starts on "All Stores" — a store
+    // they once clicked into (maybe during the same session they were
+    // granted that access) must never come back pre-selected on a later
+    // login just because it's still sitting in localStorage.
+    if (user?.permissions.includes("channels.all_access")) {
+      setActiveChannelIdState(null);
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(storageKeyFor(user.id));
+      }
+      setRestored(true);
+      return;
+    }
     const stored =
-      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+      typeof window !== "undefined" && user
+        ? localStorage.getItem(storageKeyFor(user.id))
+        : null;
     if (stored && channels.some((c) => c.id === stored)) {
       setActiveChannelIdState(stored);
     } else {
       setActiveChannelIdState(null);
-      if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
+      if (typeof window !== "undefined" && user) {
+        localStorage.removeItem(storageKeyFor(user.id));
+      }
     }
     setRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-derive when the channel list itself changes
   }, [channels, user]);
 
-  const setActiveChannelId = useCallback((channelId: string | null) => {
-    setActiveChannelIdState(channelId);
-    if (typeof window !== "undefined") {
-      if (channelId) localStorage.setItem(STORAGE_KEY, channelId);
-      else localStorage.removeItem(STORAGE_KEY);
-    }
-  }, []);
+  const setActiveChannelId = useCallback(
+    (channelId: string | null) => {
+      setActiveChannelIdState(channelId);
+      // All-access users get a fresh "All Stores" start on every login (see
+      // the restore effect above) — their in-session picks stay in memory
+      // only, so nothing is left behind to come back pre-selected later.
+      if (
+        typeof window !== "undefined" &&
+        user &&
+        !user.permissions.includes("channels.all_access")
+      ) {
+        const key = storageKeyFor(user.id);
+        if (channelId) localStorage.setItem(key, channelId);
+        else localStorage.removeItem(key);
+      }
+    },
+    [user],
+  );
 
   const activeChannel =
     channels?.find((c) => c.id === activeChannelId) ?? null;

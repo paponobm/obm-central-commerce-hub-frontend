@@ -378,4 +378,19 @@ export interface StaffUser {
   createdAt: string;
   role: { id: string; name: string };
   channelIds: string[];
+  // Flat union of every scope's grants — "can this user do this ANYWHERE".
+  // Empty for Super Admin (always every permission, not stored per-user).
+  permissions: string[];
+  // The two independent sets this union is built from: "All Stores" scope
+  // grants, and a separate grant list per specific store (keyed by channel
+  // id). A permission can be on for one scope and off for another.
+  permissionsByScope: {
+    allStores: string[];
+    byChannel: Record<string, string[]>;
+  };
+}
+
+export interface PermissionCatalogEntry {
+  key: string;
+  label: string;
 }

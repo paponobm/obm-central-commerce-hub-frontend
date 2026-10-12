@@ -20,7 +20,7 @@ export type NavEntry = NavLink | NavGroup;
 // Groups only exist where there's more than one real page behind them —
 // no nested item here points anywhere that doesn't already exist.
 export const NAV_ENTRIES: NavEntry[] = [
-  { type: "link", label: "Dashboard", href: "/" },
+  { type: "link", label: "Dashboard", href: "/", permission: "dashboard.view" },
   {
     type: "group",
     label: "Orders",
@@ -64,7 +64,11 @@ export const NAV_ENTRIES: NavEntry[] = [
     ],
   },
   { type: "link", label: "Customers", href: "/customers", permission: "customers.view" },
-  { type: "link", label: "Channels", href: "/channels", permission: "channels.view", centralOnly: true },
+  // channels.view is a baseline permission granted automatically to any
+  // non-Super-Admin user (see UsersService.sanitizePermissions — the store
+  // picker itself depends on it), so it can't be used to gate this link;
+  // channels.manage is the one that actually reflects a deliberate grant.
+  { type: "link", label: "Channels", href: "/channels", permission: "channels.manage", centralOnly: true },
   { type: "link", label: "Reports", href: "/reports", permission: "reports.view" },
   { type: "link", label: "Users", href: "/users", permission: "users.manage", centralOnly: true },
   { type: "link", label: "Roles", href: "/roles", permission: "users.manage", centralOnly: true },

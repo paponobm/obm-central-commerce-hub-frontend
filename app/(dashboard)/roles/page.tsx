@@ -25,24 +25,36 @@ export default function RolesPage() {
     <div>
       <PageHeader
         title="Roles"
-        description="What each role can do. Roles are fixed — assign them to users on the Users page."
+        description="What each role is for. Super Admin always has every permission; everyone else's actual access is granted per user on the Users page."
       />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {roles.map((r) => (
-          <Card key={r.id}>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-foreground">{r.name}</h2>
-              <span className="text-xs text-foreground/50">{r.permissions.length} permissions</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {[...r.permissions].sort().map((p) => (
-                <Pill key={p} tone={p === "channels.all_access" ? "warning" : "default"}>
-                  {p}
-                </Pill>
-              ))}
-            </div>
-          </Card>
-        ))}
+        {roles.map((r) => {
+          const isFixed = r.name === "Super Admin";
+          return (
+            <Card key={r.id}>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-foreground">{r.name}</h2>
+                {isFixed && (
+                  <span className="text-xs text-foreground/50">{r.permissions.length} permissions</span>
+                )}
+              </div>
+              {r.description && <p className="mb-3 text-sm text-foreground/60">{r.description}</p>}
+              {isFixed ? (
+                <div className="flex flex-wrap gap-1">
+                  {[...r.permissions].sort().map((p) => (
+                    <Pill key={p} tone={p === "channels.all_access" ? "warning" : "default"}>
+                      {p}
+                    </Pill>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-foreground/40">
+                  Permissions are set per user when creating or editing them — see Users.
+                </p>
+              )}
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
