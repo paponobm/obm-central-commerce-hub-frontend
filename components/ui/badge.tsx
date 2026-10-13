@@ -14,6 +14,11 @@ const STATUS_DOT: Record<string, string> = {
   CANCELLED: "bg-status-cancelled",
   PREORDER: "bg-status-processing",
   LOST: "bg-status-cancelled",
+  // Integration connection status (app/(dashboard)/integrations/page.tsx).
+  CONNECTED: "bg-status-delivered",
+  ERROR: "bg-status-cancelled",
+  DISCONNECTED: "bg-gray-400",
+  DISABLED: "bg-gray-400",
 };
 
 // "RTS"/"Pending Return"/etc — short display labels for the reference's

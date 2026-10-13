@@ -11,6 +11,7 @@ import type {
   OrderSource,
   PaymentStatus,
   PaymentMethod,
+  Integration,
 } from "@/lib/types";
 import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
@@ -492,6 +493,33 @@ export default function OrdersPage() {
     }
   }
 
+  // Quick test action for an RTS order — books it with whichever enabled
+  // Steadfast integration is marked default (or the first enabled one, if
+  // none is). Full control over which integration/courier to use lives on
+  // the Order Detail page's own Courier Shipment card; this is just the
+  // one-click shortcut for the common case.
+  async function enterToSteadfast(e: React.MouseEvent, order: OrderListItem) {
+    e.stopPropagation();
+    setRowError(null);
+    setBusyId(order.id);
+    try {
+      const integrations = await api.get<Integration[]>("/admin/integrations");
+      const steadfast =
+        integrations.find((i) => i.provider === "STEADFAST" && i.isEnabled && i.isDefault) ??
+        integrations.find((i) => i.provider === "STEADFAST" && i.isEnabled);
+      if (!steadfast) {
+        setRowError("No enabled Steadfast integration found — add one under Integrations.");
+        return;
+      }
+      await api.post(`/admin/orders/${order.id}/shipment`, { integrationId: steadfast.id });
+      await loadOrders(search);
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : "Failed to create Steadfast shipment");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   useEffect(() => {
     if (!detailsOrderId) return;
     setDetailsData(null);
@@ -581,6 +609,19 @@ export default function OrdersPage() {
                       className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
                     >
                       {busyId === o.id ? "Cancelling…" : "Cancel"}
+                    </button>
+                  )}
+                  {o.status === "READY_TO_SHIP" && (
+                    <button
+                      type="button"
+                      disabled={busyId === o.id}
+                      onClick={(e) => {
+                        setOpenMenuId(null);
+                        enterToSteadfast(e, o);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                    >
+                      {busyId === o.id ? "Booking…" : "Entry to Steadfast"}
                     </button>
                   )}
                 </div>

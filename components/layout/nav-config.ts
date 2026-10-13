@@ -63,6 +63,10 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: "Suppliers", href: "/suppliers" },
     ],
   },
+  // Not centralOnly — couriers are typically configured per storefront,
+  // so this stays reachable whether "All Stores" or one specific store is
+  // active, unlike Inventory/Purchasing/Users/etc. below.
+  { type: "link", label: "Integrations", href: "/integrations", permission: "integrations.manage" },
   { type: "link", label: "Customers", href: "/customers", permission: "customers.view" },
   // channels.view is a baseline permission granted automatically to any
   // non-Super-Admin user (see UsersService.sanitizePermissions — the store

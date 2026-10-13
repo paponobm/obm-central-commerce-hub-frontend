@@ -3,12 +3,18 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderDetail, CustomerResponseStatus } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
+import type { OrderDetail, CustomerResponseStatus, Integration } from "@/lib/types";
 import { money, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/input";
 import { StatusBadge, Pill } from "@/components/ui/badge";
+
+const PROVIDER_LABELS: Record<string, string> = {
+  STEADFAST: "Steadfast Courier",
+};
 
 function responseLabel(r: CustomerResponseStatus | null): string {
   return r ? r.replaceAll("_", " ") : "—";
@@ -18,9 +24,15 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const orderId = params.id;
+  const { hasPermission } = useAuth();
+  const canShip = hasPermission("shipments.manage");
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [integrations, setIntegrations] = useState<Integration[] | null>(null);
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState("");
+  const [shipError, setShipError] = useState<string | null>(null);
+  const [shipping, setShipping] = useState(false);
 
   async function loadOrder() {
     try {
@@ -35,6 +47,35 @@ export default function OrderDetailPage() {
     loadOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
+
+  useEffect(() => {
+    if (!canShip) return;
+    api
+      .get<Integration[]>("/admin/integrations")
+      .then((rows) => {
+        const usable = rows.filter((i) => i.isEnabled);
+        setIntegrations(usable);
+        setSelectedIntegrationId((prev) => prev || usable.find((i) => i.isDefault)?.id || usable[0]?.id || "");
+      })
+      .catch(() => setIntegrations([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canShip]);
+
+  async function handleCreateShipment() {
+    if (!selectedIntegrationId) return;
+    setShipError(null);
+    setShipping(true);
+    try {
+      await api.post(`/admin/orders/${orderId}/shipment`, {
+        integrationId: selectedIntegrationId,
+      });
+      await loadOrder();
+    } catch (err) {
+      setShipError(err instanceof ApiError ? err.message : "Failed to create shipment");
+    } finally {
+      setShipping(false);
+    }
+  }
 
   if (loadError) {
     return <p className="text-sm text-status-cancelled">{loadError}</p>;
@@ -175,6 +216,59 @@ export default function OrderDetailPage() {
               )}
             </div>
           </Card>
+
+          {canShip && (
+            <Card>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Courier Shipment</h2>
+              {order.shipment?.externalConsignmentId ? (
+                <div className="space-y-1 text-sm">
+                  <div className="font-medium text-foreground">
+                    {PROVIDER_LABELS[order.shipment.provider ?? ""] ?? order.shipment.provider}
+                  </div>
+                  <div className="text-foreground/60">
+                    Consignment: {order.shipment.externalConsignmentId}
+                  </div>
+                  {order.shipment.externalTrackingCode && (
+                    <div className="text-foreground/60">
+                      Tracking: {order.shipment.externalTrackingCode}
+                    </div>
+                  )}
+                  <StatusBadge status={order.shipment.status} />
+                </div>
+              ) : integrations === null ? (
+                <p className="text-sm text-foreground/50">Loading…</p>
+              ) : integrations.length === 0 ? (
+                <p className="text-sm text-foreground/50">
+                  No enabled courier integrations — add one under Integrations.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <Select
+                    value={selectedIntegrationId}
+                    onChange={(e) => setSelectedIntegrationId(e.target.value)}
+                  >
+                    {integrations.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {(PROVIDER_LABELS[i.provider] ?? i.provider) + " — " + i.label}
+                      </option>
+                    ))}
+                  </Select>
+                  {shipError && (
+                    <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                      {shipError}
+                    </p>
+                  )}
+                  <Button
+                    variant="primary"
+                    disabled={shipping || !selectedIntegrationId}
+                    onClick={handleCreateShipment}
+                  >
+                    {shipping ? "Booking…" : "Create Shipment"}
+                  </Button>
+                </div>
+              )}
+            </Card>
+          )}
 
           {order.payments.length > 0 && (
             <Card>

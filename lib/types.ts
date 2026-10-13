@@ -223,7 +223,21 @@ export interface OrderDetail extends OrderBase {
   statusHistory: OrderStatusHistoryEntry[];
   timeline: TimelineEntry[];
   payments: Payment[];
-  shipment: unknown | null;
+  shipment: OrderShipment | null;
+}
+
+export interface OrderShipment {
+  id: string;
+  courierName: string | null;
+  trackingNumber: string | null;
+  status: ShipmentStatus;
+  provider: IntegrationProvider | null;
+  integrationId: string | null;
+  externalConsignmentId: string | null;
+  externalTrackingCode: string | null;
+  codAmount: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface TimelineActor {
@@ -393,4 +407,35 @@ export interface StaffUser {
 export interface PermissionCatalogEntry {
   key: string;
   label: string;
+}
+
+export type IntegrationProvider = "STEADFAST";
+export type IntegrationStatus = "CONNECTED" | "DISCONNECTED" | "ERROR" | "DISABLED";
+
+export interface IntegrationCredentialField {
+  key: string;
+  label: string;
+  secret: boolean;
+  placeholder?: string;
+}
+
+export interface IntegrationProviderMeta {
+  provider: IntegrationProvider;
+  credentialFields: IntegrationCredentialField[];
+}
+
+export interface Integration {
+  id: string;
+  provider: IntegrationProvider;
+  label: string;
+  isEnabled: boolean;
+  isDefault: boolean;
+  status: IntegrationStatus;
+  lastTestedAt: string | null;
+  lastTestSuccess: boolean | null;
+  lastTestMessage: string | null;
+  // Secret fields are masked (e.g. "••••1234"); never the real value.
+  credentials: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
 }
