@@ -206,6 +206,7 @@ export interface OrderListItem extends OrderBase {
   customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null; orderCount: number };
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
   createdBy: { id: string; name: string } | null;
+  shipment: Pick<OrderShipment, "id" | "provider" | "status" | "externalConsignmentId"> | null;
 }
 
 // GET /admin/orders/:id — full nested shapes plus history/payments/shipment.

@@ -20,7 +20,37 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { StatusBadge, Pill } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
+import { Toast } from "@/components/ui/toast";
+
+// Small inline line icons for the Customer cell — plain outline style (no
+// icon library in this app), matching currentColor so they pick up
+// whatever opacity/color wrapper they're placed in.
+function UserIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+
+function PhoneIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M5 4h4l2 5-2.5 2.5a11 11 0 0 0 5 5L16 14l5 2v4a2 2 0 0 1-2 2 16 16 0 0 1-14-14 2 2 0 0 1 2-2Z" />
+    </svg>
+  );
+}
+
+function PinIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 21s7-7.5 7-12a7 7 0 0 0-14 0c0 4.5 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
+    </svg>
+  );
+}
 
 // Matches the reference tab set exactly. Confirmed/Processing aren't given
 // their own tab (the reference doesn't show them either) but stay reachable
@@ -197,6 +227,7 @@ export default function OrdersPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(true);
@@ -306,6 +337,11 @@ export default function OrdersPage() {
   const prevLabel = prevTargets.every((s) => s === prevTargets[0]) ? PIPELINE_LABEL[prevTargets[0]] : null;
 
   const canBulkCancel = selectedOrders.some((o) => CAN_CANCEL_FROM.has(o.status));
+  // Mirrors the per-row "Entry to Steadfast" action's own eligibility —
+  // same statuses it's offered for there.
+  const canBulkSteadfast = selectedOrders.some(
+    (o) => o.status === "PENDING" || o.status === "READY_TO_SHIP" || o.status === "SHIPPED",
+  );
 
   function toggleSort(key: SortKey) {
     setSort((prev) => {
@@ -462,6 +498,52 @@ export default function OrdersPage() {
     if (failed > 0) setRowError(`${failed} order(s) failed to cancel.`);
   }
 
+  // Bulk version of enterToSteadfast — same default-integration resolution,
+  // just looped over every eligible selected order.
+  async function bulkEnterToSteadfast() {
+    if (!allOrders) return;
+    const targets = allOrders.filter(
+      (o) =>
+        selectedIds.has(o.id) &&
+        (o.status === "PENDING" || o.status === "READY_TO_SHIP" || o.status === "SHIPPED"),
+    );
+    if (targets.length === 0) {
+      setRowError("None of the selected orders are eligible for Steadfast entry.");
+      return;
+    }
+    setBulkMenuOpen(false);
+    setSelectedIds(new Set());
+    setBulkBusy(true);
+    setRowError(null);
+    setSuccessMessage(null);
+    try {
+      const integrations = await api.get<Integration[]>("/admin/integrations");
+      const steadfast =
+        integrations.find((i) => i.provider === "STEADFAST" && i.isEnabled && i.isDefault) ??
+        integrations.find((i) => i.provider === "STEADFAST" && i.isEnabled);
+      if (!steadfast) {
+        setRowError("No enabled Steadfast integration found — add one under Integrations.");
+        return;
+      }
+      let failed = 0;
+      for (const o of targets) {
+        try {
+          await api.post(`/admin/orders/${o.id}/shipment`, { integrationId: steadfast.id });
+        } catch {
+          failed++;
+        }
+      }
+      await loadOrders(search);
+      const succeeded = targets.length - failed;
+      if (succeeded > 0) {
+        setSuccessMessage(`${succeeded} of ${targets.length} order(s) entered to Steadfast successfully.`);
+      }
+      if (failed > 0) setRowError(`${failed} of ${targets.length} order(s) failed to enter Steadfast.`);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function copyToClipboard(e: React.MouseEvent, text: string, key: string) {
     e.stopPropagation();
     try {
@@ -493,7 +575,7 @@ export default function OrdersPage() {
     }
   }
 
-  // Quick test action for an RTS order — books it with whichever enabled
+  // Quick action for a Pending, RTS or Shipped order — books it with whichever enabled
   // Steadfast integration is marked default (or the first enabled one, if
   // none is). Full control over which integration/courier to use lives on
   // the Order Detail page's own Courier Shipment card; this is just the
@@ -501,6 +583,7 @@ export default function OrdersPage() {
   async function enterToSteadfast(e: React.MouseEvent, order: OrderListItem) {
     e.stopPropagation();
     setRowError(null);
+    setSuccessMessage(null);
     setBusyId(order.id);
     try {
       const integrations = await api.get<Integration[]>("/admin/integrations");
@@ -513,6 +596,7 @@ export default function OrdersPage() {
       }
       await api.post(`/admin/orders/${order.id}/shipment`, { integrationId: steadfast.id });
       await loadOrders(search);
+      setSuccessMessage(`Order ${order.orderNumber} entered to Steadfast successfully.`);
     } catch (err) {
       setRowError(err instanceof ApiError ? err.message : "Failed to create Steadfast shipment");
     } finally {
@@ -571,13 +655,26 @@ export default function OrdersPage() {
                   e.stopPropagation();
                   setOpenMenuId((v) => (v === menuKey ? null : menuKey));
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-foreground/50 hover:bg-black/5 hover:text-foreground"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-xl text-foreground/50 hover:bg-black/5 hover:text-foreground"
                 aria-label="Order actions"
               >
                 ⋮
               </button>
               {openMenuId === menuKey && (
                 <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenuId(null);
+                      setSelectedIds(new Set([o.id]));
+                      setPrintError(null);
+                      setShowPrintDialog(true);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                  >
+                    Invoice
+                  </button>
+                  <div className="my-1 border-t border-black/5" />
                   <button
                     type="button"
                     onClick={() => {
@@ -611,7 +708,7 @@ export default function OrdersPage() {
                       {busyId === o.id ? "Cancelling…" : "Cancel"}
                     </button>
                   )}
-                  {o.status === "READY_TO_SHIP" && (
+                  {(o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") && (
                     <button
                       type="button"
                       disabled={busyId === o.id}
@@ -619,7 +716,7 @@ export default function OrdersPage() {
                         setOpenMenuId(null);
                         enterToSteadfast(e, o);
                       }}
-                      className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                      className="block w-full bg-status-cancelled px-3 py-2 text-left text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                     >
                       {busyId === o.id ? "Booking…" : "Entry to Steadfast"}
                     </button>
@@ -890,6 +987,27 @@ export default function OrdersPage() {
 
           <div className="my-1 border-t border-black/5" />
 
+          <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
+            Courier Services
+          </div>
+          {canBulkSteadfast ? (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkEnterToSteadfast}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-status-cancelled px-2 py-2.5 text-center text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <span aria-hidden>➤</span>
+              {bulkBusy ? "Working…" : "Entry to Steadfast"}
+            </button>
+          ) : (
+            <p className="px-2 py-2 text-sm text-foreground/50">
+              No eligible orders in this selection.
+            </p>
+          )}
+
+          <div className="my-1 border-t border-black/5" />
+
           <button
             type="button"
             onClick={() => setSelectedIds(new Set())}
@@ -912,9 +1030,10 @@ export default function OrdersPage() {
           </p>
         )}
         {rowError && (
-          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-            {rowError}
-          </p>
+          <Toast message={rowError} variant="error" onDismiss={() => setRowError(null)} />
+        )}
+        {successMessage && (
+          <Toast message={successMessage} variant="success" onDismiss={() => setSuccessMessage(null)} />
         )}
 
         {!visibleOrders ? (
@@ -951,7 +1070,6 @@ export default function OrdersPage() {
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Status Tags</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Print</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Payment</th>
                   <th className="px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <button
                       type="button"
@@ -961,6 +1079,7 @@ export default function OrdersPage() {
                       Total {sort?.key === "total" ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
                     </button>
                   </th>
+                  <th className="px-4 py-3 text-center font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Upload</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>User</th>
                   <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Source</th>
                   <th className="rounded-r-lg px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
@@ -984,7 +1103,7 @@ export default function OrdersPage() {
                         />
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="whitespace-pre-line text-foreground/70">{listDate(o.createdAt)}</div>
+                        <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(o.createdAt)}</div>
                         <div className="text-xs text-foreground/40">
                           Updated {listUpdated(o.updatedAt)}
                         </div>
@@ -1008,7 +1127,7 @@ export default function OrdersPage() {
                       {renderActionsCell(o, `${o.id}-top`)}
                       <td className="px-4 py-4 text-foreground/70">
                         <div className="flex items-center gap-1.5">
-                          <span title="Customer">👤</span>
+                          <span title="Customer"><UserIcon className="h-4.5 w-4 text-foreground" /></span>
                           <span className="font-medium text-foreground">{o.customer.name}</span>
                           <button
                             type="button"
@@ -1020,13 +1139,13 @@ export default function OrdersPage() {
                           </button>
                         </div>
                         <div
-                          className="mt-1 flex items-center gap-2 text-xs text-foreground"
+                          className="mt-1 flex items-center gap-2 text-foreground"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <a href={telHref(o.customer.phone)} className="text-blue-500 hover:text-blue-700" title="Call">
-                            📞
+                          <a href={telHref(o.customer.phone)} className="opacity-70 hover:opacity-100" title="Call">
+                            <PhoneIcon className="h-4.5 w-4" />
                           </a>
-                          <a
+                          {/* <a
                             href={whatsappHref(o.customer.phone)}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -1034,7 +1153,7 @@ export default function OrdersPage() {
                             title="WhatsApp"
                           >
                             💬
-                          </a>
+                          </a> */}
                           <span>{o.customer.phone}</span>
                           {o.customer.successRate !== null && (
                             <span
@@ -1045,14 +1164,14 @@ export default function OrdersPage() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-1 flex items-start gap-1 text-xs text-foreground">
-                          <span className="opacity-70">📍</span>
+                        <div className="mt-1 flex items-start gap-1 text-foreground">
+                          <span className="opacity-70"><PinIcon className="h-4.5 w-4" /></span>
                           <span className="max-w-[180px] truncate" title={o.shippingAddress}>
                             {o.shippingAddress}
                           </span>
                         </div>
                       </td>
-                      <td className="max-w-[160px] px-4 py-4 text-xs text-foreground/50">
+                      <td className="max-w-[160px] px-4 py-4 text-foreground">
                         {o.notes ? <span title={o.notes}>{o.notes}</span> : "—"}
                       </td>
                       <td
@@ -1076,8 +1195,8 @@ export default function OrdersPage() {
                                   —
                                 </span>
                               )}
-                              <div className="min-w-0">
-                                <div className="truncate text-foreground">{item.productName}</div>
+                              <div className="min-w-0 max-w-[160px]">
+                                <div className="truncate text-foreground" title={item.productName}>{item.productName}</div>
                                 <div className="text-[11px]" style={{ color: "rgba(47, 111, 235, 0.8)" }}>
                                   {item.sku} · Qty: {item.quantity}
                                 </div>
@@ -1094,42 +1213,54 @@ export default function OrdersPage() {
                       <td className="px-4 py-4">
                         {o.customer.orderCount > 1 && (
                           <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
-                            REPEAT
+                            REPEAT({o.customer.orderCount})
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-4">
                         {Number(o.discount) > 0 && (
-                          <span className="inline-flex max-w-[140px] items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-xs leading-snug text-sky-700">
+                          <span className="inline-flex items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-xs leading-snug text-sky-700">
                             <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-                            <span>Employee Discount Order · {formatAmount(o.discount)}</span>
+                            <span className="flex flex-col">
+                              <span>Employee</span>
+                              <span>Discount</span>
+                              <span>Order · {formatAmount(o.discount)}</span>
+                            </span>
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-4 text-center text-base font-bold">
+                      <td className="px-4 py-4 text-center text-xl font-bold">
                         {o.invoicePrinted ? (
-                          <span className="text-status-delivered" title="Invoice printed">✓</span>
+                          <span className="text-status-delivered" title="Invoice printed ">✓</span>
                         ) : (
                           <span className="text-status-cancelled" title="Not printed">✕</span>
                         )}
                       </td>
-                      <td className="px-4 py-4">
-                        <Pill
-                          tone={
-                            o.paymentStatus === "PAID"
-                              ? "primary"
-                              : o.paymentStatus === "PARTIAL"
-                                ? "warning"
-                                : o.paymentStatus === "UNPAID"
-                                  ? "danger"
-                                  : "default"
-                          }
-                        >
-                          {o.paymentStatus}
-                        </Pill>
-                      </td>
                       <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-foreground">
                         {formatAmount(o.total)}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        {o.shipment?.externalConsignmentId ? (
+                          <div className="flex flex-col items-center gap-0.5 text-xs">
+                            <span className="flex items-center gap-1 font-bold">
+                              <span className="text-status-delivered" title="Entered to Steadfast">✓</span>
+                              <span className="text-foreground">{o.shipment.externalConsignmentId}</span>
+                            </span>
+                            <a
+                              href={`https://steadfast.com.bd/user/consignment/${o.shipment.externalConsignmentId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-primary hover:underline"
+                            >
+                              Panel Link
+                            </a>
+                          </div>
+                        ) : (
+                          <span className="text-base font-bold text-status-cancelled" title="Not entered to Steadfast">
+                            ✕
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 text-foreground/60">
                         {o.createdBy?.name ?? "—"}

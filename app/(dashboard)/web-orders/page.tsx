@@ -84,6 +84,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
     createdAt: lead.createdAt,
     updatedAt: lead.updatedAt,
     createdBy: null,
+    shipment: null,
     invoicePrinted: false,
     webApproved: false,
     adminNotes: lead.adminNotes,
