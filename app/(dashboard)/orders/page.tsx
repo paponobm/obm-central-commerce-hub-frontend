@@ -15,7 +15,7 @@ import type {
 } from "@/lib/types";
 import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
-import { telHref, whatsappHref } from "@/lib/phone";
+import { telHref } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
