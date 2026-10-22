@@ -718,8 +718,19 @@ export default function OrdersPage() {
                     return;
                   }
                   const rect = e.currentTarget.getBoundingClientRect();
+                  // Invoice + divider + Order Details + Edit are always
+                  // there; Cancel and Entry to Steadfast only show up for
+                  // some statuses — estimate the real height so the flip
+                  // decision below is accurate instead of guessing high.
+                  const itemHeight = 36;
+                  let menuHeight = itemHeight * 3 + 9 + 8; // Invoice, Order Details, Edit + divider + padding
+                  if (CAN_CANCEL_FROM.has(o.status)) menuHeight += itemHeight;
+                  if (o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") {
+                    menuHeight += itemHeight;
+                  }
+                  const fitsBelow = rect.bottom + 4 + menuHeight <= window.innerHeight;
                   setMenuPos({
-                    top: rect.bottom + 4,
+                    top: fitsBelow ? rect.bottom + 4 : Math.max(8, rect.top - 4 - menuHeight),
                     left: Math.max(8, rect.right - menuWidth),
                   });
                   setOpenMenuId(menuKey);

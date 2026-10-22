@@ -112,15 +112,18 @@ export function InventoryList({
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
-                <th className="pb-2 font-medium">Product</th>
-                <th className="pb-2 font-medium text-right">Current</th>
-                <th className="pb-2 font-medium text-right">Reserved</th>
-                <th className="pb-2 font-medium text-right">Available</th>
-                <th className="pb-2 font-medium text-right">Threshold</th>
-                <th className="pb-2 font-medium">Status</th>
+              <tr
+                className="text-left text-sm font-bold text-foreground"
+                style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}
+              >
+                <th className="rounded-l-lg px-3 py-3 font-bold">Product</th>
+                <th className="px-3 py-3 text-right font-bold">Current</th>
+                <th className="px-3 py-3 text-right font-bold">Reserved</th>
+                <th className="px-3 py-3 text-right font-bold">Available</th>
+                <th className="px-3 py-3 text-right font-bold">Threshold</th>
+                <th className="px-3 py-3 font-bold">Status</th>
                 {hasPermission("inventory.adjust") && (
-                  <th className="pb-2 font-medium text-right">Actions</th>
+                  <th className="rounded-r-lg px-3 py-3 text-right font-bold">Actions</th>
                 )}
               </tr>
             </thead>
@@ -128,8 +131,23 @@ export function InventoryList({
               {rows.map((r) => (
                 <tr key={r.productId} className="border-b border-black/5 last:border-0">
                   <td className="py-2.5">
-                    <div className="font-medium text-foreground">{r.name}</div>
-                    <div className="text-xs text-foreground/50">{r.sku}</div>
+                    <div className="flex items-center gap-2.5">
+                      {r.imageUrl ? (
+                        <img
+                          src={r.imageUrl}
+                          alt={r.name}
+                          className="h-9 w-9 shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
+                          —
+                        </span>
+                      )}
+                      <div>
+                        <div className="font-medium text-foreground">{r.name}</div>
+                        <div className="text-xs text-foreground/50">{r.sku}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="py-2.5 text-right">{r.currentStock}</td>
                   <td className="py-2.5 text-right text-foreground/60">{r.reservedStock}</td>
