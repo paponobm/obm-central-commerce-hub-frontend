@@ -50,6 +50,14 @@ export default function IntegrationsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
 
+  // Webhook setup dialog — only the id is kept so the shown data always
+  // reflects the latest load() result, not a stale snapshot from when the
+  // dialog opened.
+  const [webhookUserId, setWebhookUserId] = useState<string | null>(null);
+  // The plaintext secret from the most recent generate/regenerate call —
+  // shown once, in-memory only, never refetched or persisted client-side.
+  const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
+
   async function load() {
     try {
       const [rows, providerMeta] = await Promise.all([
@@ -81,6 +89,7 @@ export default function IntegrationsPage() {
   }, [integrations, search, statusFilter, providerFilter]);
 
   const selectedProviderMeta = providers.find((p) => p.provider === form?.provider);
+  const webhookUser = integrations?.find((i) => i.id === webhookUserId) ?? null;
 
   function openCreate() {
     setFormError(null);
@@ -176,6 +185,41 @@ export default function IntegrationsPage() {
       setLoadError(err instanceof ApiError ? err.message : "Failed to test connection");
     } finally {
       setTestingId(null);
+    }
+  }
+
+  function openWebhook(i: Integration) {
+    setGeneratedSecret(null);
+    setWebhookUserId(i.id);
+  }
+
+  async function handleGenerateWebhookSecret(i: Integration) {
+    if (
+      i.hasWebhookSecret &&
+      !confirm("Regenerate the webhook secret? The old one stops working immediately — update it on the provider's side too.")
+    ) {
+      return;
+    }
+    setWorkingId(i.id);
+    try {
+      const result = await api.post<{ secret: string; webhookUrl: string }>(
+        `/admin/integrations/${i.id}/webhook-secret/regenerate`,
+      );
+      setGeneratedSecret(result.secret);
+      await load();
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : "Failed to generate webhook secret");
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard permission denied or unavailable — nothing meaningful to
+      // recover into, same as the rest of this app's copy buttons.
     }
   }
 
@@ -285,6 +329,9 @@ export default function IntegrationsPage() {
                         <Button variant="ghost" onClick={() => openEdit(i)}>
                           Configure
                         </Button>
+                        <Button variant="ghost" onClick={() => openWebhook(i)}>
+                          Webhook
+                        </Button>
                         {!i.isDefault && (
                           <Button
                             variant="ghost"
@@ -388,6 +435,83 @@ export default function IntegrationsPage() {
               </Button>
             </div>
           </form>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!webhookUser}
+        onClose={() => {
+          setWebhookUserId(null);
+          setGeneratedSecret(null);
+        }}
+        title="Webhook"
+      >
+        {webhookUser && (
+          <div className="space-y-4">
+            <div>
+              <Label>Callback URL</Label>
+              <div className="flex gap-2">
+                <Input readOnly value={webhookUser.webhookUrl} className="flex-1 font-mono text-xs" />
+                <Button type="button" variant="secondary" onClick={() => copyText(webhookUser.webhookUrl)}>
+                  Copy
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-foreground/50">
+                Paste this into {PROVIDER_LABELS[webhookUser.provider] ?? webhookUser.provider}&apos;s own webhook
+                settings, as the callback/endpoint URL.
+              </p>
+            </div>
+
+            {generatedSecret ? (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                <Label>Auth token (shown once — copy it now)</Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={generatedSecret} className="flex-1 font-mono text-xs" />
+                  <Button type="button" variant="secondary" onClick={() => copyText(generatedSecret)}>
+                    Copy
+                  </Button>
+                </div>
+                <p className="mt-1 text-xs text-amber-700">
+                  This won&apos;t be shown again after you close this window. Paste it into the provider&apos;s
+                  &quot;Auth token&quot; field.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <Label>Auth token</Label>
+                <p className="mb-2 text-xs text-foreground/50">
+                  {webhookUser.hasWebhookSecret
+                    ? "A secret is already configured for this integration. Regenerating replaces it immediately — update it on the provider's side too."
+                    : "No secret generated yet — the provider needs one to sign its requests so we can verify they're genuine."}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={workingId === webhookUser.id}
+                  onClick={() => handleGenerateWebhookSecret(webhookUser)}
+                >
+                  {workingId === webhookUser.id
+                    ? "Generating…"
+                    : webhookUser.hasWebhookSecret
+                      ? "Regenerate Secret"
+                      : "Generate Secret"}
+                </Button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 border-t border-black/5 pt-4">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setWebhookUserId(null);
+                  setGeneratedSecret(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
         )}
       </Modal>
     </div>

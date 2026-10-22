@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
@@ -48,6 +49,44 @@ function PinIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M12 21s7-7.5 7-12a7 7 0 0 0-14 0c0 4.5 7 12 7 12Z" />
       <circle cx="12" cy="9" r="2.5" />
+    </svg>
+  );
+}
+
+function PrinterIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="6 9 6 2 18 2 18 9" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" />
+    </svg>
+  );
+}
+
+function FileTextIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
+}
+
+function EditIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+function SendIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
     </svg>
   );
 }
@@ -106,6 +145,10 @@ function nextPathInPipeline(status: OrderStatus): OrderStatus[] | null {
 }
 
 function prevInPipeline(status: OrderStatus): OrderStatus | null {
+  // Mirrors nextPathInPipeline's own PENDING -> RTS shortcut in reverse —
+  // RTS steps straight back to PENDING, not PROCESSING, since neither
+  // CONFIRMED nor PROCESSING has a tab to land on.
+  if (status === "READY_TO_SHIP") return "PENDING";
   const i = PIPELINE.indexOf(status);
   return i > 0 ? PIPELINE[i - 1] : null;
 }
@@ -242,6 +285,11 @@ export default function OrdersPage() {
   const [includeOtherProducts, setIncludeOtherProducts] = useState(true);
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Fixed-position coords for the open row menu, captured from the trigger
+  // button on click — the menu renders through a portal (see
+  // renderActionsCell) so it isn't clipped by the table's own
+  // overflow-auto scroll container near the bottom/edge of the list.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [detailsOrderId, setDetailsOrderId] = useState<string | null>(null);
   const [detailsData, setDetailsData] = useState<OrderDetail | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
@@ -279,7 +327,18 @@ export default function OrdersPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => loadOrders(search), 250); // debounce typing
-    return () => clearTimeout(timer);
+    // No push channel from the backend (REST only), so a short poll stands
+    // in for real-time — e.g. a Steadfast webhook marking an order
+    // Delivered/Pending Return shows up here within one interval, no
+    // manual refresh needed. Paused while the tab is hidden, mirroring the
+    // same pattern already used on Web Orders.
+    const interval = setInterval(() => {
+      if (!document.hidden) loadOrders(search);
+    }, 8000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, channelId, paymentStatus, search]);
 
@@ -646,6 +705,7 @@ export default function OrdersPage() {
   }
 
   function renderActionsCell(o: OrderListItem, menuKey: string) {
+    const menuWidth = 176; // w-44
     return (
           <td className="px-4 py-4">
             <div className="relative flex justify-end">
@@ -653,76 +713,94 @@ export default function OrdersPage() {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setOpenMenuId((v) => (v === menuKey ? null : menuKey));
+                  if (openMenuId === menuKey) {
+                    setOpenMenuId(null);
+                    return;
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setMenuPos({
+                    top: rect.bottom + 4,
+                    left: Math.max(8, rect.right - menuWidth),
+                  });
+                  setOpenMenuId(menuKey);
                 }}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-xl text-foreground/50 hover:bg-black/5 hover:text-foreground"
                 aria-label="Order actions"
               >
                 ⋮
               </button>
-              {openMenuId === menuKey && (
-                <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      setSelectedIds(new Set([o.id]));
-                      setPrintError(null);
-                      setShowPrintDialog(true);
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+              {openMenuId === menuKey && menuPos &&
+                createPortal(
+                  <div
+                    style={{ top: menuPos.top, left: menuPos.left, width: menuWidth }}
+                    className="fixed z-30 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg"
                   >
-                    Invoice
-                  </button>
-                  <div className="my-1 border-t border-black/5" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      setDetailsOrderId(o.id);
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
-                  >
-                    Order Details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      router.push(`/orders/${o.id}/edit`);
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
-                  >
-                    Edit
-                  </button>
-                  {CAN_CANCEL_FROM.has(o.status) && (
                     <button
                       type="button"
-                      disabled={busyId === o.id}
-                      onClick={(e) => {
+                      onClick={() => {
                         setOpenMenuId(null);
-                        cancelOrder(e, o);
+                        setSelectedIds(new Set([o.id]));
+                        setPrintError(null);
+                        setShowPrintDialog(true);
                       }}
-                      className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
                     >
-                      {busyId === o.id ? "Cancelling…" : "Cancel"}
+                      <PrinterIcon className="h-4 w-4 text-foreground/50" />
+                      Invoice
                     </button>
-                  )}
-                  {(o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") && (
+                    <div className="my-1 border-t border-black/5" />
                     <button
                       type="button"
-                      disabled={busyId === o.id}
-                      onClick={(e) => {
+                      onClick={() => {
                         setOpenMenuId(null);
-                        enterToSteadfast(e, o);
+                        setDetailsOrderId(o.id);
                       }}
-                      className="block w-full bg-status-cancelled px-3 py-2 text-left text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
                     >
-                      {busyId === o.id ? "Booking…" : "Entry to Steadfast"}
+                      <FileTextIcon className="h-4 w-4 text-foreground/50" />
+                      Order Details
                     </button>
-                  )}
-                </div>
-              )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        router.push(`/orders/${o.id}/edit`);
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                    >
+                      <EditIcon className="h-4 w-4 text-foreground/50" />
+                      Edit
+                    </button>
+                    {CAN_CANCEL_FROM.has(o.status) && (
+                      <button
+                        type="button"
+                        disabled={busyId === o.id}
+                        onClick={(e) => {
+                          setOpenMenuId(null);
+                          cancelOrder(e, o);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
+                      >
+                        {busyId === o.id ? "Cancelling…" : "Cancel"}
+                      </button>
+                    )}
+                    {(o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") && (
+                      <button
+                        type="button"
+                        disabled={busyId === o.id}
+                        onClick={(e) => {
+                          setOpenMenuId(null);
+                          enterToSteadfast(e, o);
+                        }}
+                        className="flex w-full items-center gap-2.5 bg-status-cancelled px-3 py-2 text-left text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        <SendIcon className="h-4 w-4" />
+                        {busyId === o.id ? "Booking…" : "Entry to Steadfast"}
+                      </button>
+                    )}
+                  </div>,
+                  document.body,
+                )}
             </div>
           </td>
     );

@@ -437,6 +437,11 @@ export interface Integration {
   lastTestMessage: string | null;
   // Secret fields are masked (e.g. "••••1234"); never the real value.
   credentials: Record<string, string>;
+  // Where the provider should POST status updates. hasWebhookSecret is
+  // whether one has been generated yet — the secret itself is only ever
+  // returned once, right after generating/regenerating it.
+  webhookUrl: string;
+  hasWebhookSecret: boolean;
   createdAt: string;
   updatedAt: string;
 }
