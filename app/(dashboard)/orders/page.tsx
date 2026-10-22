@@ -13,6 +13,7 @@ import type {
   PaymentStatus,
   PaymentMethod,
   Integration,
+  InventorySummary,
 } from "@/lib/types";
 import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
@@ -444,6 +445,38 @@ export default function OrdersPage() {
     const targets = allOrders.filter((o) => selectedIds.has(o.id));
     if (targets.length === 0) return;
 
+    // Pre-flight stock check — READY_TO_SHIP is where stock actually gets
+    // deducted (see deductOnShip in orders.service.ts, which rejects the
+    // move outright if currentStock can't cover the order), so warn before
+    // spending a network round trip on something that's going to fail, and
+    // give the admin a clear reason instead of just letting it error out.
+    const rtsTargets = targets.filter((o) => nextPathInPipeline(o.status)?.includes("READY_TO_SHIP"));
+    if (rtsTargets.length > 0) {
+      try {
+        const inventory = await api.get<InventorySummary[]>("/admin/inventory");
+        const stockByProduct = new Map(inventory.map((i) => [i.productId, i.currentStock]));
+        const shortages: string[] = [];
+        for (const o of rtsTargets) {
+          for (const item of o.items) {
+            const stock = stockByProduct.get(item.productId);
+            if (stock !== undefined && stock < item.quantity) {
+              shortages.push(`${o.orderNumber} — ${item.productName} (need ${item.quantity}, have ${stock})`);
+            }
+          }
+        }
+        if (shortages.length > 0) {
+          const proceed = confirm(
+            `These products aren't in stock and will fail to move to RTS:\n\n${shortages.join("\n")}\n\nContinue anyway? (orders with enough stock will still move normally)`,
+          );
+          if (!proceed) return;
+        }
+      } catch {
+        // If the pre-check itself can't load, don't block the real action
+        // on it — fall through and let the normal per-order error handling
+        // below catch any actual failure.
+      }
+    }
+
     // Cleared up front, not after the walk + reload finish — each status
     // step is a real network round trip, so waiting until the very end left
     // the checkboxes looking "stuck" selected for several seconds after the
@@ -453,6 +486,11 @@ export default function OrdersPage() {
     setRowError(null);
     let failed = 0;
     let ineligible = 0;
+    // Collected verbatim from the backend rather than reworded — moving to
+    // READY_TO_SHIP is also where stock actually gets deducted (see
+    // orders.service.ts), so a 409 here names the exact out-of-stock
+    // product instead of a generic "something went wrong".
+    const failedMessages: string[] = [];
     for (const o of targets) {
       const path = nextPathInPipeline(o.status);
       if (!path) {
@@ -463,8 +501,13 @@ export default function OrdersPage() {
         for (const step of path) {
           await api.patch(`/admin/orders/${o.id}/status`, { status: step });
         }
-      } catch {
+      } catch (err) {
         failed++;
+        failedMessages.push(
+          err instanceof ApiError
+            ? `${o.orderNumber}: ${err.message}`
+            : `${o.orderNumber}: failed to update`,
+        );
       }
     }
     await loadOrders(search);
@@ -472,7 +515,7 @@ export default function OrdersPage() {
     if (failed > 0 || ineligible > 0) {
       setRowError(
         [
-          failed > 0 ? `${failed} failed (likely out of stock).` : null,
+          ...failedMessages,
           ineligible > 0 ? `${ineligible} skipped (no next stage from their current status).` : null,
         ]
           .filter(Boolean)

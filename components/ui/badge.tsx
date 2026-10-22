@@ -51,13 +51,15 @@ export function Pill({
   tone = "default",
 }: {
   children: ReactNode;
-  tone?: "default" | "primary" | "warning" | "danger";
+  tone?: "default" | "primary" | "warning" | "danger" | "success" | "alert";
 }) {
   const tones: Record<string, string> = {
     default: "bg-black/5 text-foreground",
     primary: "bg-primary/10 text-primary",
     warning: "bg-amber-100 text-amber-700",
-    danger: "bg-status-cancelled/10 text-status-cancelled",
+    danger: "bg-status-cancelled text-white !font-bold",
+    success: "bg-status-delivered text-white !font-bold",
+    alert: "bg-status-pending text-white !font-bold",
   };
   return (
     <span

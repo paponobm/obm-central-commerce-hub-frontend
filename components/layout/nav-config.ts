@@ -49,7 +49,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     centralOnly: true,
     children: [
       { label: "All Stock", href: "/inventory" },
-      { label: "Low Stock", href: "/inventory/low-stock" },
+      // { label: "Low Stock", href: "/inventory/low-stock" },
       { label: "Movements", href: "/inventory/movements" },
     ],
   },

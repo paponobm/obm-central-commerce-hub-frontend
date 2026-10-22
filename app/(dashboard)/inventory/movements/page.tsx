@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { StockMovement } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -9,24 +11,38 @@ import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/badge";
 
 export default function StockMovementsPage() {
+  const searchParams = useSearchParams();
+  const productId = searchParams.get("productId");
+
   const [rows, setRows] = useState<StockMovement[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setRows(null);
+    const url = productId
+      ? `/admin/inventory/${productId}/movements`
+      : "/admin/inventory/movements?limit=200";
     api
-      .get<StockMovement[]>("/admin/inventory/movements?limit=200")
+      .get<StockMovement[]>(url)
       .then(setRows)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Failed to load stock movements"),
       );
-  }, []);
+  }, [productId]);
+
+  const productName = rows && rows.length > 0 ? rows[0].product?.name : undefined;
 
   return (
     <div>
       <PageHeader
-        title="Stock Movements"
+        title={productId ? `Stock Movements — ${productName ?? "Product"}` : "Stock Movements"}
         description="Every change to stock, newest first — the ledger behind the numbers."
       />
+      {productId && (
+        <Link href="/inventory/movements" className="mb-4 inline-block text-sm text-primary hover:underline">
+          ← Back to all movements
+        </Link>
+      )}
       <Card>
         {error && (
           <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
@@ -56,7 +72,7 @@ export default function StockMovementsPage() {
                     {formatDateTime(m.createdAt)}
                   </td>
                   <td className="py-2.5">
-                    <div className="font-medium text-foreground">{m.product?.name ?? "—"}</div>
+                    <div className="font-bold text-primary">{m.product?.name ?? "—"}</div>
                     <div className="text-xs text-foreground/50">{m.product?.sku}</div>
                   </td>
                   <td className="py-2.5">

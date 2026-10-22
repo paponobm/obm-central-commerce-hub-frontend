@@ -86,7 +86,7 @@ export function Sidebar() {
               <Link
                 key={entry.href}
                 href={entry.href}
-                className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={`block rounded-lg px-3 py-2 text-md font-medium transition-colors ${
                   active
                     ? "bg-sidebar-active text-sidebar-active-fg"
                     : "text-sidebar-fg hover:bg-white/5"
@@ -105,7 +105,7 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => toggleGroup(entry.label)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-md font-medium transition-colors ${
                   groupHasActiveChild
                     ? "bg-sidebar-active text-sidebar-active-fg"
                     : "text-sidebar-fg hover:bg-white/5"
@@ -113,7 +113,7 @@ export function Sidebar() {
               >
                 {entry.label}
                 <span
-                  className={`text-xs text-sidebar-fg/50 transition-transform ${open ? "rotate-90" : ""}`}
+                  className={`text-sm text-sidebar-fg/50 transition-transform ${open ? "rotate-90" : ""}`}
                   aria-hidden
                 >
                   ›
