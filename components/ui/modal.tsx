@@ -6,12 +6,16 @@ export function Modal({
   open,
   onClose,
   title,
+  titleClassName = "",
   children,
   size = "md",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  // Every existing caller keeps the default title size untouched — only an
+  // explicit opt-in bumps it, same pattern as the "lg" size opt-in below.
+  titleClassName?: string;
   children: ReactNode;
   // "lg" is wider and allows the modal itself to grow taller (up to the
   // viewport) instead of only the default compact form size — opt-in, so
@@ -35,12 +39,12 @@ export function Modal({
         aria-label={title}
       >
         <div className="mb-4 flex shrink-0 items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <h2 className={`text-sm font-semibold text-foreground ${titleClassName}`}>{title}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="text-foreground/40 hover:text-foreground"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-base text-white hover:opacity-90"
           >
             ✕
           </button>

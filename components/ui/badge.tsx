@@ -51,7 +51,7 @@ export function Pill({
   tone = "default",
 }: {
   children: ReactNode;
-  tone?: "default" | "primary" | "warning" | "danger" | "success" | "alert";
+  tone?: "default" | "primary" | "warning" | "danger" | "success" | "alert" | "info";
 }) {
   const tones: Record<string, string> = {
     default: "bg-black/5 text-foreground",
@@ -60,6 +60,9 @@ export function Pill({
     danger: "bg-status-cancelled text-white !font-bold",
     success: "bg-status-delivered text-white !font-bold",
     alert: "bg-status-pending text-white !font-bold",
+    // Same solid treatment as danger/success/alert, just blue — for a
+    // neutral/informational state that still wants that bold pill look.
+    info: "bg-primary text-white !font-bold",
   };
   return (
     <span

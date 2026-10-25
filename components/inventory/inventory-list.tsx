@@ -12,6 +12,30 @@ import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 
+const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
+
+// Same solid-colour pill language as the Available/Status column below —
+// green for stock coming in or freed up, red for stock leaving or written
+// off, amber for committing it to an order, blue for a neutral manual
+// correction.
+function movementTone(type: string): "success" | "danger" | "alert" | "info" | "default" {
+  switch (type) {
+    case "PURCHASE":
+    case "RETURN":
+    case "RELEASE":
+      return "success";
+    case "DEDUCT":
+    case "DAMAGE":
+      return "danger";
+    case "RESERVE":
+      return "alert";
+    case "ADJUSTMENT":
+      return "info";
+    default:
+      return "default";
+  }
+}
+
 function PencilIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -103,7 +127,7 @@ export function InventoryList({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "healthy" | "low" | "out">("");
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 20;
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
   // Independent of the searchable/filterable `rows` above — these summary
   // counts always reflect the whole catalog, not whatever the search box
@@ -164,7 +188,7 @@ export function InventoryList({
   // that no longer exists.
   useEffect(() => {
     setPage(1);
-  }, [search, lowStockOnly, statusFilter]);
+  }, [search, lowStockOnly, statusFilter, pageSize]);
 
   function openAdjust(row: InventorySummary) {
     setAdjusting(row);
@@ -210,8 +234,8 @@ export function InventoryList({
     return stockBucket(r) === statusFilter;
   });
 
-  const totalPages = filteredRows ? Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE)) : 1;
-  const pagedRows = filteredRows?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = filteredRows ? Math.max(1, Math.ceil(filteredRows.length / pageSize)) : 1;
+  const pagedRows = filteredRows?.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div>
@@ -372,27 +396,40 @@ export function InventoryList({
             </tbody>
           </table>
         )}
-        {filteredRows && filteredRows.length > PAGE_SIZE && (
-          <div className="mt-4 flex items-center justify-between border-t border-black/5 pt-4 text-sm text-foreground/60">
-            <span>
-              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredRows.length)} of{" "}
+        {filteredRows && filteredRows.length > 0 && (
+          <div className="mt-4 flex items-center justify-between border-t border-black/5 pt-4 text-base">
+            <span className="font-bold text-primary">
+              Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredRows.length)} of{" "}
               {filteredRows.length}
             </span>
             <div className="flex items-center gap-2">
+              <Select
+                className="w-auto !text-base font-bold !text-primary"
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} / page
+                  </option>
+                ))}
+              </Select>
               <Button
                 type="button"
                 variant="secondary"
+                className="!text-base !font-bold !text-primary"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 Previous
               </Button>
-              <span className="text-foreground/70">
+              <span className="font-bold text-primary">
                 Page {page} of {totalPages}
               </span>
               <Button
                 type="button"
                 variant="secondary"
+                className="!text-base !font-bold !text-primary"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
@@ -407,22 +444,31 @@ export function InventoryList({
         open={!!adjusting}
         onClose={() => setAdjusting(null)}
         title={adjusting ? `Adjust stock — ${adjusting.name}` : ""}
+        titleClassName="!text-lg"
+        size="lg"
       >
         {adjusting && (
           <form onSubmit={handleAdjust} className="space-y-4">
-            <p className="text-sm text-foreground/60">
+            <p className="text-base text-foreground/60">
               Current stock: <span className="font-medium text-foreground">{adjusting.currentStock}</span>
             </p>
             <div>
-              <Label>Type</Label>
-              <Select value={type} onChange={(e) => setType(e.target.value as "ADJUSTMENT" | "DAMAGE")}>
+              <Label className="!text-base">Type</Label>
+              <Select
+                className="w-full !text-base"
+                value={type}
+                onChange={(e) => setType(e.target.value as "ADJUSTMENT" | "DAMAGE")}
+              >
                 <option value="ADJUSTMENT">Adjustment (count correction, + or −)</option>
                 <option value="DAMAGE">Damage / write-off (reduces stock)</option>
               </Select>
             </div>
             <div>
-              <Label>{type === "DAMAGE" ? "Quantity lost" : "Change (+ adds, − removes)"}</Label>
+              <Label className="!text-base">
+                {type === "DAMAGE" ? "Quantity lost" : "Change (+ adds, − removes)"}
+              </Label>
               <Input
+                className="w-full !text-base"
                 required
                 type="number"
                 step="1"
@@ -431,19 +477,19 @@ export function InventoryList({
               />
             </div>
             <div>
-              <Label>Note (optional)</Label>
-              <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+              <Label className="!text-base">Note (optional)</Label>
+              <Textarea className="w-full !text-base" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             {formError && (
-              <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+              <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
                 {formError}
               </p>
             )}
             <div className="flex items-center gap-2">
-              <Button type="submit" disabled={saving || !delta || Number(delta) === 0}>
+              <Button type="submit" className="!text-base" disabled={saving || !delta || Number(delta) === 0}>
                 {saving ? "Saving…" : "Apply Adjustment"}
               </Button>
-              <Button type="button" variant="secondary" onClick={() => setAdjusting(null)}>
+              <Button type="button" variant="secondary" className="!text-base" onClick={() => setAdjusting(null)}>
                 Cancel
               </Button>
             </div>
@@ -458,9 +504,22 @@ export function InventoryList({
         size="lg"
       >
         <div className="overflow-y-auto">
-          <div className="mb-4">
-            <div className="text-lg font-bold text-primary">{activityFor?.name}</div>
-            <div className="text-xs text-foreground/50">{activityFor?.sku}</div>
+          <div className="mb-4 flex items-center gap-3">
+            {activityFor?.imageUrl ? (
+              <img
+                src={activityFor.imageUrl}
+                alt={activityFor.name}
+                className="h-12 w-12 shrink-0 rounded object-cover"
+              />
+            ) : (
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
+                —
+              </span>
+            )}
+            <div>
+              <div className="text-lg font-bold text-primary">{activityFor?.name}</div>
+              <div className="text-xs text-foreground/50">{activityFor?.sku}</div>
+            </div>
           </div>
           {activityError && (
             <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
@@ -489,7 +548,7 @@ export function InventoryList({
                       {formatDateTime(m.createdAt)}
                     </td>
                     <td className="py-2.5">
-                      <Pill>{m.type}</Pill>
+                      <Pill tone={movementTone(m.type)}>{m.type}</Pill>
                     </td>
                     <td
                       className={`py-2.5 text-right font-medium ${

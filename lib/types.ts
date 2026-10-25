@@ -138,7 +138,7 @@ export interface StockMovement {
   note: string | null;
   createdAt: string;
   createdBy?: { id: string; name: string } | null;
-  product?: { id: string; sku: string; name: string };
+  product?: { id: string; sku: string; name: string; imageUrl: string | null };
 }
 
 export interface Customer {
