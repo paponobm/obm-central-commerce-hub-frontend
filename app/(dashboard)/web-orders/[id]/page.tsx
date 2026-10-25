@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WEB_STAGE_COLORS, WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { LoadingLine } from "@/components/ui/spinner";
 
 // An Incomplete storefront checkout, as returned by /admin/orders/checkout-leads.
 interface LeadRecord {
@@ -638,7 +639,7 @@ export default function WebOrderDetailsPage() {
   }
 
   if (!order) {
-    return <p className="text-sm text-foreground/60">Loading…</p>;
+    return <LoadingLine />;
   }
 
   // Where the order is now: the same stage that decides its Web Orders tab.

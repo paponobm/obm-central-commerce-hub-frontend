@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { LoadingLine } from "@/components/ui/spinner";
 
 interface FormState {
   id: string | null;
@@ -100,7 +101,7 @@ export default function SuppliersPage() {
           </p>
         )}
         {!suppliers ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : suppliers.length === 0 ? (
           <p className="text-sm text-foreground/50">No suppliers yet.</p>
         ) : (

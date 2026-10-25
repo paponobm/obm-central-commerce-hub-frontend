@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
 import { useAuth } from "@/lib/auth-context";
+import { LoadingLine } from "@/components/ui/spinner";
 
 type TabKey =
   | "processing"
@@ -273,7 +274,7 @@ export default function WebOrdersPage() {
         )}
         {error && <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">{error}</p>}
         {!visible ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : visible.length === 0 ? (
           <p className="text-sm text-foreground/50">No web orders in this tab.</p>
         ) : (

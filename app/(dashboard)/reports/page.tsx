@@ -7,6 +7,7 @@ import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Input, Label, Select } from "@/components/ui/input";
+import { LoadingLine } from "@/components/ui/spinner";
 
 interface SalesByPeriod {
   periods: { period: string; orderCount: number; salesTotal: number }[];
@@ -103,7 +104,7 @@ export default function ReportsPage() {
             {totalOrders} orders · {money(totalSales)} (default range: last 30 days)
           </p>
           {!byPeriod ? (
-            <p className="text-sm text-foreground/60">Loading…</p>
+            <LoadingLine />
           ) : byPeriod.periods.length === 0 ? (
             <p className="text-sm text-foreground/50">No sales in this range.</p>
           ) : (
@@ -131,7 +132,7 @@ export default function ReportsPage() {
         <Card>
           <h2 className="mb-4 text-sm font-semibold text-foreground">Sales by store</h2>
           {!byChannel ? (
-            <p className="text-sm text-foreground/60">Loading…</p>
+            <LoadingLine />
           ) : byChannel.channels.length === 0 ? (
             <p className="text-sm text-foreground/50">No sales in this range.</p>
           ) : (
@@ -151,7 +152,7 @@ export default function ReportsPage() {
         <Card>
           <h2 className="mb-4 text-sm font-semibold text-foreground">Top products</h2>
           {!top ? (
-            <p className="text-sm text-foreground/60">Loading…</p>
+            <LoadingLine />
           ) : top.products.length === 0 ? (
             <p className="text-sm text-foreground/50">No sales in this range.</p>
           ) : (
@@ -185,7 +186,7 @@ export default function ReportsPage() {
             Current stock × cost price. Stock is shared across all stores.
           </p>
           {!valuation ? (
-            <p className="text-sm text-foreground/60">Loading…</p>
+            <LoadingLine />
           ) : (
             <>
               <div className="mb-3 text-2xl font-semibold text-foreground">{money(valuation.totalValue)}</div>

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
 
@@ -314,7 +315,7 @@ export default function ProductsPage() {
         )}
 
         {!filteredProducts ? (
-          <p className="text-base text-foreground/60">Loading…</p>
+          <LoadingLine className="text-base text-foreground/60" />
         ) : filteredProducts.length === 0 ? (
           <p className="text-base text-foreground/50">
             No products match. Create one to get started.

@@ -8,6 +8,7 @@ import type { Category, Product } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { LoadingLine } from "@/components/ui/spinner";
 
 interface MasterForm {
   name: string;
@@ -148,7 +149,7 @@ export default function ProductDetailsTab() {
     return <p className="text-base text-status-cancelled">{loadError}</p>;
   }
   if (!product || !master) {
-    return <p className="text-base text-foreground/60">Loading…</p>;
+    return <LoadingLine className="text-base text-foreground/60" />;
   }
 
   const inv = product.inventory;

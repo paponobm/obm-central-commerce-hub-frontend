@@ -11,6 +11,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Pill, StatusBadge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const PROVIDER_LABELS: Record<string, string> = {
   STEADFAST: "Steadfast Courier",
@@ -271,7 +272,7 @@ export default function IntegrationsPage() {
         </div>
 
         {!integrations ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : integrations.length === 0 ? (
           <div className="py-8 text-center">
             <p className="mb-3 text-sm text-foreground/50">No integrations configured yet.</p>

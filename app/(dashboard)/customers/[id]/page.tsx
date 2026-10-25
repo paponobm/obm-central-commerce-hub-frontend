@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -34,7 +35,7 @@ export default function CustomerDetailPage() {
   }, [params.id]);
 
   if (error) return <p className="text-sm text-status-cancelled">{error}</p>;
-  if (!customer) return <p className="text-sm text-foreground/60">Loading…</p>;
+  if (!customer) return <LoadingLine />;
 
   return (
     <div>

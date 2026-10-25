@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { StatusBadge, Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const PROVIDER_LABELS: Record<string, string> = {
   STEADFAST: "Steadfast Courier",
@@ -81,7 +82,7 @@ export default function OrderDetailPage() {
     return <p className="text-sm text-status-cancelled">{loadError}</p>;
   }
   if (!order) {
-    return <p className="text-sm text-foreground/60">Loading…</p>;
+    return <LoadingLine />;
   }
 
   return (
@@ -236,7 +237,7 @@ export default function OrderDetailPage() {
                   <StatusBadge status={order.shipment.status} />
                 </div>
               ) : integrations === null ? (
-                <p className="text-sm text-foreground/50">Loading…</p>
+                <LoadingLine className="text-sm text-foreground/50" />
               ) : integrations.length === 0 ? (
                 <p className="text-sm text-foreground/50">
                   No enabled courier integrations — add one under Integrations.

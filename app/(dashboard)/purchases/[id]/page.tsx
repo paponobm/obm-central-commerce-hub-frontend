@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 export default function PurchaseDetailPage() {
   const params = useParams<{ id: string }>();
@@ -59,7 +60,7 @@ export default function PurchaseDetailPage() {
   }
 
   if (error) return <p className="text-sm text-status-cancelled">{error}</p>;
-  if (!purchase) return <p className="text-sm text-foreground/60">Loading…</p>;
+  if (!purchase) return <LoadingLine />;
 
   const editable = purchase.status === "DRAFT";
   const receivable = purchase.status === "DRAFT" || purchase.status === "ORDERED";

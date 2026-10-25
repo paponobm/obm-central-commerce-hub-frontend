@@ -7,6 +7,7 @@ import { api, ApiError } from "@/lib/api-client";
 import type { Product } from "@/lib/types";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const TABS: { label: string; path: string }[] = [
   { label: "Details", path: "" },
@@ -42,7 +43,7 @@ export default function ProductDetailLayout({ children }: { children: ReactNode 
     return <p className="text-base text-status-cancelled">{loadError}</p>;
   }
   if (!product) {
-    return <p className="text-base text-foreground/60">Loading…</p>;
+    return <LoadingLine className="text-base text-foreground/60" />;
   }
 
   return (

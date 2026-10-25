@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 export default function SupplierDetailPage() {
   const params = useParams<{ id: string }>();
@@ -24,7 +25,7 @@ export default function SupplierDetailPage() {
   }, [params.id]);
 
   if (error) return <p className="text-sm text-status-cancelled">{error}</p>;
-  if (!supplier) return <p className="text-sm text-foreground/60">Loading…</p>;
+  if (!supplier) return <LoadingLine />;
 
   return (
     <div>

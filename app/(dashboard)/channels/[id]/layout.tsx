@@ -6,6 +6,7 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const TABS: { label: string; path: string; permission?: string }[] = [
   { label: "Overview", path: "", permission: "reports.view" },
@@ -49,7 +50,7 @@ export default function ChannelWorkspaceLayout({ children }: { children: ReactNo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, channel, activeChannelId]);
 
-  if (loading || !channels) return <p className="text-sm text-foreground/60">Loading…</p>;
+  if (loading || !channels) return <LoadingLine />;
   if (!channel) {
     return (
       <p className="text-sm text-status-cancelled">
@@ -84,7 +85,7 @@ export default function ChannelWorkspaceLayout({ children }: { children: ReactNo
         })}
       </div>
 
-      {activeChannelId === id ? children : <p className="text-sm text-foreground/60">Loading…</p>}
+      {activeChannelId === id ? children : <LoadingLine />}
     </div>
   );
 }

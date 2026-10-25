@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const SOURCES: OrderSource[] = ["UNKNOWN", "MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
@@ -274,7 +275,7 @@ export default function EditOrderPage() {
     return (
       <div className="mx-auto max-w-6xl">
         <PageHeader title="Edit Order" />
-        <p className="text-sm text-foreground/60">Loading…</p>
+        <LoadingLine />
       </div>
     );
   }

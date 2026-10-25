@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/badge";
 import { Toast } from "@/components/ui/toast";
+import { LoadingLine } from "@/components/ui/spinner";
 
 // Small inline line icons for the Customer cell — plain outline style (no
 // icon library in this app), matching currentColor so they pick up
@@ -1169,7 +1170,7 @@ export default function OrdersPage() {
         )}
 
         {!visibleOrders ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : visibleOrders.length === 0 ? (
           <p className="text-sm text-foreground/50">No orders match these filters.</p>
         ) : (
@@ -1574,7 +1575,7 @@ export default function OrdersPage() {
                 </p>
               )}
               {!detailsData && !detailsError && (
-                <p className="py-8 text-center text-sm text-foreground/50">Loading…</p>
+                <LoadingLine className="justify-center py-8 text-sm text-foreground/50" />
               )}
               {detailsData && (
                 <>

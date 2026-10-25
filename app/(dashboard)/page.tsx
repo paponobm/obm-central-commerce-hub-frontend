@@ -13,6 +13,7 @@ import { DonutChart } from "@/components/ui/donut-chart";
 import { BarTrendChart } from "@/components/ui/bar-trend-chart";
 import { WebOrderReport } from "@/components/dashboard/web-order-report";
 import { OrdersBySourceReport } from "@/components/dashboard/orders-by-source-report";
+import { LoadingLine } from "@/components/ui/spinner";
 
 function shortDay(dateStr: string): string {
   return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-US", {
@@ -80,7 +81,7 @@ export default function DashboardPage() {
   }
 
   if (!data) {
-    return <p className="text-sm text-foreground/60">Loading…</p>;
+    return <LoadingLine />;
   }
 
   const pending = data.ordersByStatus.PENDING ?? 0;
@@ -218,7 +219,7 @@ export default function DashboardPage() {
         <Card>
           <h2 className="mb-4 text-sm font-semibold text-foreground">Top Selling Products</h2>
           {!topProducts ? (
-            <p className="text-sm text-foreground/60">Loading…</p>
+            <LoadingLine />
           ) : topProducts.length === 0 ? (
             <p className="text-sm text-foreground/50">No sales in the last 30 days.</p>
           ) : (

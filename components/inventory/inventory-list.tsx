@@ -11,6 +11,7 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
 
@@ -307,7 +308,7 @@ export function InventoryList({
           </p>
         )}
         {!filteredRows ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : filteredRows.length === 0 ? (
           <p className="text-sm text-foreground/50">
             {rows && rows.length > 0
@@ -527,7 +528,7 @@ export function InventoryList({
             </p>
           )}
           {!activityRows ? (
-            <p className="text-sm text-foreground/60">Loading…</p>
+            <LoadingLine />
           ) : activityRows.length === 0 ? (
             <p className="text-sm text-foreground/50">No stock movements yet for this product.</p>
           ) : (

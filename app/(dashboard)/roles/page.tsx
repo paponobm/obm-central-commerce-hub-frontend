@@ -6,6 +6,7 @@ import type { Role } from "@/lib/types";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 export default function RolesPage() {
   const [roles, setRoles] = useState<Role[] | null>(null);
@@ -19,7 +20,7 @@ export default function RolesPage() {
   }, []);
 
   if (error) return <p className="text-sm text-status-cancelled">{error}</p>;
-  if (!roles) return <p className="text-sm text-foreground/60">Loading…</p>;
+  if (!roles) return <LoadingLine />;
 
   return (
     <div>

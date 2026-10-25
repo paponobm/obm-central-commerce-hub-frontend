@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { LoadingLine } from "@/components/ui/spinner";
 
 interface FormState {
   id: string | null;
@@ -104,7 +105,7 @@ export default function BrandsPage() {
           <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">{loadError}</p>
         )}
         {!brands ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : brands.length === 0 ? (
           <p className="text-sm text-foreground/50">No brands yet.</p>
         ) : (

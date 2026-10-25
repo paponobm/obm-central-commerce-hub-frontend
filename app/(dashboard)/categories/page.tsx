@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 function PencilIcon({ className }: { className?: string }) {
   return (
@@ -361,7 +362,7 @@ export default function CategoriesPage() {
         )}
 
         {!categories ? (
-          <p className="text-base text-foreground/60">Loading…</p>
+          <LoadingLine className="text-base text-foreground/60" />
         ) : categories.length === 0 ? (
           <p className="text-base text-foreground/50">
             No categories yet. Create the first one to start organizing products.

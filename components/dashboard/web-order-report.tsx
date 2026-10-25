@@ -8,6 +8,7 @@ import { dateRangeCutoff, type DateRange } from "@/lib/date-range";
 import { Card } from "@/components/ui/card";
 import { DonutChart } from "@/components/ui/donut-chart";
 import { DateRangeSelect } from "@/components/ui/date-range-select";
+import { LoadingLine } from "@/components/ui/spinner";
 
 // Just the checkout-lead fields this card needs to place a lead on a stage
 // (see /admin/orders/checkout-leads).
@@ -180,7 +181,7 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
       {error ? (
         <p className="text-sm text-status-cancelled">{error}</p>
       ) : !rangedRows ? (
-        <p className="text-sm text-foreground/60">Loading…</p>
+        <LoadingLine />
       ) : (
         <DonutChart segments={segments} caption={`Total Orders: ${total}`} />
       )}

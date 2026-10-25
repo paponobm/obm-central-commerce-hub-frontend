@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { LoadingLine } from "@/components/ui/spinner";
 
 interface Settings {
   businessName: string;
@@ -58,7 +59,7 @@ export default function SettingsPage() {
     return error ? (
       <p className="text-sm text-status-cancelled">{error}</p>
     ) : (
-      <p className="text-sm text-foreground/60">Loading…</p>
+      <LoadingLine />
     );
   }
 

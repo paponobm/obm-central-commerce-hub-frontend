@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
+import { LoadingLine } from "@/components/ui/spinner";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
 
@@ -91,7 +92,7 @@ export default function StockMovementsPage() {
           </p>
         )}
         {!rows ? (
-          <p className="text-base text-foreground/60">Loading…</p>
+          <LoadingLine className="text-base text-foreground/60" />
         ) : rows.length === 0 ? (
           <p className="text-base text-foreground/50">No stock movements yet.</p>
         ) : (

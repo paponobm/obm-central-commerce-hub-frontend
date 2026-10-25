@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 interface ChannelForm {
   name: string;
@@ -183,7 +184,7 @@ export default function ProductPublishingTab() {
     return <p className="text-base text-status-cancelled">{loadError}</p>;
   }
   if (!product) {
-    return <p className="text-base text-foreground/60">Loading…</p>;
+    return <LoadingLine className="text-base text-foreground/60" />;
   }
 
   const publishedCategories = allCategories.filter((c) => c.isPublished);

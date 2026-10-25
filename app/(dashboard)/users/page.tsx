@@ -12,6 +12,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
+import { LoadingLine } from "@/components/ui/spinner";
 
 // Mirrors the backend's role-hierarchy.ts — which roles a given actor role
 // is allowed to create/edit users as. Manager and Member grant no
@@ -347,7 +348,7 @@ export default function UsersPage() {
           </p>
         )}
         {!users ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : (
           <table className="w-full text-sm">
             <thead>

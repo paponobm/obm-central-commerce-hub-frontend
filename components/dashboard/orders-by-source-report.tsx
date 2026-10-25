@@ -8,6 +8,7 @@ import { dateRangeCutoff, type DateRange } from "@/lib/date-range";
 import { Card } from "@/components/ui/card";
 import { DonutChart } from "@/components/ui/donut-chart";
 import { DateRangeSelect } from "@/components/ui/date-range-select";
+import { LoadingLine } from "@/components/ui/spinner";
 
 // A specific store's orders broken down by source, with the same "Today ▾"
 // filter as Web Order Report. Every source, not just WEBSITE — includeWebUnapproved
@@ -58,7 +59,7 @@ export function OrdersBySourceReport({ channelId }: { channelId: string }) {
       {error ? (
         <p className="text-sm text-status-cancelled">{error}</p>
       ) : !orders ? (
-        <p className="text-sm text-foreground/60">Loading…</p>
+        <LoadingLine />
       ) : (
         <DonutChart segments={segments} />
       )}

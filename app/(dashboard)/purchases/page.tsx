@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/ui/badge";
+import { LoadingLine } from "@/components/ui/spinner";
 
 export default function PurchasesPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function PurchasesPage() {
           <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">{error}</p>
         )}
         {!rows ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <LoadingLine />
         ) : rows.length === 0 ? (
           <p className="text-sm text-foreground/50">No purchases yet.</p>
         ) : (

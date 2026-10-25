@@ -7,6 +7,7 @@ import { useChannelScope } from "@/lib/channel-scope-context";
 import { isBlockedInStore, isBlockedWithoutStore } from "@/components/layout/nav-config";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -39,7 +40,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-sm text-foreground/60">
+      <div className="flex h-screen items-center justify-center gap-2 bg-background text-sm text-foreground/60">
+        <Spinner className="h-5 w-5" />
         Loading…
       </div>
     );

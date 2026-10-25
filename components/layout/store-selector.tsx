@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
+import { Spinner } from "@/components/ui/spinner";
 
 export function StoreSelector() {
   const { channels, loading, activeChannelId, activeChannel, setActiveChannelId } =
@@ -53,7 +54,14 @@ export function StoreSelector() {
         className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-fg transition-colors hover:bg-white/10 hover:text-white"
       >
         <span aria-hidden>🏬</span>
-        {loading ? "Loading…" : (activeChannel?.name ?? "All Stores")}
+        {loading ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner className="h-3 w-3" />
+            Loading…
+          </span>
+        ) : (
+          (activeChannel?.name ?? "All Stores")
+        )}
         <span className="text-xs text-sidebar-fg/50" aria-hidden>
           ▾
         </span>
