@@ -277,21 +277,21 @@ export default function ProductDetailsTab() {
             Used wherever this product shows as a small icon — order lines, inventory, and
             product lists.
           </p>
-          <div className="mb-3 flex items-center gap-3">
+          <div className="mb-3 flex items-center justify-center gap-3">
             {product.thumbnailUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
               <img
                 src={product.thumbnailUrl}
                 alt={product.name}
-                className="h-16 w-16 shrink-0 rounded-md border border-black/10 object-cover"
+                className="h-20 w-20 shrink-0 rounded-md border border-black/10 object-cover"
               />
             ) : (
-              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
+              <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
                 None
               </span>
             )}
-            <div className="flex flex-1 flex-col gap-2">
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:opacity-90">
+            <div className="flex items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-fg hover:opacity-90">
                 {uploadingThumbnail ? "Uploading…" : product.thumbnailUrl ? "Replace" : "Add Thumbnail"}
                 <input
                   type="file"
@@ -302,13 +302,13 @@ export default function ProductDetailsTab() {
                 />
               </label>
               {product.thumbnailUrl && (
-                <Button variant="ghost" onClick={handleRemoveThumbnail}>
+                <Button variant="ghost" className="!px-2.5 !py-1 !text-xs" onClick={handleRemoveThumbnail}>
                   Remove
                 </Button>
               )}
             </div>
           </div>
-          {thumbnailError && <p className="text-base text-status-cancelled">{thumbnailError}</p>}
+          {thumbnailError && <p className="text-center text-base text-status-cancelled">{thumbnailError}</p>}
         </Card>
 
         <Card>
@@ -317,7 +317,7 @@ export default function ProductDetailsTab() {
             The full photo gallery shown on the storefront product page — add as many as you
             like.
           </p>
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap justify-center gap-2">
             {galleryImages.map((img) => (
               <div key={img.id} className="group relative">
                 {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image */}
@@ -340,17 +340,19 @@ export default function ProductDetailsTab() {
               <p className="text-sm text-foreground/50">No gallery images yet.</p>
             )}
           </div>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm font-medium text-foreground hover:bg-black/5">
-            {uploadingImage ? "Uploading…" : "Add Image"}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              disabled={uploadingImage}
-              onChange={handleImageSelect}
-            />
-          </label>
-          {imageError && <p className="mt-2 text-sm text-status-cancelled">{imageError}</p>}
+          <div className="flex justify-center">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-black/10 bg-white px-2.5 py-1 text-xs font-medium text-foreground hover:bg-black/5">
+              {uploadingImage ? "Uploading…" : "Add Image"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                disabled={uploadingImage}
+                onChange={handleImageSelect}
+              />
+            </label>
+          </div>
+          {imageError && <p className="mt-2 text-center text-sm text-status-cancelled">{imageError}</p>}
         </Card>
       </div>
     </div>

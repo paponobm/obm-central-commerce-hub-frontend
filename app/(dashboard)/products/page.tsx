@@ -45,12 +45,11 @@ function BoxIcon({ className }: { className?: string }) {
   );
 }
 
-function CashIcon({ className }: { className?: string }) {
+function CheckCircleIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <rect x="2" y="6" width="20" height="12" rx="2" />
-      <circle cx="12" cy="12" r="3" />
-      <path d="M6 6v.01M18 18v-.01" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12 2.5 2.5 4.5-5" />
     </svg>
   );
 }
@@ -230,8 +229,7 @@ export default function ProductsPage() {
   // currently narrowing the table down to — same pattern as the Inventory
   // page's own summary cards.
   const totalProducts = products?.length ?? 0;
-  const activeBasePriceTotal =
-    products?.filter((p) => p.isActive).reduce((sum, p) => sum + Number(p.basePrice), 0) ?? 0;
+  const activeProductCount = products?.filter((p) => p.isActive).length ?? 0;
   const publishedCount = products?.filter((p) => (p.channels?.length ?? 0) > 0).length ?? 0;
 
   const filteredProducts = products?.filter((p) => {
@@ -265,10 +263,10 @@ export default function ProductsPage() {
           icon={<BoxIcon className="h-5 w-5" />}
         />
         <SummaryCard
-          label="Base Price (Active)"
-          value={money(activeBasePriceTotal)}
+          label="Total Active Product"
+          value={String(activeProductCount)}
           tone="delivered"
-          icon={<CashIcon className="h-5 w-5" />}
+          icon={<CheckCircleIcon className="h-5 w-5" />}
         />
         <SummaryCard
           label="Published to Storefront"
