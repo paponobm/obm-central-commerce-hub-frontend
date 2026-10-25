@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
-import { telHref, whatsappHref } from "@/lib/phone";
+import { telHref } from "@/lib/phone";
 import { formatAmount, formatRelativeTime } from "@/lib/format";
 
 function listDate(value: string): string {
@@ -13,6 +13,34 @@ function listDate(value: string): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const hour = d.getHours() % 12 || 12;
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()},\n${hour}:${pad(d.getMinutes())} ${d.getHours() < 12 ? "am" : "pm"}`;
+}
+
+// Same plain outline icons as the All Orders table's Customer cell, swapped
+// in here for visual consistency (no icon library in this app).
+function UserIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+
+function PhoneIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M5 4h4l2 5-2.5 2.5a11 11 0 0 0 5 5L16 14l5 2v4a2 2 0 0 1-2 2 16 16 0 0 1-14-14 2 2 0 0 1 2-2Z" />
+    </svg>
+  );
+}
+
+function PinIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 21s7-7.5 7-12a7 7 0 0 0-14 0c0 4.5 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
+    </svg>
+  );
 }
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -322,12 +350,12 @@ export default function WebOrdersPage() {
                       />
                     </td>
                     <td className="whitespace-nowrap px-4 py-4">
-                      <div className="whitespace-pre-line text-foreground/70">{listDate(o.createdAt)}</div>
+                      <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(o.createdAt)}</div>
                       <div className="text-sm text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
                     </td>
                     <td className="px-4 py-4 text-foreground/70">
                       <div className="flex items-center gap-1.5">
-                        <span className="opacity-70" title="Customer">👤</span>
+                        <span title="Customer"><UserIcon className="h-4.5 w-4 text-foreground" /></span>
                         <span className="font-medium text-foreground">{o.shippingName || o.customer.name}</span>
                         <button
                           type="button"
@@ -338,11 +366,11 @@ export default function WebOrdersPage() {
                           {copiedId === o.id ? "✓" : "⧉"}
                         </button>
                       </div>
-                      <div className="mt-1 flex items-center gap-2 text-sm text-foreground">
-                        <a href={telHref(o.shippingPhone || o.customer.phone)} className="text-blue-500 hover:text-blue-700" title="Call">
-                          📞
+                      <div className="mt-1 flex items-center gap-2 text-foreground">
+                        <a href={telHref(o.shippingPhone || o.customer.phone)} className="opacity-70 hover:opacity-100" title="Call">
+                          <PhoneIcon className="h-4.5 w-4" />
                         </a>
-                        <a
+                        {/* <a
                           href={whatsappHref(o.shippingPhone || o.customer.phone)}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -350,11 +378,11 @@ export default function WebOrdersPage() {
                           title="WhatsApp"
                         >
                           💬
-                        </a>
+                        </a> */}
                         <span>{o.shippingPhone || o.customer.phone}</span>
                       </div>
-                      <div className="mt-1 flex items-start gap-1 text-sm text-foreground">
-                        <span className="opacity-70">📍</span>
+                      <div className="mt-1 flex items-start gap-1 text-foreground">
+                        <span className="opacity-70"><PinIcon className="h-4.5 w-4" /></span>
                         <span className="max-w-[180px] truncate" title={o.shippingAddress}>
                           {o.shippingAddress}
                         </span>

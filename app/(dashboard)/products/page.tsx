@@ -36,35 +36,6 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
-function BoxIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="m21 8-9-5-9 5 9 5 9-5Z" />
-      <path d="M3 8v8l9 5 9-5V8" />
-      <path d="M12 13v8" />
-    </svg>
-  );
-}
-
-function CheckCircleIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="m8.5 12 2.5 2.5 4.5-5" />
-    </svg>
-  );
-}
-
-function StoreIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M3 9l1.5-5h15L21 9" />
-      <path d="M3 9h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9Z" />
-      <path d="M9 20v-6h6v6" />
-    </svg>
-  );
-}
-
 const SUMMARY_DOT_CLASSES = {
   primary: "bg-primary",
   delivered: "bg-status-delivered",
@@ -81,12 +52,10 @@ function SummaryCard({
   label,
   value,
   tone,
-  icon,
 }: {
   label: string;
   value: string;
   tone: keyof typeof SUMMARY_DOT_CLASSES;
-  icon: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-black/10 bg-white p-4">
@@ -261,19 +230,16 @@ export default function ProductsPage() {
           label="Total Products"
           value={String(totalProducts)}
           tone="primary"
-          icon={<BoxIcon className="h-5 w-5" />}
         />
         <SummaryCard
           label="Total Active Product"
           value={String(activeProductCount)}
           tone="delivered"
-          icon={<CheckCircleIcon className="h-5 w-5" />}
         />
         <SummaryCard
           label="Published to Storefront"
           value={String(publishedCount)}
           tone="pending"
-          icon={<StoreIcon className="h-5 w-5" />}
         />
       </div>
 
