@@ -119,7 +119,7 @@ export default function EditOrderPage() {
             productId: item.productId,
             productName: item.productName,
             sku: item.sku,
-            image: item.product?.images[0]?.url,
+            image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
           })),

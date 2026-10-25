@@ -94,6 +94,11 @@ export interface Product {
   unit: string;
   categoryId: string | null;
   brandId: string | null;
+  // The single image shown wherever a small product icon is needed (order
+  // lines, inventory, product lists) — distinct from `images`, the
+  // storefront's full gallery. Falls back to images[0] on the backend
+  // wherever it's read, so this can be null even when images exist.
+  thumbnailUrl: string | null;
   isActive: boolean;
   category?: Category | null;
   brand?: Brand | null;
@@ -276,7 +281,7 @@ export interface OrderItem {
   unitPrice: string;
   discount: string;
   total: string;
-  product?: { images: { url: string }[] };
+  product?: { thumbnailUrl: string | null; images: { url: string }[] };
 }
 
 export interface OrderStatusHistoryEntry {

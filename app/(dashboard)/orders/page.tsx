@@ -1314,11 +1314,13 @@ export default function OrdersPage() {
                           <StatusBadge status={o.status} compact />
                         </div>
                         <div className="space-y-1.5">
-                          {visibleItems.map((item) => (
+                          {visibleItems.map((item) => {
+                            const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
+                            return (
                             <div key={item.id} className="flex items-start gap-2">
-                              {item.product?.images[0]?.url ? (
+                              {thumb ? (
                                 <img
-                                  src={item.product.images[0].url}
+                                  src={thumb}
                                   alt={item.productName}
                                   className="h-7 w-7 shrink-0 rounded object-cover"
                                 />
@@ -1334,7 +1336,8 @@ export default function OrdersPage() {
                                 </div>
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         {o.items.length > 3 && (
                           <span className="mt-1 block text-xs font-medium text-primary">
@@ -1437,11 +1440,13 @@ export default function OrdersPage() {
               </button>
             </div>
             <div className="space-y-3">
-              {productsModal.items.map((item) => (
+              {productsModal.items.map((item) => {
+                const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
+                return (
                 <div key={item.id} className="flex gap-3 rounded-lg border border-black/10 p-3">
-                  {item.product?.images[0]?.url ? (
+                  {thumb ? (
                     <img
-                      src={item.product.images[0].url}
+                      src={thumb}
                       alt={item.productName}
                       className="h-16 w-16 shrink-0 rounded-lg object-cover"
                     />
@@ -1459,7 +1464,8 @@ export default function OrdersPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1734,11 +1740,13 @@ export default function OrdersPage() {
 
                   <div className="rounded-lg border border-black/10">
                     <h4 className="border-b border-black/10 px-4 py-3 text-sm font-semibold text-foreground">Products</h4>
-                    {detailsData.items.map((item) => (
+                    {detailsData.items.map((item) => {
+                      const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
+                      return (
                       <div key={item.id} className="flex items-center gap-4 border-b border-black/5 px-4 py-3 last:border-b-0">
-                        {item.product?.images[0]?.url ? (
+                        {thumb ? (
                           <img
-                            src={item.product.images[0].url}
+                            src={thumb}
                             alt={item.productName}
                             className="h-14 w-14 shrink-0 rounded-md object-cover"
                           />
@@ -1769,7 +1777,8 @@ export default function OrdersPage() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}

@@ -119,7 +119,7 @@ export default function NewOrderPage() {
           productId: p.id,
           productName: p.name,
           sku: p.sku,
-          image: p.images?.[0]?.url,
+          image: p.thumbnailUrl ?? p.images?.[0]?.url,
           quantity: 1,
           unitPrice: "",
         },
@@ -478,6 +478,7 @@ export default function NewOrderPage() {
             <div className="mt-3 max-h-[32rem] space-y-2 overflow-y-auto">
               {filteredProducts.map((p) => {
                 const available = availableStock(p);
+                const thumb = p.thumbnailUrl ?? p.images?.[0]?.url;
                 return (
                   <button
                     key={p.id}
@@ -485,10 +486,10 @@ export default function NewOrderPage() {
                     onClick={() => addProduct(p)}
                     className="flex w-full items-center gap-3 rounded-lg border border-black/5 p-2.5 text-left hover:bg-black/5"
                   >
-                    {p.images?.[0]?.url ? (
+                    {thumb ? (
                       // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
                       <img
-                        src={p.images[0].url}
+                        src={thumb}
                         alt={p.name}
                         className="h-14 w-14 shrink-0 rounded-md object-cover"
                       />

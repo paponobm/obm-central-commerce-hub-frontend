@@ -99,7 +99,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
       unitPrice: String(i.unitPrice),
       discount: "0",
       total: String(i.quantity * i.unitPrice),
-      product: { images: i.image ? [{ url: i.image }] : [] },
+      product: { thumbnailUrl: i.image ?? null, images: i.image ? [{ url: i.image }] : [] },
     })),
   };
 }
@@ -373,11 +373,13 @@ export default function WebOrdersPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="space-y-2">
-                        {o.items.map((item) => (
+                        {o.items.map((item) => {
+                          const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
+                          return (
                           <div key={item.id} className="flex items-center gap-2">
-                            {item.product?.images[0]?.url ? (
+                            {thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                              <img src={item.product.images[0].url} alt={item.productName} className="h-8 w-8 shrink-0 rounded object-cover" />
+                              <img src={thumb} alt={item.productName} className="h-8 w-8 shrink-0 rounded object-cover" />
                             ) : (
                               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">—</span>
                             )}
@@ -388,7 +390,8 @@ export default function WebOrdersPage() {
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </td>
                     <td className="px-4 py-4">

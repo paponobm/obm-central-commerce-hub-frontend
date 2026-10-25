@@ -13,6 +13,94 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 
+const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
+
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
+function BoxIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="m21 8-9-5-9 5 9 5 9-5Z" />
+      <path d="M3 8v8l9 5 9-5V8" />
+      <path d="M12 13v8" />
+    </svg>
+  );
+}
+
+function CashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M6 6v.01M18 18v-.01" />
+    </svg>
+  );
+}
+
+function StoreIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 9l1.5-5h15L21 9" />
+      <path d="M3 9h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9Z" />
+      <path d="M9 20v-6h6v6" />
+    </svg>
+  );
+}
+
+const SUMMARY_DOT_CLASSES = {
+  primary: "bg-primary",
+  delivered: "bg-status-delivered",
+  pending: "bg-status-pending",
+} as const;
+
+const SUMMARY_BADGE_CLASSES = {
+  primary: "bg-primary/10",
+  delivered: "bg-status-delivered/10",
+  pending: "bg-status-pending/10",
+} as const;
+
+function SummaryCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: string;
+  tone: keyof typeof SUMMARY_DOT_CLASSES;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-black/10 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-foreground/60">{label}</span>
+        <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${SUMMARY_BADGE_CLASSES[tone]}`}>
+          <span className={`h-2 w-2 rounded-full ${SUMMARY_DOT_CLASSES[tone]}`} />
+        </span>
+      </div>
+      <div className="mt-2 text-3xl font-bold text-foreground">{value}</div>
+    </div>
+  );
+}
+
 interface CreateFormState {
   sku: string;
   name: string;
@@ -44,6 +132,14 @@ export default function ProductsPage() {
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  // Default "active" matches what admins almost always want to see day to
+  // day — discontinued/inactive products stay out of the way unless asked
+  // for. The backend's own default (no includeInactive) already does this,
+  // but fetching everything and bucketing client-side (same pattern as the
+  // Inventory page) is what lets this dropdown offer Inactive/All too.
+  const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "all">("active");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<CreateFormState>(EMPTY_CREATE_FORM);
@@ -56,6 +152,7 @@ export default function ProductsPage() {
     if (search) params.set("search", search);
     if (categoryFilter) params.set("categoryId", categoryFilter);
     if (activeChannelId) params.set("channelId", activeChannelId);
+    params.set("includeInactive", "true");
     const qs = params.toString();
     try {
       const data = await api.get<Product[]>(`/admin/products${qs ? `?${qs}` : ""}`);
@@ -75,6 +172,13 @@ export default function ProductsPage() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, categoryFilter, activeChannelId]);
+
+  // Back to page 1 whenever the result set itself could change shape —
+  // otherwise a filter narrowing the list could strand the view on a page
+  // that no longer exists.
+  useEffect(() => {
+    setPage(1);
+  }, [search, categoryFilter, activeChannelId, statusFilter, pageSize]);
 
   function openCreate() {
     setFormError(null);
@@ -121,6 +225,24 @@ export default function ProductsPage() {
     }
   }
 
+  // These three always reflect the whole catalog (fetched once above with
+  // includeInactive=true), independent of whatever the Status dropdown is
+  // currently narrowing the table down to — same pattern as the Inventory
+  // page's own summary cards.
+  const totalProducts = products?.length ?? 0;
+  const activeBasePriceTotal =
+    products?.filter((p) => p.isActive).reduce((sum, p) => sum + Number(p.basePrice), 0) ?? 0;
+  const publishedCount = products?.filter((p) => (p.channels?.length ?? 0) > 0).length ?? 0;
+
+  const filteredProducts = products?.filter((p) => {
+    if (statusFilter === "active") return p.isActive;
+    if (statusFilter === "inactive") return !p.isActive;
+    return true;
+  });
+
+  const totalPages = filteredProducts ? Math.max(1, Math.ceil(filteredProducts.length / pageSize)) : 1;
+  const pagedProducts = filteredProducts?.slice((page - 1) * pageSize, page * pageSize);
+
   return (
     <div>
       <PageHeader
@@ -134,6 +256,27 @@ export default function ProductsPage() {
           )
         }
       />
+
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <SummaryCard
+          label="Total Products"
+          value={String(totalProducts)}
+          tone="primary"
+          icon={<BoxIcon className="h-5 w-5" />}
+        />
+        <SummaryCard
+          label="Base Price (Active)"
+          value={money(activeBasePriceTotal)}
+          tone="delivered"
+          icon={<CashIcon className="h-5 w-5" />}
+        />
+        <SummaryCard
+          label="Published to Storefront"
+          value={String(publishedCount)}
+          tone="pending"
+          icon={<StoreIcon className="h-5 w-5" />}
+        />
+      </div>
 
       <div className="mb-4 flex items-center gap-3">
         <div className="w-64">
@@ -153,72 +296,89 @@ export default function ProductsPage() {
             ))}
           </Select>
         </div>
+        <div className="w-40">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="all">All</option>
+          </Select>
+        </div>
       </div>
 
       <Card>
         {loadError && (
-          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
             {loadError}
           </p>
         )}
 
-        {!products ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
-        ) : products.length === 0 ? (
-          <p className="text-sm text-foreground/50">
+        {!filteredProducts ? (
+          <p className="text-base text-foreground/60">Loading…</p>
+        ) : filteredProducts.length === 0 ? (
+          <p className="text-base text-foreground/50">
             No products match. Create one to get started.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-base">
             <thead>
-              <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
-                <th className="pb-2 font-medium">Product</th>
-                <th className="pb-2 font-medium">Category / Brand</th>
-                <th className="pb-2 font-medium">Published Stores</th>
-                {!activeChannelId && <th className="pb-2 font-medium text-right">Stock</th>}
-                <th className="pb-2 font-medium text-right">Base Price</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium text-right">Actions</th>
+              <tr
+                className="text-left text-base font-bold text-foreground"
+                style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}
+              >
+                <th className="rounded-l-lg px-3 py-3 font-bold">#</th>
+                <th className="px-3 py-3 font-bold">Product</th>
+                <th className="px-3 py-3 font-bold">Category / Brand</th>
+                <th className="px-3 py-3 font-bold">Published Stores</th>
+                {!activeChannelId && <th className="px-3 py-3 text-right font-bold">Stock</th>}
+                <th className="px-3 py-3 text-right font-bold">Base Price</th>
+                <th className="px-3 py-3 font-bold">Status</th>
+                <th className="rounded-r-lg px-3 py-3 text-right font-bold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => {
-                const image = p.images?.[0]?.url;
+              {pagedProducts!.map((p, i) => {
+                const image = p.thumbnailUrl ?? p.images?.[0]?.url;
                 const available = p.inventory
                   ? p.inventory.currentStock - p.inventory.reservedStock
                   : 0;
                 return (
                   <tr key={p.id} className="border-b border-black/5 last:border-0">
-                    <td className="py-2.5">
-                      <div className="flex items-center gap-2">
+                    <td className="px-3 py-3 text-foreground/50">
+                      {(page - 1) * pageSize + i + 1}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2.5">
                         {image ? (
                           // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image, not part of the Next.js image pipeline
                           <img
                             src={image}
                             alt={p.name}
-                            className="h-8 w-8 shrink-0 rounded-md object-cover"
+                            className="h-9 w-9 shrink-0 rounded object-cover"
                           />
                         ) : (
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs font-medium text-foreground/40">
-                            {p.name.charAt(0).toUpperCase()}
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
+                            —
                           </span>
                         )}
                         <div>
                           <button
                             onClick={() => router.push(`/products/${p.id}`)}
-                            className="font-medium text-foreground hover:text-primary hover:underline"
+                            className="font-bold text-primary hover:underline"
                           >
                             {p.name}
                           </button>
-                          <div className="text-xs text-foreground/50">{p.sku}</div>
+                          <div className="text-sm text-foreground/50">{p.sku}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-2.5 text-foreground/60">
+                    <td className="px-3 py-3 text-foreground/60">
                       {p.category?.name ?? "—"}
                       {p.brand?.name && ` · ${p.brand.name}`}
                     </td>
-                    <td className="py-2.5">
+                    <td className="px-3 py-3">
                       {p.channels && p.channels.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {p.channels.map((c) => (
@@ -228,38 +388,50 @@ export default function ProductsPage() {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-xs text-foreground/40">Not published</span>
+                        <span className="text-sm text-foreground/40">Not published</span>
                       )}
                     </td>
                     {!activeChannelId && (
-                    <td className="py-2.5 text-right">
-                      <span className={available <= 0 ? "text-status-cancelled" : "text-foreground"}>
+                    <td className="px-3 py-3 text-right">
+                      <span
+                        className={`font-bold ${
+                          available <= 0 ? "text-status-cancelled" : "text-status-delivered"
+                        }`}
+                      >
                         {available}
                       </span>
                     </td>
                     )}
-                    <td className="py-2.5 text-right font-medium text-foreground">
+                    <td className="px-3 py-3 text-right font-medium text-foreground">
                       {money(p.basePrice)}
                     </td>
-                    <td className="py-2.5">
-                      <Pill tone={p.isActive ? "primary" : "default"}>
+                    <td className="px-3 py-3">
+                      <Pill tone={p.isActive ? "success" : "danger"}>
                         {p.isActive ? "Active" : "Inactive"}
                       </Pill>
                     </td>
-                    <td className="py-2.5 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" onClick={() => router.push(`/products/${p.id}`)}>
-                          Edit
-                        </Button>
-                        {!activeChannelId && (
-                        <Button
-                          variant="ghost"
-                          className="text-status-cancelled hover:bg-status-cancelled/10"
-                          disabled={deletingId === p.id}
-                          onClick={() => handleDelete(p)}
+                    <td className="px-3 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          title="Edit"
+                          aria-label={`Edit ${p.name}`}
+                          onClick={() => router.push(`/products/${p.id}`)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-foreground/50 hover:bg-black/5 hover:text-foreground"
                         >
-                          {deletingId === p.id ? "Deleting…" : "Delete"}
-                        </Button>
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                        {!activeChannelId && (
+                          <button
+                            type="button"
+                            title="Delete"
+                            aria-label={`Delete ${p.name}`}
+                            disabled={deletingId === p.id}
+                            onClick={() => handleDelete(p)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
                         )}
                       </div>
                     </td>
@@ -268,6 +440,48 @@ export default function ProductsPage() {
               })}
             </tbody>
           </table>
+        )}
+        {filteredProducts && filteredProducts.length > 0 && (
+          <div className="mt-4 flex items-center justify-between border-t border-black/5 pt-4 text-base">
+            <span className="font-bold text-primary">
+              Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredProducts.length)} of{" "}
+              {filteredProducts.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <Select
+                className="w-auto !text-base font-bold !text-primary"
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} / page
+                  </option>
+                ))}
+              </Select>
+              <Button
+                type="button"
+                variant="secondary"
+                className="!text-base !font-bold !text-primary"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </Button>
+              <span className="font-bold text-primary">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                className="!text-base !font-bold !text-primary"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         )}
       </Card>
 

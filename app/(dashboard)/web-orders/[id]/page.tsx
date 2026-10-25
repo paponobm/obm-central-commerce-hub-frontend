@@ -69,7 +69,7 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
       unitPrice: String(i.unitPrice),
       discount: "0",
       total: String(i.quantity * i.unitPrice),
-      product: { images: i.image ? [{ url: i.image }] : [] },
+      product: { thumbnailUrl: i.image ?? null, images: i.image ? [{ url: i.image }] : [] },
     })),
   };
 }
@@ -434,7 +434,7 @@ export default function WebOrderDetailsPage() {
               productId: item.productId,
               productName: item.productName,
               sku: item.sku,
-              image: item.product?.images[0]?.url,
+              image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
             })),
@@ -1160,11 +1160,13 @@ export default function WebOrderDetailsPage() {
             <Card>
               <h2 className="mb-3 text-base font-semibold text-foreground">Order items</h2>
               <div className="space-y-3">
-                {order.items.map((item) => (
+                {order.items.map((item) => {
+                  const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
+                  return (
                   <div key={item.id} className="flex items-center gap-3 text-sm">
-                    {item.product?.images[0]?.url ? (
+                    {thumb ? (
                       // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                      <img src={item.product.images[0].url} alt={item.productName} className="h-12 w-12 shrink-0 rounded-md object-cover" />
+                      <img src={thumb} alt={item.productName} className="h-12 w-12 shrink-0 rounded-md object-cover" />
                     ) : (
                       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-black/5 text-foreground/40">
                         {item.productName.charAt(0).toUpperCase()}
@@ -1176,7 +1178,8 @@ export default function WebOrderDetailsPage() {
                     </div>
                     <span className="shrink-0 text-foreground/60">{item.quantity}x</span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
 
