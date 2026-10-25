@@ -9,6 +9,83 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { Pill } from "@/components/ui/badge";
+
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
+function FolderIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12 2.5 2.5 4.5-5" />
+    </svg>
+  );
+}
+
+function EyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-3.17 4.24M6.6 6.6C3.9 8.35 2 11 2 11s4 7 11 7a10.9 10.9 0 0 0 5-1.2M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <path d="M1 1l22 22" />
+    </svg>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: string;
+  tone: "primary" | "delivered" | "pending";
+  icon: React.ReactNode;
+}) {
+  const dotClasses = { primary: "bg-primary", delivered: "bg-status-delivered", pending: "bg-status-pending" };
+  const badgeClasses = {
+    primary: "bg-primary/10",
+    delivered: "bg-status-delivered/10",
+    pending: "bg-status-pending/10",
+  };
+  return (
+    <div className="rounded-xl border border-black/10 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-foreground/60">{label}</span>
+        <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${badgeClasses[tone]}`}>
+          <span className={`h-2 w-2 rounded-full ${dotClasses[tone]}`} />
+        </span>
+      </div>
+      <div className="mt-2 text-3xl font-bold text-foreground">{value}</div>
+    </div>
+  );
+}
 
 interface CategoryNode extends Category {
   children: CategoryNode[];
@@ -239,6 +316,9 @@ export default function CategoriesPage() {
 
   const parentOptions = (categories ?? []).filter((c) => c.id !== form?.id);
   const rows = categories ? flattenTree(buildTree(categories)) : [];
+  const totalCategories = categories?.length ?? 0;
+  const publishedCount = categories?.filter((c) => c.isPublished).length ?? 0;
+  const unpublishedCount = totalCategories - publishedCount;
 
   return (
     <div>
@@ -252,69 +332,99 @@ export default function CategoriesPage() {
         }
       />
 
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <SummaryCard
+          label="Total Categories"
+          value={String(totalCategories)}
+          tone="primary"
+          icon={<FolderIcon className="h-5 w-5" />}
+        />
+        <SummaryCard
+          label="Published"
+          value={String(publishedCount)}
+          tone="delivered"
+          icon={<CheckCircleIcon className="h-5 w-5" />}
+        />
+        <SummaryCard
+          label="Unpublished"
+          value={String(unpublishedCount)}
+          tone="pending"
+          icon={<EyeOffIcon className="h-5 w-5" />}
+        />
+      </div>
+
       <Card>
         {loadError && (
-          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
             {loadError}
           </p>
         )}
 
         {!categories ? (
-          <p className="text-sm text-foreground/60">Loading…</p>
+          <p className="text-base text-foreground/60">Loading…</p>
         ) : categories.length === 0 ? (
-          <p className="text-sm text-foreground/50">
+          <p className="text-base text-foreground/50">
             No categories yet. Create the first one to start organizing products.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-left text-base">
             <thead>
-              <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
-                <th className="pb-2 font-medium">Name</th>
-                <th className="pb-2 font-medium">Slug</th>
-                <th className="pb-2 font-medium">Published</th>
-                <th className="pb-2 font-medium text-right">Actions</th>
+              <tr style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                <th className="rounded-l-lg px-3 py-3 font-bold">#</th>
+                <th className="px-3 py-3 font-bold">Name</th>
+                <th className="px-3 py-3 font-bold">Slug</th>
+                <th className="px-3 py-3 font-bold">Published</th>
+                <th className="rounded-r-lg px-3 py-3 text-right font-bold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ category: c, depth }) => (
+              {rows.map(({ category: c, depth }, i) => (
                 <tr key={c.id} className="border-b border-black/5 last:border-0">
-                  <td className="py-2.5">
+                  <td className="px-3 py-3 text-foreground/50">{i + 1}</td>
+                  <td className="px-3 py-3">
                     <div
-                      className="flex items-center gap-2"
+                      className="flex items-center gap-2.5"
                       style={{ paddingLeft: depth * 24 }}
                     >
                       {depth > 0 && <span className="text-foreground/30">└</span>}
                       <CategoryThumb imageUrl={c.imageUrl} name={c.name} />
-                      <span className="font-medium text-foreground">{c.name}</span>
+                      <span className="font-bold text-primary">{c.name}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 text-foreground/60">{c.slug}</td>
-                  <td className="py-2.5">
-                    <label className="inline-flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={c.isPublished}
-                        disabled={publishBusyId === c.id}
-                        onChange={() => togglePublish(c)}
-                      />
-                      <span className="text-xs text-foreground/60">
+                  <td className="px-3 py-3 text-foreground/60">{c.slug}</td>
+                  <td className="px-3 py-3">
+                    <button
+                      type="button"
+                      disabled={publishBusyId === c.id}
+                      onClick={() => togglePublish(c)}
+                      className="disabled:opacity-50"
+                    >
+                      <Pill tone={c.isPublished ? "success" : "default"}>
                         {c.isPublished ? "Published" : "Unpublished"}
-                      </span>
-                    </label>
+                      </Pill>
+                    </button>
                   </td>
-                  <td className="py-2.5 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" onClick={() => openEditForm(c)}>
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="text-status-cancelled hover:bg-status-cancelled/10"
+                  <td className="px-3 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        title="Edit"
+                        aria-label={`Edit ${c.name}`}
+                        onClick={() => openEditForm(c)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-foreground/50 hover:bg-black/5 hover:text-foreground"
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete"
+                        aria-label={`Delete ${c.name}`}
                         disabled={deletingId === c.id}
                         onClick={() => handleDelete(c)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
                       >
-                        {deletingId === c.id ? "Deleting…" : "Delete"}
-                      </Button>
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -328,13 +438,16 @@ export default function CategoriesPage() {
         open={!!form}
         onClose={closeForm}
         title={form?.id ? "Edit Category" : "New Category"}
+        titleClassName="!text-lg"
+        size="lg"
       >
         {form && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <Label>Name</Label>
+              <Label className="!text-base !font-bold">Name</Label>
               <Input
                 required
+                className="w-full !text-base"
                 value={form.name}
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="e.g. Dried Seafood"
@@ -342,9 +455,10 @@ export default function CategoriesPage() {
             </div>
 
             <div>
-              <Label>Slug</Label>
+              <Label className="!text-base !font-bold">Slug</Label>
               <Input
                 required
+                className="w-full !text-base"
                 value={form.slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
                 placeholder="e.g. dried-seafood"
@@ -354,7 +468,7 @@ export default function CategoriesPage() {
             </div>
 
             <div>
-              <Label>Image</Label>
+              <Label className="!text-base !font-bold">Image</Label>
               <div className="flex items-center gap-3">
                 {form.imageUrl && !previewFailed ? (
                   // eslint-disable-next-line @next/next/no-img-element -- preview of an uploaded file, not part of the Next.js image pipeline
@@ -365,12 +479,12 @@ export default function CategoriesPage() {
                     onError={() => setPreviewFailed(true)}
                   />
                 ) : (
-                  <span className="flex h-16 w-16 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/40">
+                  <span className="flex h-16 w-16 items-center justify-center rounded-md bg-black/5 text-base text-foreground/40">
                     No image
                   </span>
                 )}
                 <div className="flex flex-col items-start gap-1">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium text-foreground hover:bg-black/5">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-base font-medium text-foreground hover:bg-black/5">
                     {uploading
                       ? "Uploading…"
                       : form.imageUrl
@@ -388,7 +502,7 @@ export default function CategoriesPage() {
                     <button
                       type="button"
                       onClick={removeImage}
-                      className="text-xs text-foreground/50 hover:text-status-cancelled"
+                      className="text-base text-foreground/50 hover:text-status-cancelled"
                     >
                       Remove image
                     </button>
@@ -396,13 +510,14 @@ export default function CategoriesPage() {
                 </div>
               </div>
               {uploadError && (
-                <p className="mt-2 text-xs text-status-cancelled">{uploadError}</p>
+                <p className="mt-2 text-base text-status-cancelled">{uploadError}</p>
               )}
             </div>
 
             <div>
-              <Label>Parent Category</Label>
+              <Label className="!text-base !font-bold">Parent Category</Label>
               <Select
+                className="w-full !text-base"
                 value={form.parentId}
                 onChange={(e) =>
                   setForm((prev) => (prev ? { ...prev, parentId: e.target.value } : prev))
@@ -428,14 +543,14 @@ export default function CategoriesPage() {
                     )
                   }
                 />
-                <span className="text-sm text-foreground">
+                <span className="text-base text-foreground">
                   Published (visible on the storefront)
                 </span>
               </label>
             </div>
 
             {formError && (
-              <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+              <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
                 {formError}
               </p>
             )}

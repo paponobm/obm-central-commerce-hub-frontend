@@ -4,6 +4,7 @@ export interface NavLink {
   href: string;
   permission?: string;
   centralOnly?: boolean;
+  storeOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -53,20 +54,29 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: "Movements", href: "/inventory/movements" },
     ],
   },
+  // Turned off in the sidebar per request (not needed yet) — uncomment to
+  // bring back. The page and its backend module are untouched, so this is
+  // reversible with just this one block restored.
+  // {
+  //   type: "group",
+  //   label: "Purchasing",
+  //   permission: "suppliers.manage",
+  //   centralOnly: true,
+  //   children: [
+  //     { label: "Purchases", href: "/purchases" },
+  //     { label: "Suppliers", href: "/suppliers" },
+  //   ],
+  // },
+  // Courier integrations are configured per storefront, so this is
+  // storeOnly — hidden under "All Stores" and only shown once a specific
+  // store (e.g. Online Burmese Market) is selected.
   {
-    type: "group",
-    label: "Purchasing",
-    permission: "suppliers.manage",
-    centralOnly: true,
-    children: [
-      { label: "Purchases", href: "/purchases" },
-      { label: "Suppliers", href: "/suppliers" },
-    ],
+    type: "link",
+    label: "Integrations",
+    href: "/integrations",
+    permission: "integrations.manage",
+    storeOnly: true,
   },
-  // Not centralOnly — couriers are typically configured per storefront,
-  // so this stays reachable whether "All Stores" or one specific store is
-  // active, unlike Inventory/Purchasing/Users/etc. below.
-  { type: "link", label: "Integrations", href: "/integrations", permission: "integrations.manage" },
   { type: "link", label: "Customers", href: "/customers", permission: "customers.view" },
   // channels.view is a baseline permission granted automatically to any
   // non-Super-Admin user (see UsersService.sanitizePermissions — the store
@@ -111,7 +121,7 @@ export function isBlockedInStore(pathname: string): boolean {
 // Dashboard instead of leaving an orphaned page open. Orders and New Order
 // are deliberately NOT here — both already have their own "All Stores" /
 // "no channel" modes.
-export const STORE_ONLY_PREFIXES = ["/web-orders"];
+export const STORE_ONLY_PREFIXES = ["/web-orders", "/integrations"];
 
 export function isBlockedWithoutStore(pathname: string): boolean {
   return STORE_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
