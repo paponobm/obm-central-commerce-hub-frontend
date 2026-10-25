@@ -229,26 +229,32 @@ export default function NewOrderPage() {
         <Card>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
-              <Label>Mobile Number</Label>
+              <Label className="!text-base !font-bold">Mobile Number</Label>
               <Input
                 required
+                className="w-full !text-base"
                 placeholder="Mobile Number"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
               />
             </div>
             <div>
-              <Label>Name</Label>
+              <Label className="!text-base !font-bold">Name</Label>
               <Input
                 required
+                className="w-full !text-base"
                 placeholder="Customer Name"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
               />
             </div>
             <div>
-              <Label>Delivery Method</Label>
-              <Select value={deliveryMethod} onChange={(e) => setDeliveryMethod(e.target.value)}>
+              <Label className="!text-base !font-bold">Delivery Method</Label>
+              <Select
+                className="w-full !text-base"
+                value={deliveryMethod}
+                onChange={(e) => setDeliveryMethod(e.target.value)}
+              >
                 {DELIVERY_METHODS.map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -260,29 +266,31 @@ export default function NewOrderPage() {
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
-              <Label>Address</Label>
+              <Label className="!text-base !font-bold">Address</Label>
               <Textarea
                 required
                 rows={3}
+                className="w-full !text-base"
                 placeholder="Enter address"
                 value={shippingAddress}
                 onChange={(e) => setShippingAddress(e.target.value)}
               />
             </div>
             <div>
-              <Label>Shipping Note</Label>
+              <Label className="!text-base !font-bold">Shipping Note</Label>
               <Textarea
                 rows={3}
+                className="w-full !text-base"
                 placeholder="Enter shipping note"
                 value={shippingNote}
                 onChange={(e) => setShippingNote(e.target.value)}
               />
             </div>
             <div>
-              <Label>Extra Options</Label>
+              <Label className="!text-base !font-bold">Extra Options</Label>
               <div className="space-y-3 rounded-lg border border-black/10 p-3">
                 {!globalChannelId && (
-                  <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+                  <Select className="w-full !text-base" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
                     <option value="">No channel (manual)</option>
                     {channels.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -291,7 +299,11 @@ export default function NewOrderPage() {
                     ))}
                   </Select>
                 )}
-                <Select value={source} onChange={(e) => setSource(e.target.value as OrderSource)}>
+                <Select
+                  className="w-full !text-base"
+                  value={source}
+                  onChange={(e) => setSource(e.target.value as OrderSource)}
+                >
                   {SOURCES.map((s) => (
                     <option key={s} value={s}>
                       {s.charAt(0) + s.slice(1).toLowerCase()}
@@ -308,14 +320,14 @@ export default function NewOrderPage() {
             <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-foreground">
               Ordered Products
               {lineItems.length > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-sm font-semibold text-primary">
                   {lineItems.length}
                 </span>
               )}
             </h2>
             {lineItems.length === 0 ? (
               <div className="flex min-h-[24rem] items-center justify-center">
-                <p className="text-sm text-status-cancelled">
+                <p className="text-base text-status-cancelled">
                   No Products added. Please add products to the order
                 </p>
               </div>
@@ -342,16 +354,16 @@ export default function NewOrderPage() {
                             className="h-14 w-14 shrink-0 rounded-md object-cover"
                           />
                         ) : (
-                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-sm text-foreground/40">
+                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-base text-foreground/40">
                             {item.productName.charAt(0).toUpperCase()}
                           </span>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-foreground">
+                          <div className="truncate text-base font-medium text-foreground">
                             {item.productName}
                           </div>
-                          <div className="text-xs font-medium text-primary">SKU: {item.sku}</div>
-                          <div className="mt-1 flex items-center gap-3 text-xs">
+                          <div className="text-sm font-medium text-primary">SKU: {item.sku}</div>
+                          <div className="mt-1 flex items-center gap-3 text-sm">
                             {/* Always the product's catalog price, not the
                                 (possibly edited) unitPrice below — so editing
                                 this line's price never looks like it changed
@@ -382,7 +394,7 @@ export default function NewOrderPage() {
 
                       <div className="mt-3 grid grid-cols-3 gap-3">
                         <div>
-                          <Label>Qty</Label>
+                          <Label className="!text-base !font-bold">Qty</Label>
                           <div className="flex min-w-0 items-center gap-1">
                             <button
                               type="button"
@@ -405,7 +417,7 @@ export default function NewOrderPage() {
                                   quantity: Math.max(1, Number(e.target.value)),
                                 })
                               }
-                              className="w-0 min-w-0 flex-1 text-center"
+                              className="w-0 min-w-0 flex-1 text-center !text-base"
                             />
                             <button
                               type="button"
@@ -420,7 +432,7 @@ export default function NewOrderPage() {
                           </div>
                         </div>
                         <div>
-                          <Label>Price</Label>
+                          <Label className="!text-base !font-bold">Price</Label>
                           <div className="flex min-w-0 items-center gap-1">
                             <button
                               type="button"
@@ -441,7 +453,7 @@ export default function NewOrderPage() {
                                 }
                               }}
                               onChange={(e) => updateLineItem(item.productId, { unitPrice: e.target.value })}
-                              className="w-0 min-w-0 flex-1 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              className="w-0 min-w-0 flex-1 text-center !text-base [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               title="Unit price (blank = storefront/base price)"
                             />
                             <button
@@ -455,8 +467,8 @@ export default function NewOrderPage() {
                           </div>
                         </div>
                         <div>
-                          <Label>Total</Label>
-                          <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-center text-sm text-foreground/70">
+                          <Label className="!text-base !font-bold">Total</Label>
+                          <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-center text-base text-foreground/70">
                             {formatAmount(lineTotal)}
                           </div>
                         </div>
@@ -471,6 +483,7 @@ export default function NewOrderPage() {
           <Card>
             <h2 className="mb-4 text-base font-semibold text-foreground">Click To Add Products</h2>
             <Input
+              className="w-full !text-base"
               placeholder="Search by name or SKU…"
               value={productSearch}
               onChange={(e) => setProductSearch(e.target.value)}
@@ -494,14 +507,14 @@ export default function NewOrderPage() {
                         className="h-14 w-14 shrink-0 rounded-md object-cover"
                       />
                     ) : (
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-sm text-foreground/40">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-base text-foreground/40">
                         {p.name.charAt(0).toUpperCase()}
                       </span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
-                      <div className="text-xs font-medium text-primary">SKU: {p.sku}</div>
-                      <div className="mt-1 flex items-center justify-between text-xs">
+                      <div className="truncate text-base font-medium text-foreground">{p.name}</div>
+                      <div className="text-sm font-medium text-primary">SKU: {p.sku}</div>
+                      <div className="mt-1 flex items-center justify-between text-sm">
                         <span className="text-foreground/60">Price: {formatAmount(p.basePrice)}</span>
                         <span className={available <= 0 ? "text-status-cancelled" : "text-foreground/40"}>
                           Stock: {available}
@@ -512,7 +525,7 @@ export default function NewOrderPage() {
                 );
               })}
               {filteredProducts.length === 0 && (
-                <p className="py-6 text-center text-sm text-foreground/50">No products found.</p>
+                <p className="py-6 text-center text-base text-foreground/50">No products found.</p>
               )}
             </div>
           </Card>
@@ -526,54 +539,58 @@ export default function NewOrderPage() {
             }`}
           >
             <div>
-              <Label>Discount</Label>
+              <Label className="!text-base !font-bold">Discount</Label>
               <Input
                 type="number"
                 min="0"
                 step="1"
+                className="w-full !text-base"
                 placeholder="0"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
               />
             </div>
             <div>
-              <Label>Advance</Label>
+              <Label className="!text-base !font-bold">Advance</Label>
               <Input
                 type="number"
                 min="0"
                 step="1"
+                className="w-full !text-base"
                 placeholder="0"
                 value={advanceAmount}
                 onChange={(e) => setAdvanceAmount(e.target.value)}
               />
             </div>
             <div>
-              <Label>Sub Total</Label>
-              <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-sm text-foreground/50">
+              <Label className="!text-base !font-bold">Sub Total</Label>
+              <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-base text-foreground/50">
                 {formatAmount(subTotal)}
               </div>
             </div>
             <div>
-              <Label>Delivery Charge</Label>
+              <Label className="!text-base !font-bold">Delivery Charge</Label>
               <Input
                 type="number"
                 min="0"
                 step="1"
+                className="w-full !text-base"
                 placeholder="0"
                 value={shippingFee}
                 onChange={(e) => setShippingFee(e.target.value)}
               />
             </div>
             <div>
-              <Label className="text-status-cancelled">Grand Total</Label>
-              <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 px-3 py-2 text-sm font-semibold text-status-cancelled">
+              <Label className="!text-base !font-bold text-status-cancelled">Grand Total</Label>
+              <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 px-3 py-2 text-base font-semibold text-status-cancelled">
                 {formatAmount(grandTotal)}
               </div>
             </div>
             {hasAdvance && (
               <div>
-                <Label>Payment Method</Label>
+                <Label className="!text-base !font-bold">Payment Method</Label>
                 <Select
+                  className="w-full !text-base"
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
                 >
@@ -589,8 +606,9 @@ export default function NewOrderPage() {
 
           {hasAdvance && (
             <div className="mt-3">
-              <Label>Transaction ID</Label>
+              <Label className="!text-base !font-bold">Transaction ID</Label>
               <Input
+                className="w-full !text-base"
                 placeholder="Enter transaction ID"
                 value={transactionId}
                 onChange={(e) => setTransactionId(e.target.value)}
@@ -599,7 +617,7 @@ export default function NewOrderPage() {
           )}
 
           {formError && (
-            <p className="mt-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+            <p className="mt-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
               {formError}
             </p>
           )}
@@ -617,7 +635,7 @@ export default function NewOrderPage() {
               onClick={() => pricingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
               className="flex w-full items-center justify-between text-primary-fg"
             >
-              <span className="text-sm font-medium opacity-80">Total</span>
+              <span className="text-base font-medium opacity-80">Total</span>
               <span className="flex items-center gap-2 text-base font-semibold">
                 {formatAmount(orderTotal)}৳
                 <span aria-hidden="true">▲</span>
@@ -640,7 +658,7 @@ export default function NewOrderPage() {
               ✓
             </div>
             <h3 className="text-base font-semibold text-foreground">Order created</h3>
-            <p className="mt-1 text-sm text-foreground/60">
+            <p className="mt-1 text-base text-foreground/60">
               Order {createdOrderNumber} has been created successfully.
             </p>
             <Button className="mt-5 w-full" onClick={() => setCreatedOrderNumber(null)}>

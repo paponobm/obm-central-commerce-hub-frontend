@@ -16,6 +16,7 @@ function listDate(value: string): string {
 }
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
+import { Pill } from "@/components/ui/badge";
 import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
 import { useAuth } from "@/lib/auth-context";
 import { LoadingLine } from "@/components/ui/spinner";
@@ -244,12 +245,12 @@ export default function WebOrdersPage() {
           <button
             key={t.key}
             onClick={() => selectTab(t.key)}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-base font-medium ${
               tab === t.key ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
             }`}
           >
             {t.label}
-            <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-xs text-foreground/50">{counts[t.key]}</span>
+            <Pill tone={tab === t.key ? "info" : "primary"}>{counts[t.key]}</Pill>
           </button>
         ))}
       </div>
@@ -259,30 +260,30 @@ export default function WebOrdersPage() {
           value={search}
           onChange={(e) => updateSearch(e.target.value)}
           placeholder="Search order #, customer, phone…"
-          className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+          className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-base outline-none focus:border-primary"
         />
       </div>
 
       <Card>
         {selected.size > 0 && (
-          <div className="mb-3 flex items-center justify-between rounded-lg bg-primary/5 px-4 py-2 text-sm">
+          <div className="mb-3 flex items-center justify-between rounded-lg bg-primary/5 px-4 py-2 text-base">
             <span className="font-medium text-primary">{selected.size} selected</span>
             <button onClick={() => setSelected(new Set())} className="text-foreground/60 hover:text-foreground">
               Clear selection
             </button>
           </div>
         )}
-        {error && <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">{error}</p>}
+        {error && <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">{error}</p>}
         {!visible ? (
           <LoadingLine />
         ) : visible.length === 0 ? (
-          <p className="text-sm text-foreground/50">No web orders in this tab.</p>
+          <p className="text-base text-foreground/50">No web orders in this tab.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-sm">
+            <table className="w-full min-w-[1000px] text-base">
               <thead>
                 <tr className="text-left font-semibold text-primary">
-                  <th className="rounded-l-lg px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
+                  <th className="rounded-l-lg px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <input
                       type="checkbox"
                       aria-label="Select all"
@@ -291,14 +292,14 @@ export default function WebOrdersPage() {
                       className="h-4 w-4 rounded border-black/20 accent-primary"
                     />
                   </th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Created At</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Order Items</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Success Rate</th>
-                  <th className="px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
-                  <th className="px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Total</th>
-                  <th className="rounded-r-lg px-4 py-3 font-medium text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
+                  <th className="px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Created At</th>
+                  <th className="px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Customer</th>
+                  <th className="px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Note</th>
+                  <th className="px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Order Items</th>
+                  <th className="px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Success Rate</th>
+                  <th className="px-4 py-3 font-bold" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Tags</th>
+                  <th className="px-4 py-3 font-bold text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Total</th>
+                  <th className="rounded-r-lg px-4 py-3 font-bold text-right" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -322,7 +323,7 @@ export default function WebOrdersPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-4">
                       <div className="whitespace-pre-line text-foreground/70">{listDate(o.createdAt)}</div>
-                      <div className="text-xs text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
+                      <div className="text-sm text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
                     </td>
                     <td className="px-4 py-4 text-foreground/70">
                       <div className="flex items-center gap-1.5">
@@ -337,7 +338,7 @@ export default function WebOrdersPage() {
                           {copiedId === o.id ? "✓" : "⧉"}
                         </button>
                       </div>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-foreground">
+                      <div className="mt-1 flex items-center gap-2 text-sm text-foreground">
                         <a href={telHref(o.shippingPhone || o.customer.phone)} className="text-blue-500 hover:text-blue-700" title="Call">
                           📞
                         </a>
@@ -352,15 +353,15 @@ export default function WebOrdersPage() {
                         </a>
                         <span>{o.shippingPhone || o.customer.phone}</span>
                       </div>
-                      <div className="mt-1 flex items-start gap-1 text-xs text-foreground">
+                      <div className="mt-1 flex items-start gap-1 text-sm text-foreground">
                         <span className="opacity-70">📍</span>
                         <span className="max-w-[180px] truncate" title={o.shippingAddress}>
                           {o.shippingAddress}
                         </span>
                       </div>
-                      {!isCompleteWebOrder(o) && <div className="mt-1 text-xs text-red-600">Details missing</div>}
+                      {!isCompleteWebOrder(o) && <div className="mt-1 text-sm text-red-600">Details missing</div>}
                     </td>
-                    <td className="max-w-[220px] px-4 py-4 text-xs text-foreground">
+                    <td className="max-w-[220px] px-4 py-4 text-sm text-foreground">
                       <div className="text-foreground/50">
                         Updated {formatRelativeTime(o.lastUpdate.at)}
                         {o.lastUpdate.by ? ` · ${o.lastUpdate.by}` : ""}
@@ -382,11 +383,11 @@ export default function WebOrdersPage() {
                               // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
                               <img src={thumb} alt={item.productName} className="h-8 w-8 shrink-0 rounded object-cover" />
                             ) : (
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">—</span>
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-black/5 text-sm text-foreground/30">—</span>
                             )}
                             <div className="min-w-0">
                               <div className="truncate text-foreground">{item.productName}</div>
-                              <div className="text-xs text-foreground/50">
+                              <div className="text-sm text-foreground/50">
                                 {item.quantity} × {formatAmount(item.unitPrice)}
                               </div>
                             </div>
@@ -404,14 +405,14 @@ export default function WebOrdersPage() {
                     </td>
                     <td className="px-4 py-4">
                       {o.customer.orderCount > 1 && (
-                        <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                        <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-sm font-semibold text-sky-700">
                           REPEAT
                         </span>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-medium">{formatAmount(o.total)}</td>
                     <td className="px-4 py-4 text-right">
-                      <Link href={`/web-orders/${o.id}`} className="inline-block rounded-lg border border-black/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/5">
+                      <Link href={`/web-orders/${o.id}`} className="inline-block rounded-lg border border-black/10 px-3 py-1.5 text-base font-medium text-primary hover:bg-primary/5">
                         Open
                       </Link>
                     </td>

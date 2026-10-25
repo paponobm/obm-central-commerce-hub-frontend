@@ -22,7 +22,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { StatusBadge } from "@/components/ui/badge";
+import { StatusBadge, Pill } from "@/components/ui/badge";
 import { Toast } from "@/components/ui/toast";
 import { LoadingLine } from "@/components/ui/spinner";
 
@@ -798,7 +798,7 @@ export default function OrdersPage() {
                         setPrintError(null);
                         setShowPrintDialog(true);
                       }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
                     >
                       <PrinterIcon className="h-4 w-4 text-foreground/50" />
                       Invoice
@@ -810,7 +810,7 @@ export default function OrdersPage() {
                         setOpenMenuId(null);
                         setDetailsOrderId(o.id);
                       }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
                     >
                       <FileTextIcon className="h-4 w-4 text-foreground/50" />
                       Order Details
@@ -821,7 +821,7 @@ export default function OrdersPage() {
                         setOpenMenuId(null);
                         router.push(`/orders/${o.id}/edit`);
                       }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground hover:bg-black/5"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
                     >
                       <EditIcon className="h-4 w-4 text-foreground/50" />
                       Edit
@@ -834,7 +834,7 @@ export default function OrdersPage() {
                           setOpenMenuId(null);
                           cancelOrder(e, o);
                         }}
-                        className="block w-full px-3 py-2 text-left text-sm text-status-cancelled hover:bg-status-cancelled/10"
+                        className="block w-full px-3 py-2 text-left text-base text-status-cancelled hover:bg-status-cancelled/10"
                       >
                         {busyId === o.id ? "Cancelling…" : "Cancel"}
                       </button>
@@ -847,7 +847,7 @@ export default function OrdersPage() {
                           setOpenMenuId(null);
                           enterToSteadfast(e, o);
                         }}
-                        className="flex w-full items-center gap-2.5 bg-status-cancelled px-3 py-2 text-left text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                        className="flex w-full items-center gap-2.5 bg-status-cancelled px-3 py-2 text-left text-base font-medium text-white hover:opacity-90 disabled:opacity-50"
                       >
                         <SendIcon className="h-4 w-4" />
                         {busyId === o.id ? "Booking…" : "Entry to Steadfast"}
@@ -878,20 +878,14 @@ export default function OrdersPage() {
           <button
             key={t.value || "all"}
             onClick={() => selectTab(t.value)}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-base font-medium transition-colors ${
               activeTab === t.value
                 ? "border-primary text-primary"
                 : "border-transparent text-foreground/60 hover:text-foreground"
             }`}
           >
             {t.label}
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-xs ${
-                activeTab === t.value ? "bg-primary/10 text-primary" : "bg-black/5 text-foreground/50"
-              }`}
-            >
-              {counts[t.value] ?? 0}
-            </span>
+            <Pill tone={activeTab === t.value ? "info" : "primary"}>{counts[t.value] ?? 0}</Pill>
           </button>
         ))}
       </div>
@@ -915,7 +909,7 @@ export default function OrdersPage() {
           </Select>
         </div>
         {/* {globalChannelId ? (
-          <div className="rounded-lg bg-black/5 px-3 py-2 text-sm text-foreground/60">
+          <div className="rounded-lg bg-black/5 px-3 py-2 text-base text-foreground/60">
             Store: {channels.find((c) => c.id === globalChannelId)?.name ?? "…"}
           </div>
         ) : (
@@ -938,7 +932,7 @@ export default function OrdersPage() {
           {filtersOpen && (
             <div className="absolute left-0 top-11 z-30 w-72 space-y-4 rounded-xl border border-black/10 bg-white p-4 shadow-lg">
               <div>
-                <div className="mb-1 text-xs font-medium text-foreground/70">Date range</div>
+                <div className="mb-1 text-sm font-medium text-foreground/70">Date range</div>
                 <Select value={dateRange} onChange={(e) => setDateRange(e.target.value as typeof dateRange)}>
                   <option value="all">All dates</option>
                   <option value="today">Today</option>
@@ -947,7 +941,7 @@ export default function OrdersPage() {
                 </Select>
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-foreground/70">Print status</div>
+                <div className="mb-1 text-sm font-medium text-foreground/70">Print status</div>
                 <div className="flex gap-2">
                   {(
                     [
@@ -960,7 +954,7 @@ export default function OrdersPage() {
                       key={opt.value}
                       type="button"
                       onClick={() => setPrintFilter(opt.value)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                         printFilter === opt.value ? "bg-primary text-primary-fg" : "bg-black/5 text-foreground/70"
                       }`}
                     >
@@ -970,17 +964,17 @@ export default function OrdersPage() {
                 </div>
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-foreground/70">Product SKU</div>
+                <div className="mb-1 text-sm font-medium text-foreground/70">Product SKU</div>
                 <Input placeholder="Enter SKU to filter" value={skuFilter} onChange={(e) => setSkuFilter(e.target.value)} />
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-foreground/70">Product name</div>
+                <div className="mb-1 text-sm font-medium text-foreground/70">Product name</div>
                 <Input placeholder="Enter product name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
               </div>
-              <label className="flex items-start justify-between gap-3 text-sm">
+              <label className="flex items-start justify-between gap-3 text-base">
                 <span>
                   <span className="font-medium text-foreground">Include other products</span>
-                  <span className="block text-xs text-foreground/50">Orders that also contain other products are shown.</span>
+                  <span className="block text-sm text-foreground/50">Orders that also contain other products are shown.</span>
                 </span>
                 <input
                   type="checkbox"
@@ -998,7 +992,7 @@ export default function OrdersPage() {
                   setNameFilter("");
                   setIncludeOtherProducts(true);
                 }}
-                className="text-xs font-medium text-primary hover:underline"
+                className="text-sm font-medium text-primary hover:underline"
               >
                 Reset filters
               </button>
@@ -1036,13 +1030,13 @@ export default function OrdersPage() {
         <div className="relative z-30 h-0">
           <div className="absolute left-1/2 top-0 mt-2 w-72 -translate-x-1/2 rounded-xl border border-black/10 bg-white p-2 shadow-lg">
           <div className="flex items-center justify-between px-2 py-2">
-            <span className="rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-foreground">
+            <span className="rounded-full bg-black/5 px-2.5 py-1 text-sm font-medium text-foreground">
               {selectedIds.size} selected
             </span>
             <button
               type="button"
               onClick={toggleSelectAll}
-              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
             >
               ✓ Select All
             </button>
@@ -1050,7 +1044,7 @@ export default function OrdersPage() {
 
           <div className="my-1 border-t border-black/5" />
 
-          <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
+          <div className="px-2 pb-1 pt-2 text-sm font-medium text-foreground/40">
             Print Options
           </div>
           <button
@@ -1060,9 +1054,9 @@ export default function OrdersPage() {
               setPrintError(null);
               setShowPrintDialog(true);
             }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5"
           >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs text-foreground/60">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-foreground/60">
               🧾
             </span>
             Invoice
@@ -1070,7 +1064,7 @@ export default function OrdersPage() {
 
           <div className="my-1 border-t border-black/5" />
 
-          <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
+          <div className="px-2 pb-1 pt-2 text-sm font-medium text-foreground/40">
             Update Status ({selectedIds.size} selected)
           </div>
           {canBulkNext && (
@@ -1078,9 +1072,9 @@ export default function OrdersPage() {
               type="button"
               disabled={bulkBusy}
               onClick={bulkMoveNext}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-fg">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-sm text-primary-fg">
                 ✓
               </span>
               {bulkBusy ? "Working…" : nextLabel ? `Sent to ${nextLabel}` : "Move to Next Status"}
@@ -1091,9 +1085,9 @@ export default function OrdersPage() {
               type="button"
               disabled={bulkBusy}
               onClick={bulkMovePrev}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs text-foreground/60">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/10 text-sm text-foreground/60">
                 ↺
               </span>
               {bulkBusy ? "Working…" : prevLabel ? `Sent back to ${prevLabel}` : "Move to Previous Status"}
@@ -1104,23 +1098,23 @@ export default function OrdersPage() {
               type="button"
               disabled={bulkBusy}
               onClick={bulkCancel}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-medium text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-xs text-white">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-sm text-white">
                 ✕
               </span>
               Cancel
             </button>
           )}
           {!canBulkNext && !canBulkPrev && !canBulkCancel && (
-            <p className="px-2 py-2 text-sm text-foreground/50">
+            <p className="px-2 py-2 text-base text-foreground/50">
               No status actions available for this selection.
             </p>
           )}
 
           <div className="my-1 border-t border-black/5" />
 
-          <div className="px-2 pb-1 pt-2 text-xs font-medium text-foreground/40">
+          <div className="px-2 pb-1 pt-2 text-sm font-medium text-foreground/40">
             Courier Services
           </div>
           {canBulkSteadfast ? (
@@ -1128,13 +1122,13 @@ export default function OrdersPage() {
               type="button"
               disabled={bulkBusy}
               onClick={bulkEnterToSteadfast}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-status-cancelled px-2 py-2.5 text-center text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-status-cancelled px-2 py-2.5 text-center text-base font-medium text-white hover:opacity-90 disabled:opacity-50"
             >
               <span aria-hidden>➤</span>
               {bulkBusy ? "Working…" : "Entry to Steadfast"}
             </button>
           ) : (
-            <p className="px-2 py-2 text-sm text-foreground/50">
+            <p className="px-2 py-2 text-base text-foreground/50">
               No eligible orders in this selection.
             </p>
           )}
@@ -1144,7 +1138,7 @@ export default function OrdersPage() {
           <button
             type="button"
             onClick={() => setSelectedIds(new Set())}
-            className="w-full rounded-lg px-2 py-2 text-left text-sm text-foreground/50 hover:bg-black/5 hover:text-foreground"
+            className="w-full rounded-lg px-2 py-2 text-left text-base text-foreground/50 hover:bg-black/5 hover:text-foreground"
           >
             Clear selection
           </button>
@@ -1158,7 +1152,7 @@ export default function OrdersPage() {
 
       <Card>
         {loadError && (
-          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
             {loadError}
           </p>
         )}
@@ -1172,12 +1166,12 @@ export default function OrdersPage() {
         {!visibleOrders ? (
           <LoadingLine />
         ) : visibleOrders.length === 0 ? (
-          <p className="text-sm text-foreground/50">No orders match these filters.</p>
+          <p className="text-base text-foreground/50">No orders match these filters.</p>
         ) : (
           <div className="max-h-[calc(100vh-19rem)] overflow-auto">
-            <table className="w-full min-w-[1800px] text-sm">
+            <table className="w-full min-w-[1800px] text-base">
               <thead>
-                <tr className="text-left text-sm font-semibold text-primary">
+                <tr className="text-left text-base font-semibold text-primary">
                   <th className="rounded-l-lg px-4 py-3 font-medium" style={{ backgroundColor: "rgba(47, 111, 235, 0.15)" }}>
                     <input
                       type="checkbox"
@@ -1237,7 +1231,7 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(o.createdAt)}</div>
-                        <div className="text-xs text-foreground/40">
+                        <div className="text-sm text-foreground/40">
                           Updated {listUpdated(o.updatedAt)}
                         </div>
                       </td>
@@ -1290,7 +1284,7 @@ export default function OrdersPage() {
                           <span>{o.customer.phone}</span>
                           {o.customer.successRate !== null && (
                             <span
-                              className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700"
+                              className="rounded-full bg-green-100 px-1.5 py-0.5 text-sm font-semibold text-green-700"
                               title="Delivery success rate"
                             >
                               {o.customer.successRate}%
@@ -1326,13 +1320,13 @@ export default function OrdersPage() {
                                   className="h-7 w-7 shrink-0 rounded object-cover"
                                 />
                               ) : (
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-black/5 text-sm text-foreground/30">
                                   —
                                 </span>
                               )}
                               <div className="min-w-0 max-w-[160px]">
                                 <div className="truncate text-foreground" title={item.productName}>{item.productName}</div>
-                                <div className="text-[11px]" style={{ color: "rgba(47, 111, 235, 0.8)" }}>
+                                <div className="text-sm" style={{ color: "rgba(47, 111, 235, 0.8)" }}>
                                   {item.sku} · Qty: {item.quantity}
                                 </div>
                               </div>
@@ -1341,21 +1335,21 @@ export default function OrdersPage() {
                           })}
                         </div>
                         {o.items.length > 3 && (
-                          <span className="mt-1 block text-xs font-medium text-primary">
+                          <span className="mt-1 block text-sm font-medium text-primary">
                             +{hiddenCount} more products
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-4">
                         {o.customer.orderCount > 1 && (
-                          <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                          <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-sm font-semibold text-sky-700">
                             REPEAT({o.customer.orderCount})
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-4">
                         {Number(o.discount) > 0 && (
-                          <span className="inline-flex items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-xs leading-snug text-sky-700">
+                          <span className="inline-flex items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-sm leading-snug text-sky-700">
                             <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
                             <span className="flex flex-col">
                               <span>Employee</span>
@@ -1377,7 +1371,7 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-4 py-4 text-center">
                         {o.shipment?.externalConsignmentId ? (
-                          <div className="flex flex-col items-center gap-0.5 text-xs">
+                          <div className="flex flex-col items-center gap-0.5 text-sm">
                             <span className="flex items-center gap-1 font-bold">
                               <span className="text-status-delivered" title="Entered to Steadfast">✓</span>
                               <span className="text-foreground">{o.shipment.externalConsignmentId}</span>
@@ -1402,7 +1396,7 @@ export default function OrdersPage() {
                         {o.createdBy?.name ?? "—"}
                       </td>
                       <td className="px-4 py-4">
-                        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${SOURCE_STYLE[o.source]}`}>
+                        <span className={`inline-block rounded-full px-2.5 py-1 text-sm font-medium ${SOURCE_STYLE[o.source]}`}>
                           {o.source.charAt(0) + o.source.slice(1).toLowerCase()}
                         </span>
                       </td>
@@ -1452,14 +1446,14 @@ export default function OrdersPage() {
                       className="h-16 w-16 shrink-0 rounded-lg object-cover"
                     />
                   ) : (
-                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/30">
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-black/5 text-sm text-foreground/30">
                       —
                     </span>
                   )}
                   <div>
                     <div className="font-medium text-foreground">{item.productName}</div>
-                    <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
-                    <div className="text-xs text-foreground/50">Quantity: {item.quantity}</div>
+                    <div className="text-sm text-foreground/50">SKU: {item.sku}</div>
+                    <div className="text-sm text-foreground/50">Quantity: {item.quantity}</div>
                     <div className="mt-1">
                       <StatusBadge status={productsModal.status} compact />
                     </div>
@@ -1484,7 +1478,7 @@ export default function OrdersPage() {
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-base font-semibold text-foreground">Print Invoice</h3>
-                <p className="mt-1 text-sm text-foreground/60">{selectedIds.size} orders selected</p>
+                <p className="mt-1 text-base text-foreground/60">{selectedIds.size} orders selected</p>
               </div>
               <button
                 type="button"
@@ -1495,7 +1489,7 @@ export default function OrdersPage() {
               </button>
             </div>
             <div className="mt-5">
-              <label className="mb-1 block text-xs font-medium text-foreground/70">Paper size</label>
+              <label className="mb-1 block text-sm font-medium text-foreground/70">Paper size</label>
               <Select value={paperSize} onChange={(e) => setPaperSize(e.target.value as PaperSize)}>
                 <option value="A4">A4</option>
                 <option value="A5">A5</option>
@@ -1513,7 +1507,7 @@ export default function OrdersPage() {
                   key={opt.mode}
                   type="button"
                   onClick={() => runPrint(opt.mode)}
-                  className="flex w-full items-center gap-3 rounded-lg border border-black/10 px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-black/5"
+                  className="flex w-full items-center gap-3 rounded-lg border border-black/10 px-4 py-3 text-left text-base font-medium text-foreground hover:bg-black/5"
                 >
                   <span aria-hidden="true">🧾</span>
                   {opt.label}
@@ -1522,17 +1516,17 @@ export default function OrdersPage() {
               <button
                 type="button"
                 onClick={() => runPrint("by-invoice")}
-                className="flex w-full items-center gap-3 rounded-lg border border-black/10 px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-black/5"
+                className="flex w-full items-center gap-3 rounded-lg border border-black/10 px-4 py-3 text-left text-base font-medium text-foreground hover:bg-black/5"
               >
                 <span aria-hidden="true">📄</span>
                 Download PDF
               </button>
             </div>
-            <p className="mt-3 text-xs text-foreground/50">
+            <p className="mt-3 text-sm text-foreground/50">
               PDF downloads through the print dialog — choose “Save as PDF” as the destination.
             </p>
             {printError && (
-              <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+              <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
                 {printError}
               </p>
             )}
@@ -1557,7 +1551,7 @@ export default function OrdersPage() {
             <div className="flex items-center justify-between border-b border-black/10 px-6 py-4">
               <div>
                 <h3 className="text-base font-semibold text-foreground">Order Details</h3>
-                <p className="text-xs text-foreground/50">Full order summary, payments &amp; history</p>
+                <p className="text-sm text-foreground/50">Full order summary, payments &amp; history</p>
               </div>
               <button
                 type="button"
@@ -1570,17 +1564,17 @@ export default function OrdersPage() {
 
             <div className="space-y-4 p-6">
               {detailsError && (
-                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
                   {detailsError}
                 </p>
               )}
               {!detailsData && !detailsError && (
-                <LoadingLine className="justify-center py-8 text-sm text-foreground/50" />
+                <LoadingLine className="justify-center py-8 text-base text-foreground/50" />
               )}
               {detailsData && (
                 <>
                   <div className="rounded-lg border border-black/10 p-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-base">
                       <div>
                         <div className="font-semibold text-foreground">Bill to:</div>
                         <div className="text-foreground/70">{detailsData.shippingName}</div>
@@ -1609,7 +1603,7 @@ export default function OrdersPage() {
                       </div>
                     </div>
 
-                    <table className="mt-4 w-full text-sm">
+                    <table className="mt-4 w-full text-base">
                       <thead>
                         <tr className="border-b border-black/10 text-left text-foreground/50">
                           <th className="py-2 font-medium">Products</th>
@@ -1667,7 +1661,7 @@ export default function OrdersPage() {
 
                   <div className="rounded-lg border border-black/10 p-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-foreground">Advance Payment</h4>
+                      <h4 className="text-base font-semibold text-foreground">Advance Payment</h4>
                       {!showRecordPayment && (
                         <Button variant="secondary" onClick={() => setShowRecordPayment(true)}>
                           Record Advance Payment
@@ -1703,7 +1697,7 @@ export default function OrdersPage() {
                           onChange={(e) => setPaymentTxnId(e.target.value)}
                         />
                         {paymentError && (
-                          <p className="sm:col-span-3 text-sm text-status-cancelled">{paymentError}</p>
+                          <p className="sm:col-span-3 text-base text-status-cancelled">{paymentError}</p>
                         )}
                         <div className="flex gap-2 sm:col-span-3">
                           <Button type="submit" disabled={paymentSubmitting}>
@@ -1722,11 +1716,11 @@ export default function OrdersPage() {
                         </div>
                       </form>
                     ) : detailsData.payments.length === 0 ? (
-                      <p className="mt-2 text-sm text-foreground/50">No advance recorded yet.</p>
+                      <p className="mt-2 text-base text-foreground/50">No advance recorded yet.</p>
                     ) : (
                       <div className="mt-2 space-y-1">
                         {detailsData.payments.map((p) => (
-                          <div key={p.id} className="flex justify-between text-sm">
+                          <div key={p.id} className="flex justify-between text-base">
                             <span className="text-foreground/70">
                               {p.method.replaceAll("_", " ")}
                               {p.transactionId ? ` · ${p.transactionId}` : ""}
@@ -1740,7 +1734,7 @@ export default function OrdersPage() {
                   </div>
 
                   <div className="rounded-lg border border-black/10">
-                    <h4 className="border-b border-black/10 px-4 py-3 text-sm font-semibold text-foreground">Products</h4>
+                    <h4 className="border-b border-black/10 px-4 py-3 text-base font-semibold text-foreground">Products</h4>
                     {detailsData.items.map((item) => {
                       const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
                       return (
@@ -1752,28 +1746,28 @@ export default function OrdersPage() {
                             className="h-14 w-14 shrink-0 rounded-md object-cover"
                           />
                         ) : (
-                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-xs text-foreground/30">
+                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-black/5 text-sm text-foreground/30">
                             {item.productName.charAt(0).toUpperCase()}
                           </span>
                         )}
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-medium text-foreground">{item.productName}</div>
-                          <div className="text-xs text-foreground/50">SKU: {item.sku}</div>
-                          <div className="mt-1 text-xs text-foreground/60">
+                          <div className="text-sm text-foreground/50">SKU: {item.sku}</div>
+                          <div className="mt-1 text-sm text-foreground/60">
                             Status: {detailsData.status.charAt(0) + detailsData.status.slice(1).toLowerCase().replaceAll("_", " ")}
                           </div>
                         </div>
-                        <div className="grid shrink-0 grid-cols-3 gap-x-6 text-right text-sm">
+                        <div className="grid shrink-0 grid-cols-3 gap-x-6 text-right text-base">
                           <div>
-                            <div className="text-xs text-foreground/50">Qty</div>
+                            <div className="text-sm text-foreground/50">Qty</div>
                             <div className="text-foreground">{item.quantity}</div>
                           </div>
                           <div>
-                            <div className="text-xs text-foreground/50">Unit</div>
+                            <div className="text-sm text-foreground/50">Unit</div>
                             <div className="text-foreground">{formatAmount(item.unitPrice)}</div>
                           </div>
                           <div>
-                            <div className="text-xs text-foreground/50">Total</div>
+                            <div className="text-sm text-foreground/50">Total</div>
                             <div className="text-foreground">{formatAmount(item.total)}</div>
                           </div>
                         </div>
