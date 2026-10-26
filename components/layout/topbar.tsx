@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { StoreSelector } from "./store-selector";
 import { ThemeToggle } from "./theme-toggle";
+import { UserMenu } from "./user-menu";
 
 function NavAction({
   icon,
@@ -29,15 +30,10 @@ function NavAction({
 }
 
 export function Topbar() {
-  const { user, logout, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const { activeChannel } = useChannelScope();
   const router = useRouter();
   const [search, setSearch] = useState("");
-
-  async function handleLogout() {
-    await logout();
-    router.push("/login");
-  }
 
   function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -79,20 +75,7 @@ export function Topbar() {
 
       <div className="ml-auto flex items-center gap-3">
         <ThemeToggle />
-        <span className="text-sm text-sidebar-fg/70">{user?.email}</span>
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-fg"
-          title={user?.name}
-        >
-          {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
-        </div>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-sidebar-fg transition-colors hover:bg-white/10 hover:text-white"
-        >
-          Log out
-        </button>
+        <UserMenu />
       </div>
     </header>
   );

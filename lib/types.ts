@@ -397,6 +397,16 @@ export interface StaffUser {
   email: string;
   isActive: boolean;
   createdAt: string;
+  // Profile fields — optional, purely informational (no auth/permission
+  // meaning), shown on the New/Edit User form.
+  avatarUrl: string | null;
+  phone: string | null;
+  employeeCode: string | null;
+  gender: string | null;
+  joiningDate: string | null;
+  shift: string | null;
+  designation: string | null;
+  about: string | null;
   role: { id: string; name: string };
   channelIds: string[];
   // Flat union of every scope's grants — "can this user do this ANYWHERE".

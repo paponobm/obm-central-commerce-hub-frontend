@@ -377,7 +377,7 @@ export default function WebOrdersPage() {
                           className="text-status-delivered hover:opacity-80"
                           title="WhatsApp"
                         >
-                          💬
+                          💬  `
                         </a> */}
                         <span>{o.shippingPhone || o.customer.phone}</span>
                       </div>

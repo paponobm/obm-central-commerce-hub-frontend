@@ -40,6 +40,11 @@
   --series-8: #e34948; /* red */
   --chart-text-secondary: #52514e;
   --chart-text-muted: #898781;
+
+  /* Explicit light, so native chrome (select option lists, scrollbars,
+     the date-picker icon) stays light even if the OS itself is set to
+     dark — the app's own theme toggle, not the OS preference, decides. */
+  color-scheme: light;
 }
 
 /* Dark mode: only the content area changes — the navy sidebar/topbar is
@@ -55,6 +60,13 @@
   --status-processing: #5b8def;
   --status-delivered: #34d399;
   --status-cancelled: #f87171;
+
+  /* Tells the browser to paint its own native chrome (a <select>'s open
+     option list, scrollbars, the date-picker's calendar icon, etc.) with
+     the dark palette too — those aren't ours to style with normal CSS, and
+     without this the browser defaults to white/light regardless of the
+     page's own dark theme (e.g. the Role dropdown's option list). */
+  color-scheme: dark;
 }
 
 body {
@@ -104,6 +116,18 @@ body {
 }
 :root[data-theme="dark"] .bg-black\/10 {
   background-color: rgba(255, 255, 255, 0.1);
+}
+/* Tailwind's `!` important-modifier generates a distinct escaped class
+   (e.g. .\!border-black\/20, not .border-black\/20), which the plain
+   overrides above never match — needed wherever a page has to force-win
+   over a shared component's own baked-in classes (see the Users page's
+   New/Edit form fields). The dark-mode override must carry !important too,
+   to outrank the light-mode !important declaration it's replacing. */
+:root[data-theme="dark"] .\!border-black\/20 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+:root[data-theme="dark"] .\!bg-black\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 :root[data-theme="dark"] .hover\:bg-black\/5:hover {
   background-color: rgba(255, 255, 255, 0.08);

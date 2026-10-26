@@ -84,9 +84,14 @@ export const NAV_ENTRIES: NavEntry[] = [
   // channels.manage is the one that actually reflects a deliberate grant.
   { type: "link", label: "Channels", href: "/channels", permission: "channels.manage", centralOnly: true },
   { type: "link", label: "Reports", href: "/reports", permission: "reports.view" },
-  { type: "link", label: "Users", href: "/users", permission: "users.manage", centralOnly: true },
-  { type: "link", label: "Roles", href: "/roles", permission: "users.manage", centralOnly: true },
-  { type: "link", label: "Settings", href: "/settings", permission: "users.manage", centralOnly: true },
+  // Each gated on its own nav-visibility-only permission, independent of
+  // the others — the pages/APIs themselves are still all gated solely by
+  // users.manage (unchanged), so one of these being off only hides that
+  // link; it doesn't block the page if reached directly. See the Access
+  // panel in users/page.tsx, which grants these alongside users.manage.
+  { type: "link", label: "Users", href: "/users", permission: "nav.users", centralOnly: true },
+  { type: "link", label: "Roles", href: "/roles", permission: "nav.roles", centralOnly: true },
+  { type: "link", label: "Settings", href: "/settings", permission: "nav.settings", centralOnly: true },
 ];
 
 // Inside a storefront (a specific store selected), Dashboard, Orders,

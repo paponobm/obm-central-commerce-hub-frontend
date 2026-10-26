@@ -1255,7 +1255,7 @@ export default function OrdersPage() {
                       <td className="px-4 py-4 text-foreground/70">
                         <div className="flex items-center gap-1.5">
                           <span title="Customer"><UserIcon className="h-4.5 w-4 text-foreground" /></span>
-                          <span className="font-medium text-foreground">{o.customer.name}</span>
+                          <span className=" text-foreground">{o.customer.name}</span>
                           <button
                             type="button"
                             onClick={(e) => copyToClipboard(e, customerDetailsText(o), `${o.id}-customer`)}

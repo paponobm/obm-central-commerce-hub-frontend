@@ -18,9 +18,10 @@ export function Modal({
   titleClassName?: string;
   children: ReactNode;
   // "lg" is wider and allows the modal itself to grow taller (up to the
-  // viewport) instead of only the default compact form size — opt-in, so
-  // every existing modal keeps its exact current size.
-  size?: "md" | "lg";
+  // viewport) instead of only the default compact form size. "xl" is wider
+  // still, for multi-column forms — both opt-in, so every existing modal
+  // keeps its exact current size.
+  size?: "md" | "lg" | "xl";
 }) {
   if (!open) return null;
 
@@ -31,7 +32,11 @@ export function Modal({
     >
       <div
         className={`flex w-full flex-col rounded-card bg-card p-6 shadow-card ${
-          size === "lg" ? "max-w-2xl max-h-[85vh]" : "max-w-md"
+          size === "xl"
+            ? "max-w-4xl max-h-[85vh]"
+            : size === "lg"
+              ? "max-w-2xl max-h-[85vh]"
+              : "max-w-md"
         }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
