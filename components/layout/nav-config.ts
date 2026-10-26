@@ -1,7 +1,10 @@
+import type { NavIconKey } from "./nav-icons";
+
 export interface NavLink {
   type: "link";
   label: string;
   href: string;
+  icon: NavIconKey;
   permission?: string;
   centralOnly?: boolean;
   storeOnly?: boolean;
@@ -10,6 +13,7 @@ export interface NavLink {
 export interface NavGroup {
   type: "group";
   label: string;
+  icon: NavIconKey;
   permission?: string;
   centralOnly?: boolean;
   storeOnly?: boolean;
@@ -21,10 +25,11 @@ export type NavEntry = NavLink | NavGroup;
 // Groups only exist where there's more than one real page behind them —
 // no nested item here points anywhere that doesn't already exist.
 export const NAV_ENTRIES: NavEntry[] = [
-  { type: "link", label: "Dashboard", href: "/", permission: "dashboard.view" },
+  { type: "link", label: "Dashboard", href: "/", icon: "dashboard", permission: "dashboard.view" },
   {
     type: "group",
     label: "Orders",
+    icon: "orders",
     permission: "orders.view",
     storeOnly: true,
     children: [
@@ -36,6 +41,7 @@ export const NAV_ENTRIES: NavEntry[] = [
   {
     type: "group",
     label: "Products",
+    icon: "products",
     permission: "products.view",
     children: [
       { label: "All Products", href: "/products" },
@@ -46,6 +52,7 @@ export const NAV_ENTRIES: NavEntry[] = [
   {
     type: "group",
     label: "Inventory",
+    icon: "inventory",
     permission: "inventory.view",
     centralOnly: true,
     children: [
@@ -74,24 +81,25 @@ export const NAV_ENTRIES: NavEntry[] = [
     type: "link",
     label: "Integrations",
     href: "/integrations",
+    icon: "integrations",
     permission: "integrations.manage",
     storeOnly: true,
   },
-  { type: "link", label: "Customers", href: "/customers", permission: "customers.view" },
+  { type: "link", label: "Customers", href: "/customers", icon: "customers", permission: "customers.view" },
   // channels.view is a baseline permission granted automatically to any
   // non-Super-Admin user (see UsersService.sanitizePermissions — the store
   // picker itself depends on it), so it can't be used to gate this link;
   // channels.manage is the one that actually reflects a deliberate grant.
-  { type: "link", label: "Channels", href: "/channels", permission: "channels.manage", centralOnly: true },
-  { type: "link", label: "Reports", href: "/reports", permission: "reports.view" },
+  { type: "link", label: "Channels", href: "/channels", icon: "channels", permission: "channels.manage", centralOnly: true },
+  { type: "link", label: "Reports", href: "/reports", icon: "reports", permission: "reports.view" },
   // Each gated on its own nav-visibility-only permission, independent of
   // the others — the pages/APIs themselves are still all gated solely by
   // users.manage (unchanged), so one of these being off only hides that
   // link; it doesn't block the page if reached directly. See the Access
   // panel in users/page.tsx, which grants these alongside users.manage.
-  { type: "link", label: "Users", href: "/users", permission: "nav.users", centralOnly: true },
-  { type: "link", label: "Roles", href: "/roles", permission: "nav.roles", centralOnly: true },
-  { type: "link", label: "Settings", href: "/settings", permission: "nav.settings", centralOnly: true },
+  { type: "link", label: "Users", href: "/users", icon: "users", permission: "nav.users", centralOnly: true },
+  { type: "link", label: "Roles", href: "/roles", icon: "roles", permission: "nav.roles", centralOnly: true },
+  { type: "link", label: "Settings", href: "/settings", icon: "settings", permission: "nav.settings", centralOnly: true },
 ];
 
 // Inside a storefront (a specific store selected), Dashboard, Orders,

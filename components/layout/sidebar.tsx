@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { NAV_ENTRIES, type NavEntry } from "./nav-config";
+import { NAV_ICONS } from "./nav-icons";
 
 function isActivePath(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -80,18 +81,21 @@ export function Sidebar() {
               : rawEntry;
           if (entry.permission && !hasPermission(entry.permission)) return null;
 
+          const Icon = NAV_ICONS[entry.icon];
+
           if (entry.type === "link") {
             const active = entry.href === activeHref;
             return (
               <Link
                 key={entry.href}
                 href={entry.href}
-                className={`block rounded-lg px-3 py-2 text-md font-medium transition-colors ${
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-md font-medium transition-colors ${
                   active
                     ? "bg-sidebar-active text-sidebar-active-fg"
                     : "text-sidebar-fg hover:bg-white/5"
                 }`}
               >
+                <Icon className="h-[18px] w-[18px] shrink-0 opacity-80" />
                 {entry.label}
               </Link>
             );
@@ -111,7 +115,10 @@ export function Sidebar() {
                     : "text-sidebar-fg hover:bg-white/5"
                 }`}
               >
-                {entry.label}
+                <span className="flex items-center gap-2.5">
+                  <Icon className="h-[18px] w-[18px] shrink-0 opacity-80" />
+                  {entry.label}
+                </span>
                 <span
                   className={`text-sm text-sidebar-fg/50 transition-transform ${open ? "rotate-90" : ""}`}
                   aria-hidden
