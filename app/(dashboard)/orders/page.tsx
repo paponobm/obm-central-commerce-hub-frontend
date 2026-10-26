@@ -111,6 +111,20 @@ const TABS: { label: string; value: OrderStatus | "" }[] = [
   { label: "All", value: "" },
 ];
 
+// Tab lives in the URL (?tab=...) so a reload lands back on the same tab
+// instead of always resetting to the default. "all" stands in for the
+// empty-string value, which an omitted/absent param already means "PENDING".
+function tabFromParam(value: string | null): OrderStatus | "" {
+  if (!value) return "PENDING";
+  if (value === "all") return "";
+  return TABS.some((t) => t.value === value) ? (value as OrderStatus) : "PENDING";
+}
+function tabToParam(value: OrderStatus | ""): string | null {
+  if (value === "PENDING") return null;
+  if (value === "") return "all";
+  return value;
+}
+
 // Mirrors OrdersService's TRANSITIONS map — which statuses can still reach
 // CANCELLED, i.e. when the row-level Cancel shortcut should even appear.
 const CAN_CANCEL_FROM = new Set<OrderStatus>([
@@ -259,7 +273,7 @@ export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<OrderListItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<OrderStatus | "">("PENDING");
+  const [activeTab, setActiveTab] = useState<OrderStatus | "">(tabFromParam(searchParams.get("tab")));
   const [source, setSource] = useState("");
   const [channelId, setChannelId] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
@@ -417,6 +431,13 @@ export default function OrdersPage() {
   function selectTab(value: OrderStatus | "") {
     setActiveTab(value);
     setSelectedIds(new Set());
+    const params = new URLSearchParams(searchParams.toString());
+    const tabParam = tabToParam(value);
+    if (tabParam) params.set("tab", tabParam);
+    else params.delete("tab");
+    const qs = params.toString();
+    // replace, not push — switching tabs shouldn't pile up Back-stops.
+    router.replace(qs ? `/orders?${qs}` : "/orders", { scroll: false });
   }
 
   function toggleRowSelected(orderId: string) {

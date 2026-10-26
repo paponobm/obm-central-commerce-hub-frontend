@@ -103,18 +103,6 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
       setRestored(true);
       return;
     }
-    // An all-access user's scope always starts on "All Stores" — a store
-    // they once clicked into (maybe during the same session they were
-    // granted that access) must never come back pre-selected on a later
-    // login just because it's still sitting in localStorage.
-    if (user?.permissions.includes("channels.all_access")) {
-      setActiveChannelIdState(null);
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(storageKeyFor(user.id));
-      }
-      setRestored(true);
-      return;
-    }
     const stored =
       typeof window !== "undefined" && user
         ? localStorage.getItem(storageKeyFor(user.id))
@@ -134,14 +122,10 @@ export function ChannelScopeProvider({ children }: { children: ReactNode }) {
   const setActiveChannelId = useCallback(
     (channelId: string | null) => {
       setActiveChannelIdState(channelId);
-      // All-access users get a fresh "All Stores" start on every login (see
-      // the restore effect above) — their in-session picks stay in memory
-      // only, so nothing is left behind to come back pre-selected later.
-      if (
-        typeof window !== "undefined" &&
-        user &&
-        !user.permissions.includes("channels.all_access")
-      ) {
+      // Persisted per signed-in user (see storageKeyFor) so a reload — or a
+      // different person signing into this browser — lands back on the
+      // right scope: this user's own last pick, never someone else's.
+      if (typeof window !== "undefined" && user) {
         const key = storageKeyFor(user.id);
         if (channelId) localStorage.setItem(key, channelId);
         else localStorage.removeItem(key);
