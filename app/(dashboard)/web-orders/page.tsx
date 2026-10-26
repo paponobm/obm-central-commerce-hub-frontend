@@ -48,6 +48,8 @@ import { Pill } from "@/components/ui/badge";
 import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
 import { useAuth } from "@/lib/auth-context";
 import { LoadingLine } from "@/components/ui/spinner";
+import { listOrderLocks } from "@/lib/order-locks";
+import type { OrderLockHolder } from "@/lib/types";
 
 type TabKey =
   | "processing"
@@ -161,6 +163,10 @@ export default function WebOrdersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const { user } = useAuth();
+  // Who else currently has each row's detail page open, keyed by the same
+  // id used in this list (a real Order.id or a "lead-<id>" row) — see
+  // reference image 1's pink "Open (Name)" state.
+  const [locks, setLocks] = useState<Record<string, OrderLockHolder>>({});
 
   // Tab and search live in the URL, not sessionStorage — a fresh visit (the
   // sidebar link, etc.) always points at the plain /web-orders URL, so it
@@ -225,6 +231,16 @@ export default function WebOrdersPage() {
         .catch((err) => {
           if (!cancelled) setError(err instanceof ApiError ? err.message : "Failed to load web orders");
         });
+      // Separate from the orders/leads fetch above — a lock-endpoint
+      // hiccup should never block the list itself from loading.
+      listOrderLocks()
+        .then((rows) => {
+          if (cancelled) return;
+          const map: Record<string, OrderLockHolder> = {};
+          for (const row of rows) map[row.orderId] = row.holder;
+          setLocks(map);
+        })
+        .catch(() => {});
     }
 
     load();
@@ -440,9 +456,19 @@ export default function WebOrdersPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-medium">{formatAmount(o.total)}</td>
                     <td className="px-4 py-4 text-right">
-                      <Link href={`/web-orders/${o.id}`} className="inline-block rounded-lg border border-black/10 px-3 py-1.5 text-base font-medium text-primary hover:bg-primary/5">
-                        Open
-                      </Link>
+                      {locks[o.id] && locks[o.id].id !== user?.id ? (
+                        <Link
+                          href={`/web-orders/${o.id}`}
+                          className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-pink-100 px-3 py-1.5 text-base font-medium text-pink-700 hover:bg-pink-200"
+                          title={`Currently being viewed by ${locks[o.id].name}`}
+                        >
+                          Open <span aria-hidden>↗</span> ({locks[o.id].name}) <span aria-hidden>🔒</span>
+                        </Link>
+                      ) : (
+                        <Link href={`/web-orders/${o.id}`} className="inline-block rounded-lg border border-black/10 px-3 py-1.5 text-base font-medium text-primary hover:bg-primary/5">
+                          Open
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}

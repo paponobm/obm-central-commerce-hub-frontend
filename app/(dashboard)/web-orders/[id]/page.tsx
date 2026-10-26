@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { CustomerResponseStatus, PaymentMethod, Product, OrderDetail, OrderListItem } from "@/lib/types";
+import type { CustomerResponseStatus, PaymentMethod, Product, OrderDetail, OrderListItem, OrderLockHolder } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,13 @@ import { Button } from "@/components/ui/button";
 import { WEB_STAGE_COLORS, WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine } from "@/components/ui/spinner";
+import {
+  HEARTBEAT_INTERVAL_MS,
+  acquireOrderLock,
+  heartbeatOrderLock,
+  lockHolderFromError,
+  releaseOrderLock,
+} from "@/lib/order-locks";
 
 // An Incomplete storefront checkout, as returned by /admin/orders/checkout-leads.
 interface LeadRecord {
@@ -139,6 +146,11 @@ interface OrderNote {
 }
 
 // Same starting set as New Order / Edit Order.
+// Bolder, darker field-name labels for this page specifically, per the
+// reference design — Label's own default style (used on every other page)
+// is left untouched.
+const LABEL_CLASSES = "!text-sm !font-semibold !text-foreground";
+
 const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delivery", "Other"];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 // Mirrors OrdersService's TRANSITIONS for PENDING. The backend enforces the
@@ -203,6 +215,62 @@ export default function WebOrderDetailsPage() {
   const notesPath = isLead ? `/admin/orders/checkout-leads/${leadId}/notes` : `/admin/orders/${orderId}/notes`;
   const activityPath = isLead ? `/admin/orders/checkout-leads/${leadId}/activity` : `/admin/orders/${orderId}/activity`;
   const { user } = useAuth();
+
+  // Per-order view lock — one admin at a time, see reference images:
+  // "restricted" blocks the rest of the page behind an Access Restricted
+  // panel; "granted" means this tab holds it and heartbeats to keep it.
+  const [lockStatus, setLockStatus] = useState<"pending" | "granted" | "restricted">("pending");
+  const [lockHolder, setLockHolder] = useState<OrderLockHolder | null>(null);
+
+  const attemptAcquire = useCallback(
+    (force: boolean) =>
+      acquireOrderLock(orderId, force)
+        .then(() => {
+          setLockStatus("granted");
+          setLockHolder(null);
+        })
+        .catch((err) => {
+          const holder = lockHolderFromError(err);
+          if (holder) {
+            setLockStatus("restricted");
+            setLockHolder(holder);
+          } else {
+            // An unexpected error (e.g. offline) shouldn't permanently lock a
+            // legitimate admin out of their own order — fail open.
+            setLockStatus("granted");
+          }
+        }),
+    [orderId],
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    attemptAcquire(false);
+  }, [user, attemptAcquire]);
+
+  // Keeps the lock alive while this tab has the order open; if the response
+  // says it's no longer ours (someone took over), this is the 1st user
+  // getting auto-restricted — send them back to the list.
+  useEffect(() => {
+    if (lockStatus !== "granted") return;
+    const interval = setInterval(() => {
+      heartbeatOrderLock(orderId)
+        .then((res) => {
+          if (!res.ok) router.push("/web-orders");
+        })
+        .catch(() => {});
+    }, HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [lockStatus, orderId, router]);
+
+  // Releases the lock on navigating away (every router.push below unmounts
+  // this page) or closing the tab's route; a crashed tab still falls back to
+  // the backend's own staleness expiry.
+  useEffect(() => {
+    return () => {
+      releaseOrderLock(orderId).catch(() => {});
+    };
+  }, [orderId]);
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -628,6 +696,38 @@ export default function WebOrderDetailsPage() {
     }
   }
 
+  if (lockStatus === "restricted" && lockHolder) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="w-full max-w-md rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <h2 className="text-lg font-bold text-red-700">Access Restricted</h2>
+          <p className="mt-2 text-sm text-foreground/70">
+            This order is currently being viewed by <span className="font-semibold text-foreground">{lockHolder.name}</span>.
+          </p>
+          <p className="mt-1 text-sm text-foreground/50">
+            {isLead ? "Checkout not completed" : `Order #${order?.orderNumber ?? orderId}`}
+          </p>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => attemptAcquire(true)}
+              className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+            >
+              Take Over
+            </button>
+            <button
+              type="button"
+              onClick={() => attemptAcquire(false)}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loadError) {
     return (
       <div className="space-y-4">
@@ -718,10 +818,10 @@ export default function WebOrderDetailsPage() {
       <form onSubmit={handleApprove} className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
             <Card>
-              <h2 className="mb-4 text-base font-semibold text-foreground">Customer details</h2>
+              <h2 className="mb-4 text-sm font-semibold text-foreground">Customer details</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <div>
-                  <Label>Mobile Number</Label>
+                  <Label className={LABEL_CLASSES}>Mobile Number</Label>
                   <Input
                     required
                     disabled={done}
@@ -731,7 +831,7 @@ export default function WebOrderDetailsPage() {
                   />
                 </div>
                 <div>
-                  <Label>Name</Label>
+                  <Label className={LABEL_CLASSES}>Name</Label>
                   <Input
                     required
                     disabled={done}
@@ -741,7 +841,7 @@ export default function WebOrderDetailsPage() {
                   />
                 </div>
                 <div>
-                  <Label>Delivery Method</Label>
+                  <Label className={LABEL_CLASSES}>Delivery Method</Label>
                   <Select value={deliveryMethod} disabled={done} onChange={(e) => setDeliveryMethod(e.target.value)}>
                     {DELIVERY_METHODS.map((m) => (
                       <option key={m} value={m}>
@@ -754,7 +854,7 @@ export default function WebOrderDetailsPage() {
 
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div>
-                  <Label>Address</Label>
+                  <Label className={LABEL_CLASSES}>Address</Label>
                   <Textarea
                     required
                     disabled={done}
@@ -765,7 +865,7 @@ export default function WebOrderDetailsPage() {
                   />
                 </div>
                 <div>
-                  <Label>Shipping Note</Label>
+                  <Label className={LABEL_CLASSES}>Shipping Note</Label>
                   <Textarea
                     disabled={done}
                     rows={3}
@@ -779,7 +879,7 @@ export default function WebOrderDetailsPage() {
 
             {!done && (
             <Card>
-              <h2 className="mb-4 text-base font-semibold text-foreground">Add products</h2>
+              <h2 className="mb-4 text-sm font-semibold text-foreground">Add products</h2>
               <div ref={pickerRef} className="relative">
                 <Input
                   placeholder="Search by name or SKU, then click to add…"
@@ -837,7 +937,7 @@ export default function WebOrderDetailsPage() {
             )}
 
             <Card>
-              <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-foreground">
+              <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
                 Ordered products
                 {lineItems.length > 0 && (
                   <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
@@ -916,7 +1016,7 @@ export default function WebOrderDetailsPage() {
 
                         <div className="mt-3 grid grid-cols-3 gap-3">
                           <div>
-                            <Label>Qty</Label>
+                            <Label className={LABEL_CLASSES}>Qty</Label>
                             <div className="flex min-w-0 items-center gap-1">
                               {!done && (
                                 <button
@@ -959,7 +1059,7 @@ export default function WebOrderDetailsPage() {
                             </div>
                           </div>
                           <div>
-                            <Label>Price</Label>
+                            <Label className={LABEL_CLASSES}>Price</Label>
                             <div className="flex min-w-0 items-center gap-1">
                               {!done && (
                                 <button
@@ -1000,7 +1100,7 @@ export default function WebOrderDetailsPage() {
                             </div>
                           </div>
                           <div>
-                            <Label>Total</Label>
+                            <Label className={LABEL_CLASSES}>Total</Label>
                             <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-center text-sm text-foreground/70">
                               {formatAmount(lineTotal)}
                             </div>
@@ -1021,7 +1121,7 @@ export default function WebOrderDetailsPage() {
                   }`}
                 >
                   <div>
-                    <Label>Discount</Label>
+                    <Label className={LABEL_CLASSES}>Discount</Label>
                     <Input
                       type="number"
                       min="0"
@@ -1033,7 +1133,7 @@ export default function WebOrderDetailsPage() {
                     />
                   </div>
                   <div>
-                    <Label>Advance</Label>
+                    <Label className={LABEL_CLASSES}>Advance</Label>
                     <Input
                       type="number"
                       min="0"
@@ -1045,13 +1145,13 @@ export default function WebOrderDetailsPage() {
                     />
                   </div>
                   <div>
-                    <Label>Sub Total</Label>
+                    <Label className={LABEL_CLASSES}>Sub Total</Label>
                     <div className="rounded-lg border border-black/10 bg-black/5 px-3 py-2 text-sm text-foreground/50">
                       {formatAmount(subTotal)}
                     </div>
                   </div>
                   <div>
-                    <Label>Delivery Charge</Label>
+                    <Label className={LABEL_CLASSES}>Delivery Charge</Label>
                     <Input
                       type="number"
                       min="0"
@@ -1063,14 +1163,14 @@ export default function WebOrderDetailsPage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-status-cancelled">Grand Total</Label>
+                    <Label className="!text-sm !font-semibold !text-status-cancelled">Grand Total</Label>
                     <div className="rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 px-3 py-2 text-sm font-semibold text-status-cancelled">
                       {formatAmount(grandTotal)}
                     </div>
                   </div>
                   {hasAdvance && (
                     <div>
-                      <Label>Payment Method</Label>
+                      <Label className={LABEL_CLASSES}>Payment Method</Label>
                       <Select
                         value={paymentMethod}
                         onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
@@ -1087,7 +1187,7 @@ export default function WebOrderDetailsPage() {
 
                 {hasAdvance && (
                   <div className="mt-3">
-                    <Label>Transaction ID</Label>
+                    <Label className={LABEL_CLASSES}>Transaction ID</Label>
                     <Input
                       placeholder="Enter transaction ID"
                       value={transactionId}
@@ -1115,7 +1215,7 @@ export default function WebOrderDetailsPage() {
             <div>
               <Card>
                 <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-base font-semibold text-foreground">Order summary</h2>
+                  <h2 className="text-sm font-semibold text-foreground">Order summary</h2>
                   <span className="text-xs text-foreground/50">#{order.orderNumber}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -1141,7 +1241,7 @@ export default function WebOrderDetailsPage() {
             </div>
 
             <Card>
-              <h2 className="mb-3 text-base font-semibold text-foreground">Customer success rate</h2>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Customer success rate</h2>
               {successRate && successRate.successRate !== null ? (
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -1159,7 +1259,7 @@ export default function WebOrderDetailsPage() {
             </Card>
 
             <Card>
-              <h2 className="mb-3 text-base font-semibold text-foreground">Order items</h2>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Order items</h2>
               <div className="space-y-3">
                 {order.items.map((item) => {
                   const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
@@ -1185,7 +1285,7 @@ export default function WebOrderDetailsPage() {
             </Card>
 
             <Card>
-              <h2 className="mb-3 text-base font-semibold text-foreground">Order tags</h2>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Order tags</h2>
               <div className="flex flex-wrap gap-2">
                 {(successRate?.orderCount ?? 0) > 1 && (
                   <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">REPEAT</span>
@@ -1197,7 +1297,7 @@ export default function WebOrderDetailsPage() {
             </Card>
 
             <Card>
-              <h2 className="mb-3 text-base font-semibold text-foreground">Order actions</h2>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Order actions</h2>
               {!done && (
               <>
               <select
@@ -1217,7 +1317,7 @@ export default function WebOrderDetailsPage() {
               {nextResponse === "CANCEL" ? (
                 <div className="mt-3 rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 p-3">
                   <p className="mb-2 text-sm font-semibold text-status-cancelled">Cancellation Details</p>
-                  <Label>Cancel reason</Label>
+                  <Label className={LABEL_CLASSES}>Cancel reason</Label>
                   <select
                     value={cancelReason}
                     onChange={(e) => setCancelReason(e.target.value)}
@@ -1231,7 +1331,7 @@ export default function WebOrderDetailsPage() {
                     ))}
                   </select>
                   <div className="mt-2">
-                    <Label>Note (optional)</Label>
+                    <Label className={LABEL_CLASSES}>Note (optional)</Label>
                     <Textarea
                       rows={2}
                       placeholder="Add note about cancellation (optional)"
@@ -1277,7 +1377,7 @@ export default function WebOrderDetailsPage() {
 
 
               <div className="mt-4 rounded-lg border border-black/10 p-3">
-                <Label>Note</Label>
+                <Label className={LABEL_CLASSES}>Note</Label>
                 <Textarea
                   rows={3}
                   placeholder="Write a note about this order"
@@ -1315,7 +1415,7 @@ export default function WebOrderDetailsPage() {
 
 
           <Card>
-            <h2 className="mb-3 text-base font-semibold text-foreground">Activity log</h2>
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Activity log</h2>
             {activity.length === 0 ? (
               <p className="text-sm text-foreground/50">No activity yet.</p>
             ) : (
@@ -1345,7 +1445,7 @@ export default function WebOrderDetailsPage() {
                 className="flex w-full items-center justify-between text-primary-fg"
               >
                 <span className="text-sm font-medium opacity-80">Total</span>
-                <span className="flex items-center gap-2 text-base font-semibold">
+                <span className="flex items-center gap-2 text-sm font-semibold">
                   {formatAmount(orderTotal)}৳
                   <span aria-hidden="true">▲</span>
                 </span>
@@ -1366,7 +1466,7 @@ export default function WebOrderDetailsPage() {
             className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-card bg-card p-5 shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="activity-log-title" className="mb-4 text-base font-semibold text-foreground">
+            <h2 id="activity-log-title" className="mb-4 text-sm font-semibold text-foreground">
               Activity log
             </h2>
             <div className="flex-1 space-y-4 overflow-y-auto pr-1">

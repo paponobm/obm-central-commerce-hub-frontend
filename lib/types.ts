@@ -461,3 +461,10 @@ export interface Integration {
   createdAt: string;
   updatedAt: string;
 }
+
+// Who currently has a Web Order (or incomplete checkout) open — see
+// lib/order-locks.ts.
+export interface OrderLockHolder {
+  id: string;
+  name: string;
+}
