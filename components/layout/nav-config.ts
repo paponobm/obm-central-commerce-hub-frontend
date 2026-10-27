@@ -91,7 +91,17 @@ export const NAV_ENTRIES: NavEntry[] = [
   // picker itself depends on it), so it can't be used to gate this link;
   // channels.manage is the one that actually reflects a deliberate grant.
   { type: "link", label: "Channels", href: "/channels", icon: "channels", permission: "channels.manage", centralOnly: true },
-  { type: "link", label: "Reports", href: "/reports", icon: "reports", permission: "reports.view" },
+  {
+    type: "group",
+    label: "Reports",
+    icon: "reports",
+    permission: "reports.view",
+    children: [
+      { label: "Sales Report", href: "/reports" },
+      { label: "Order Report", href: "/reports/order" },
+      { label: "COD Report", href: "/reports/cod" },
+    ],
+  },
   // Each gated on its own nav-visibility-only permission, independent of
   // the others — the pages/APIs themselves are still all gated solely by
   // users.manage (unchanged), so one of these being off only hides that

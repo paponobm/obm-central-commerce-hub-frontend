@@ -468,3 +468,35 @@ export interface OrderLockHolder {
   id: string;
   name: string;
 }
+
+// GET /admin/reports/order-report — the website-to-fulfillment funnel.
+export interface OrderReportMetric {
+  count: number;
+  amount: number;
+}
+
+export interface OrderReport {
+  range: { from: string; to: string };
+  totalIncoming: OrderReportMetric;
+  fromWebsite: OrderReportMetric;
+  approvedFromWeb: OrderReportMetric;
+  approvedOutsideWeb: OrderReportMetric;
+  totalOrders: OrderReportMetric;
+  delivered: OrderReportMetric;
+  partial: OrderReportMetric;
+  cancelled: OrderReportMetric;
+  returned: OrderReportMetric;
+}
+
+// GET /admin/reports/cod-report — customer delivery charge vs. what
+// Steadfast actually cost (flat fee + COD cut), for parcels shipped
+// through the Steadfast integration.
+export interface CodReport {
+  range: { from: string; to: string };
+  totalParcels: OrderReportMetric;
+  steadfastCharge: OrderReportMetric;
+  deliveryCharge: OrderReportMetric;
+  codCharge: OrderReportMetric;
+  delivered: OrderReportMetric;
+  returned: OrderReportMetric;
+}
