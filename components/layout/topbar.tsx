@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode, type SVGProps } from "react";
+import type { ReactNode, SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
@@ -41,13 +41,6 @@ export function Topbar({ onOpenMobileMenu }: { onOpenMobileMenu: () => void }) {
   const { hasPermission } = useAuth();
   const { activeChannel } = useChannelScope();
   const router = useRouter();
-  const [search, setSearch] = useState("");
-
-  function handleSearch(e: FormEvent) {
-    e.preventDefault();
-    const q = search.trim();
-    router.push(q ? `/orders?search=${encodeURIComponent(q)}` : "/orders");
-  }
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 bg-sidebar px-3 text-sidebar-fg sm:px-6">
@@ -65,21 +58,12 @@ export function Topbar({ onOpenMobileMenu }: { onOpenMobileMenu: () => void }) {
       <StoreSelector />
       <div className="mx-1 hidden h-6 w-px bg-white/10 sm:block" aria-hidden />
 
+      {/* Opens the dedicated Search page (orders + web orders + customers
+          in one place) rather than submitting a query inline. */}
       {hasPermission("orders.view") && (
-        <form
-          onSubmit={handleSearch}
-          className="hidden items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 focus-within:border-primary md:flex"
-        >
-          <span aria-hidden className="text-sidebar-fg/50">
-            🔍
-          </span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search order #, customer, phone…"
-            className="w-40 bg-transparent text-sm text-white outline-none placeholder:text-sidebar-fg/40 lg:w-56"
-          />
-        </form>
+        <span className="hidden md:inline-flex">
+          <NavAction icon="🔍" label="Search" onClick={() => router.push("/search")} />
+        </span>
       )}
 
       {/* The same three shortcuts are always reachable via the sidebar/drawer

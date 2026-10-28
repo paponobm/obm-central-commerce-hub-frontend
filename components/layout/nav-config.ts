@@ -26,6 +26,7 @@ export type NavEntry = NavLink | NavGroup;
 // no nested item here points anywhere that doesn't already exist.
 export const NAV_ENTRIES: NavEntry[] = [
   { type: "link", label: "Dashboard", href: "/", icon: "dashboard", permission: "dashboard.view" },
+  { type: "link", label: "Search", href: "/search", icon: "search", permission: "orders.view" },
   {
     type: "group",
     label: "Orders",

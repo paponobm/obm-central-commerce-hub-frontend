@@ -131,8 +131,18 @@ function SettingsIcon(props: IconProps) {
   );
 }
 
+function SearchIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="8.8" cy="8.8" r="5.3" />
+      <path d="M16.5 16.5 13 13" />
+    </svg>
+  );
+}
+
 export const NAV_ICONS = {
   dashboard: DashboardIcon,
+  search: SearchIcon,
   orders: OrdersIcon,
   products: ProductsIcon,
   inventory: InventoryIcon,
