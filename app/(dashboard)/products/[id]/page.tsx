@@ -3,7 +3,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import { useChannelScope } from "@/lib/channel-scope-context";
 import type { Category, Product } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,7 +20,6 @@ interface MasterForm {
 
 export default function ProductDetailsTab() {
   const params = useParams<{ id: string }>();
-  const { activeChannelId } = useChannelScope();
   const productId = params.id;
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -256,7 +254,6 @@ export default function ProductDetailsTab() {
       </Card>
 
       <div className="space-y-6">
-        {!activeChannelId && (
         <Card>
           <h2 className="mb-3 text-lg font-bold text-primary">Inventory</h2>
           <div className="flex items-center justify-between">
@@ -270,7 +267,6 @@ export default function ProductDetailsTab() {
             </span>
           </div>
         </Card>
-        )}
 
         <Card>
           <h2 className="mb-1 text-lg font-bold text-primary">Thumbnail</h2>

@@ -23,7 +23,7 @@ export function DateRangeSelect({ value, onChange }: { value: DateRange; onChang
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-black/5"
+        className="flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1 text-sm font-medium text-foreground/70 hover:bg-black/5"
       >
         📅 {label}
         <span aria-hidden>▾</span>
@@ -38,7 +38,7 @@ export function DateRangeSelect({ value, onChange }: { value: DateRange; onChang
                 onChange(r.key);
                 setOpen(false);
               }}
-              className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-black/5 ${
+              className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-black/5 ${
                 r.key === value ? "font-medium text-primary" : "text-foreground/70"
               }`}
             >

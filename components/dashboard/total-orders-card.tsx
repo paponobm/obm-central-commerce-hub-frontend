@@ -31,25 +31,37 @@ export function TotalOrdersCard({ channelId }: { channelId?: string }) {
   }
 
   useEffect(() => {
-    const { from, to } = statRangeBounds(range, customFrom, customTo);
-    const params = new URLSearchParams({ from, to });
-    if (channelId) params.set("channelId", channelId);
-
     let cancelled = false;
     setSummary(null);
     setError(null);
-    api
-      .get<OrdersSummary>(`/admin/reports/orders-summary?${params}`)
-      .then((data) => {
-        if (!cancelled) setSummary(data);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Failed to load orders summary");
-        }
-      });
+
+    function load() {
+      const { from, to } = statRangeBounds(range, customFrom, customTo);
+      const params = new URLSearchParams({ from, to });
+      if (channelId) params.set("channelId", channelId);
+      api
+        .get<OrdersSummary>(`/admin/reports/orders-summary?${params}`)
+        .then((data) => {
+          if (!cancelled) setSummary(data);
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setError(err instanceof ApiError ? err.message : "Failed to load orders summary");
+          }
+        });
+    }
+
+    load();
+    // Same short-poll "stands in for real-time" convention used elsewhere
+    // on this dashboard — a newly created order shows up here within one
+    // interval, no manual refresh needed.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, 8000);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [range, customFrom, customTo, channelId]);
 
@@ -65,19 +77,19 @@ export function TotalOrdersCard({ channelId }: { channelId?: string }) {
   return (
     <Card>
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-foreground/60">Total Orders</div>
+        <div className="text-base text-foreground/60">Total Orders</div>
         <StatDateRangeSelect value={range} customFrom={customFrom} customTo={customTo} onChange={handleRangeChange} />
       </div>
       {error ? (
-        <p className="mt-2 text-sm text-status-cancelled">{error}</p>
+        <p className="mt-2 text-base text-status-cancelled">{error}</p>
       ) : !summary ? (
         <LoadingLine />
       ) : (
         <>
-          <div className="mt-2 text-2xl font-semibold text-foreground">{summary.current.count}</div>
+          <div className="mt-2 text-3xl font-semibold text-foreground">{summary.current.count}</div>
           {delta !== null && (
             <div
-              className={`mt-1 text-xs font-medium ${
+              className={`mt-1 text-sm font-medium ${
                 delta >= 0 ? "text-status-delivered" : "text-status-cancelled"
               }`}
             >

@@ -39,6 +39,17 @@ interface WebOrderRow {
   hasResponse: boolean;
   leadCancelled: boolean;
   createdAt: string;
+  amount: number;
+}
+
+// A checkout lead has no order total of its own yet — its value is the sum
+// of its line items, same calculation the backend uses for Order Report's
+// "From Website Orders" amount.
+function leadAmount(items: unknown[]): number {
+  return (items as { quantity: number; unitPrice: number }[]).reduce(
+    (sum, i) => sum + i.quantity * i.unitPrice,
+    0,
+  );
 }
 
 type Tab = "web" | "incomplete";
@@ -78,48 +89,71 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
   const [range, setRange] = useState<DateRange>("today");
 
   useEffect(() => {
+    let cancelled = false;
     setRows(null);
     setError(null);
-    Promise.all([
-      api.get<OrderListItem[]>(`/admin/orders?source=WEBSITE&includeWebUnapproved=true&channelId=${channelId}`),
-      api.get<LeadRow[]>("/admin/orders/checkout-leads"),
-    ])
-      .then(([orders, leads]) => {
-        const orderRows: WebOrderRow[] = orders.map((o) => ({
-          isLead: false,
-          status: o.status,
-          webApproved: o.webApproved,
-          customerResponse: o.customerResponse,
-          paymentStatus: o.paymentStatus,
-          shippingName: o.shippingName,
-          shippingPhone: o.shippingPhone,
-          shippingAddress: o.shippingAddress,
-          items: o.items,
-          hasResponse: true,
-          leadCancelled: false,
-          createdAt: o.createdAt,
-        }));
-        // checkout-leads has no channelId filter of its own (see its
-        // service method), so this store's leads are picked out here.
-        const leadRows = leads
-          .filter((l) => l.channelId === channelId)
-          .map((l): WebOrderRow => ({
-            isLead: true,
-            status: "PENDING",
-            webApproved: false,
-            customerResponse: l.customerResponse,
-            paymentStatus: "UNPAID",
-            shippingName: l.name ?? "",
-            shippingPhone: l.phone,
-            shippingAddress: l.address ?? "",
-            items: l.items,
-            hasResponse: l.customerResponse !== null,
-            leadCancelled: l.cancelled,
-            createdAt: l.createdAt,
+
+    function load() {
+      Promise.all([
+        api.get<OrderListItem[]>(`/admin/orders?source=WEBSITE&includeWebUnapproved=true&channelId=${channelId}`),
+        api.get<LeadRow[]>("/admin/orders/checkout-leads"),
+      ])
+        .then(([orders, leads]) => {
+          if (cancelled) return;
+          const orderRows: WebOrderRow[] = orders.map((o) => ({
+            isLead: false,
+            status: o.status,
+            webApproved: o.webApproved,
+            customerResponse: o.customerResponse,
+            paymentStatus: o.paymentStatus,
+            shippingName: o.shippingName,
+            shippingPhone: o.shippingPhone,
+            shippingAddress: o.shippingAddress,
+            items: o.items,
+            hasResponse: true,
+            leadCancelled: false,
+            createdAt: o.createdAt,
+            amount: Number(o.total),
           }));
-        setRows([...orderRows, ...leadRows]);
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load the web order report"));
+          // checkout-leads has no channelId filter of its own (see its
+          // service method), so this store's leads are picked out here.
+          const leadRows = leads
+            .filter((l) => l.channelId === channelId)
+            .map((l): WebOrderRow => ({
+              isLead: true,
+              status: "PENDING",
+              webApproved: false,
+              customerResponse: l.customerResponse,
+              paymentStatus: "UNPAID",
+              shippingName: l.name ?? "",
+              shippingPhone: l.phone,
+              shippingAddress: l.address ?? "",
+              items: l.items,
+              hasResponse: l.customerResponse !== null,
+              leadCancelled: l.cancelled,
+              createdAt: l.createdAt,
+              amount: leadAmount(l.items),
+            }));
+          setRows([...orderRows, ...leadRows]);
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof ApiError ? err.message : "Failed to load the web order report");
+        });
+    }
+
+    load();
+    // No push channel from the backend (REST only), so a short poll stands
+    // in for real-time — same convention as the Web Orders list page.
+    // Paused while the tab is hidden so it doesn't keep hitting the API
+    // when nobody's looking at the page.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [channelId]);
 
   const rangedRows = useMemo(() => {
@@ -152,11 +186,22 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
 
   const segments = tab === "web" ? webSegments : incompleteSegments;
   const total = segments.reduce((sum, s) => sum + s.value, 0);
+  // Sum of whatever rows the current tab's segments are built from —
+  // every WEB_STAGES stage for the Web Orders tab, just "incomplete" for
+  // the other one.
+  const totalAmount = useMemo(() => {
+    if (!rangedRows) return 0;
+    return rangedRows.reduce((sum, row, i) => {
+      const stage = stages[i];
+      const matches = tab === "web" ? stage !== null && WEB_STAGES.includes(stage) : stage === "incomplete";
+      return matches ? sum + row.amount : sum;
+    }, 0);
+  }, [rangedRows, stages, tab]);
 
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Web Order Report</h2>
+        <h2 className="text-base font-semibold text-foreground">Web Order Report</h2>
         <DateRangeSelect value={range} onChange={setRange} />
       </div>
 
@@ -169,7 +214,7 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-1 pb-2 text-sm font-medium transition-colors ${
+            className={`-mb-px border-b-2 px-1 pb-2 text-base font-medium transition-colors ${
               tab === t.key ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
             }`}
           >
@@ -179,11 +224,11 @@ export function WebOrderReport({ channelId }: { channelId: string }) {
       </div>
 
       {error ? (
-        <p className="text-sm text-status-cancelled">{error}</p>
+        <p className="text-base text-status-cancelled">{error}</p>
       ) : !rangedRows ? (
         <LoadingLine />
       ) : (
-        <DonutChart segments={segments} caption={`Total Orders: ${total}`} />
+        <DonutChart segments={segments} caption={`Total Orders: ${total}`} totalAmount={totalAmount} />
       )}
     </Card>
   );

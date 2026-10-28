@@ -13,12 +13,18 @@ export interface BarTrendPoint {
 // series needs no legend box"). Each bar is its own hit target with a
 // pointermove/focus tooltip, per the skill's bar/cell interaction spec —
 // there's no crosshair here because there's nothing to snap between bars.
-export function BarTrendChart({ points }: { points: BarTrendPoint[] }) {
+export function BarTrendChart({
+  points,
+  seriesLabel = "Value",
+}: {
+  points: BarTrendPoint[];
+  seriesLabel?: string;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...points.map((p) => p.value));
 
   if (points.every((p) => p.value === 0)) {
-    return <p className="text-sm text-foreground/50">No data yet.</p>;
+    return <p className="text-base text-foreground/50">No data yet.</p>;
   }
 
   return (
@@ -37,15 +43,22 @@ export function BarTrendChart({ points }: { points: BarTrendPoint[] }) {
               onBlur={() => setHover((h) => (h === i ? null : h))}
             >
               {hover === i && (
-                <div className="absolute bottom-full z-10 mb-2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-card">
-                  {p.tooltipLabel ?? p.label}: {p.value.toLocaleString()}
+                <div className="absolute bottom-full z-10 mb-2 min-w-[9rem] whitespace-nowrap rounded-lg border border-black/10 bg-card px-3 py-2.5 text-left shadow-card">
+                  <div className="mb-1.5 text-sm font-semibold text-foreground">{p.tooltipLabel ?? p.label}</div>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex items-center gap-1.5 text-foreground/60">
+                      <span className="h-2 w-2 shrink-0 rounded-sm bg-[var(--series-1)]" />
+                      {seriesLabel}
+                    </span>
+                    <span className="font-semibold text-foreground">{p.value.toLocaleString()}</span>
+                  </div>
                 </div>
               )}
               <div
                 className="w-full max-w-[28px] rounded-t-[4px] bg-[var(--series-1)] transition-opacity group-hover:opacity-80"
                 style={{ height: `${heightPct}%` }}
               />
-              <span className="mt-2 text-[10px] text-foreground/40">{p.label}</span>
+              <span className="mt-2 text-xs text-foreground/40">{p.label}</span>
             </button>
           );
         })}

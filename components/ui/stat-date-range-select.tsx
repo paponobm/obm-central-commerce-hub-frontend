@@ -113,14 +113,14 @@ export function StatDateRangeSelect({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-black/5"
+        className="flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1 text-sm font-medium text-foreground/70 hover:bg-black/5"
       >
         📅 {triggerLabel()}
         <span aria-hidden>▾</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border border-black/10 bg-card py-1.5 shadow-card">
-          <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
+        <div className="absolute right-0 top-full z-20 mt-1 w-60 overflow-hidden rounded-lg border border-black/10 bg-card py-1.5 shadow-card">
+          <div className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-foreground/40">
             Quick select
           </div>
           {STAT_RANGE_QUICK.map((r) => (
@@ -134,7 +134,7 @@ export function StatDateRangeSelect({
             />
           ))}
           <div className="my-1 border-t border-black/5" />
-          <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
+          <div className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-foreground/40">
             Extended range
           </div>
           {STAT_RANGE_EXTENDED.map((r) => (
@@ -148,7 +148,7 @@ export function StatDateRangeSelect({
             />
           ))}
           <div className="my-1 border-t border-black/5" />
-          <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
+          <div className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-foreground/40">
             Custom
           </div>
           {STAT_RANGE_CUSTOM.map((r) => (
@@ -211,11 +211,16 @@ function Option({
         onSelect();
         setOpen(false);
       }}
-      className={`mx-1.5 my-0.5 flex w-[calc(100%-0.75rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
-        selected ? "bg-status-delivered/10 font-medium text-status-delivered" : "text-foreground/70 hover:bg-black/5"
+      className={`mx-1.5 my-0.5 flex w-[calc(100%-0.75rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
+        selected
+          ? // Same fix as mini-calendar.tsx: bg-status-delivered/10 is a no-op
+            // (that token is a plain CSS var, not an rgb-channel triplet), so
+            // the selected pill's background never actually rendered.
+            "bg-[color-mix(in_srgb,var(--status-delivered)_10%,transparent)] font-medium text-status-delivered"
+          : "text-foreground/70 hover:bg-black/5"
       }`}
     >
-      <Icon className={`h-3.5 w-3.5 shrink-0 ${selected ? "text-status-delivered" : "text-foreground/40"}`} />
+      <Icon className={`h-4 w-4 shrink-0 ${selected ? "text-status-delivered" : "text-foreground/40"}`} />
       <span className="flex-1">{label}</span>
       {selected && (
         <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-status-delivered text-white">

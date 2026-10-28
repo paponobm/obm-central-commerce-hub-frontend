@@ -70,55 +70,67 @@ export function PendingWebOrdersCard({ channelId }: { channelId?: string }) {
     let cancelled = false;
     setRows(null);
     setError(null);
-    const qs = channelId ? `&channelId=${channelId}` : "";
-    Promise.all([
-      api.get<OrderListItem[]>(`/admin/orders?source=WEBSITE&includeWebUnapproved=true${qs}`),
-      api.get<LeadRow[]>("/admin/orders/checkout-leads"),
-    ])
-      .then(([orders, leads]) => {
-        if (cancelled) return;
-        const orderRows: WebOrderRow[] = orders.map((o) => ({
-          isLead: false,
-          status: o.status,
-          webApproved: o.webApproved,
-          customerResponse: o.customerResponse,
-          paymentStatus: o.paymentStatus,
-          shippingName: o.shippingName,
-          shippingPhone: o.shippingPhone,
-          shippingAddress: o.shippingAddress,
-          items: o.items,
-          hasResponse: true,
-          leadCancelled: false,
-          createdAt: o.createdAt,
-        }));
-        // checkout-leads always returns every lead across the user's
-        // accessible channels (no channelId filter of its own) — narrowed
-        // to one store here only when a specific store is active.
-        const leadRows: WebOrderRow[] = leads
-          .filter((l) => !channelId || l.channelId === channelId)
-          .map((l) => ({
-            isLead: true,
-            status: "PENDING",
-            webApproved: false,
-            customerResponse: l.customerResponse,
-            paymentStatus: "UNPAID",
-            shippingName: l.name ?? "",
-            shippingPhone: l.phone,
-            shippingAddress: l.address ?? "",
-            items: l.items,
-            hasResponse: l.customerResponse !== null,
-            leadCancelled: l.cancelled,
-            createdAt: l.createdAt,
+
+    function load() {
+      const qs = channelId ? `&channelId=${channelId}` : "";
+      Promise.all([
+        api.get<OrderListItem[]>(`/admin/orders?source=WEBSITE&includeWebUnapproved=true${qs}`),
+        api.get<LeadRow[]>("/admin/orders/checkout-leads"),
+      ])
+        .then(([orders, leads]) => {
+          if (cancelled) return;
+          const orderRows: WebOrderRow[] = orders.map((o) => ({
+            isLead: false,
+            status: o.status,
+            webApproved: o.webApproved,
+            customerResponse: o.customerResponse,
+            paymentStatus: o.paymentStatus,
+            shippingName: o.shippingName,
+            shippingPhone: o.shippingPhone,
+            shippingAddress: o.shippingAddress,
+            items: o.items,
+            hasResponse: true,
+            leadCancelled: false,
+            createdAt: o.createdAt,
           }));
-        setRows([...orderRows, ...leadRows]);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Failed to load pending web orders");
-        }
-      });
+          // checkout-leads always returns every lead across the user's
+          // accessible channels (no channelId filter of its own) — narrowed
+          // to one store here only when a specific store is active.
+          const leadRows: WebOrderRow[] = leads
+            .filter((l) => !channelId || l.channelId === channelId)
+            .map((l) => ({
+              isLead: true,
+              status: "PENDING",
+              webApproved: false,
+              customerResponse: l.customerResponse,
+              paymentStatus: "UNPAID",
+              shippingName: l.name ?? "",
+              shippingPhone: l.phone,
+              shippingAddress: l.address ?? "",
+              items: l.items,
+              hasResponse: l.customerResponse !== null,
+              leadCancelled: l.cancelled,
+              createdAt: l.createdAt,
+            }));
+          setRows([...orderRows, ...leadRows]);
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setError(err instanceof ApiError ? err.message : "Failed to load pending web orders");
+          }
+        });
+    }
+
+    load();
+    // Same short-poll "stands in for real-time" convention used elsewhere
+    // on this dashboard.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, 8000);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [channelId]);
 
@@ -154,19 +166,19 @@ export function PendingWebOrdersCard({ channelId }: { channelId?: string }) {
   return (
     <Card>
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-foreground/60">Pending Web Orders</div>
+        <div className="text-base text-foreground/60">Pending Web Orders</div>
         <StatDateRangeSelect value={range} customFrom={customFrom} customTo={customTo} onChange={handleRangeChange} />
       </div>
       {error ? (
-        <p className="mt-2 text-sm text-status-cancelled">{error}</p>
+        <p className="mt-2 text-base text-status-cancelled">{error}</p>
       ) : !rangedRows ? (
         <LoadingLine />
       ) : (
         <div className="group relative mt-2 inline-block">
-          <div className="text-2xl font-semibold text-foreground">{total}</div>
+          <div className="text-3xl font-semibold text-foreground">{total}</div>
           {breakdown.length > 0 && (
-            <div className="invisible absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-black/10 bg-card p-3 opacity-0 shadow-card transition-opacity group-hover:visible group-hover:opacity-100">
-              <table className="w-full text-xs">
+            <div className="invisible absolute left-0 top-full z-20 mt-2 w-60 rounded-lg border border-black/10 bg-card p-3 opacity-0 shadow-card transition-opacity group-hover:visible group-hover:opacity-100">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-foreground/50">
                     <th className="pb-1.5 font-medium">Status</th>

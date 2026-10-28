@@ -333,6 +333,7 @@ export interface TopProduct {
   image: string | null;
   quantitySold: number;
   revenue: number;
+  returnPct: number;
 }
 
 export interface Role {
