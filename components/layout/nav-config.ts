@@ -149,3 +149,41 @@ export const STORE_ONLY_PREFIXES = ["/web-orders", "/integrations"];
 export function isBlockedWithoutStore(pathname: string): boolean {
   return STORE_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
+
+function trailIsActivePath(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export interface BreadcrumbItem {
+  label: string;
+  href?: string;
+}
+
+// The current route's nav trail (e.g. [{label: "Products"}, {label: "All
+// Products", href: "/products"}]) — for the small-screen breadcrumb, which
+// stands in for the sidebar's own nav tree when that's off-canvas. Same
+// longest-prefix-match convention as the sidebar's own active-highlight
+// (a detail route like /products/abc123 still resolves to its nearest real
+// entry), computed independently here so the sidebar's own logic is
+// untouched.
+export function findNavTrail(pathname: string): BreadcrumbItem[] {
+  let best: { trail: BreadcrumbItem[]; href: string } | null = null;
+  for (const entry of NAV_ENTRIES) {
+    if (entry.type === "link") {
+      if (trailIsActivePath(pathname, entry.href) && (!best || entry.href.length > best.href.length)) {
+        best = { trail: [{ label: entry.label, href: entry.href }], href: entry.href };
+      }
+    } else {
+      for (const child of entry.children) {
+        if (trailIsActivePath(pathname, child.href) && (!best || child.href.length > best.href.length)) {
+          best = {
+            trail: [{ label: entry.label }, { label: child.label, href: child.href }],
+            href: child.href,
+          };
+        }
+      }
+    }
+  }
+  return best?.trail ?? [];
+}

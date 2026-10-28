@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { isBlockedInStore, isBlockedWithoutStore } from "@/components/layout/nav-config";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { Spinner } from "@/components/ui/spinner";
+import { getStoredSidebarCollapsed, setStoredSidebarCollapsed } from "@/lib/sidebar-prefs";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -24,6 +26,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const blocked =
     scopeRestored &&
     (activeChannelId ? isBlockedInStore(pathname) : isBlockedWithoutStore(pathname));
+
+  // Desktop collapse is a remembered preference (restored from
+  // localStorage after mount, so the server-rendered markup always starts
+  // expanded — no hydration mismatch). The mobile drawer is never
+  // persisted; it should always start closed on a fresh load.
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(getStoredSidebarCollapsed());
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      setStoredSidebarCollapsed(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!loading && !user) {
@@ -53,21 +74,35 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
       {/* min-h-0 overrides the flex default of min-height:auto — without
           it this column grows to fit its content instead of respecting
           the parent's height, so overflow-y-auto below never kicks in
           and the whole page scrolls (topbar included) instead of just
-          the content area. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          the content area. min-w-0 does the same for width — without it
+          a wide child (e.g. a table) pushes this column past the
+          viewport instead of scrolling inside it. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* <AnnouncementBanner
           title="Package Expiring Soon"
           message="Your package will expire in 0 days. Please renew to avoid interruptions."
           actionLabel="Renew Package"
         /> */}
-        <Topbar />
-        <main className="min-h-0 flex-1 overflow-y-auto p-6">{blocked ? null : children}</main>
+        <Topbar onOpenMobileMenu={() => setMobileOpen(true)} />
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+          {blocked ? null : (
+            <>
+              <Breadcrumb />
+              {children}
+            </>
+          )}
+        </main>
       </div>
     </div>
   );
