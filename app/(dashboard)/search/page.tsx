@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import type { Customer, OrderListItem, OrderSource } from "@/lib/types";
-import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
+import { formatAmount, formatRelativeTime } from "@/lib/format";
 import { telHref } from "@/lib/phone";
 import { isCompleteWebOrder } from "@/lib/web-orders";
 import { PageHeader } from "@/components/layout/page-header";
@@ -508,6 +508,7 @@ export default function SearchPage() {
       cancelled = true;
       clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   const hasQuery = query.trim().length > 0;
