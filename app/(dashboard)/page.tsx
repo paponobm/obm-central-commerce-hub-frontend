@@ -13,6 +13,8 @@ import { DonutChart } from "@/components/ui/donut-chart";
 import { BarTrendChart } from "@/components/ui/bar-trend-chart";
 import { WebOrderReport } from "@/components/dashboard/web-order-report";
 import { OrdersBySourceReport } from "@/components/dashboard/orders-by-source-report";
+import { TotalOrdersCard } from "@/components/dashboard/total-orders-card";
+import { PendingWebOrdersCard } from "@/components/dashboard/pending-web-orders-card";
 import { LoadingLine } from "@/components/ui/spinner";
 
 function shortDay(dateStr: string): string {
@@ -84,14 +86,6 @@ export default function DashboardPage() {
     return <LoadingLine />;
   }
 
-  const pending = data.ordersByStatus.PENDING ?? 0;
-
-  const yesterday = data.salesLast7Days.at(-2)?.orderCount ?? 0;
-  const orderDelta =
-    yesterday > 0
-      ? { pct: ((data.today.orderCount - yesterday) / yesterday) * 100, against: "yesterday" }
-      : undefined;
-
   const maxRevenue = Math.max(1, ...(topProducts ?? []).map((p) => p.revenue));
 
   return (
@@ -108,9 +102,9 @@ export default function DashboardPage() {
       <div
         className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${activeChannel ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}
       >
-        <StatCard label="Today's Orders" value={String(data.today.orderCount)} delta={orderDelta} />
-        <StatCard label="Today's Sales" value={formatAmount(data.today.salesTotal)} />
-        <StatCard label="Pending Orders" value={String(pending)} />
+        <TotalOrdersCard channelId={activeChannel?.id} />
+        {/* <StatCard label="Today's Sales" value={formatAmount(data.today.salesTotal)} /> */}
+        <PendingWebOrdersCard channelId={activeChannel?.id} />
         {!activeChannel && (
           <StatCard
             label="Low Stock Products"
