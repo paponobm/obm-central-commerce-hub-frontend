@@ -11,7 +11,20 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine } from "@/components/ui/spinner";
 
-const SOURCES: OrderSource[] = ["UNKNOWN", "MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
+const SOURCES: OrderSource[] = [
+  "UNKNOWN",
+  "MANUAL",
+  "PHONE",
+  "FACEBOOK",
+  "WHATSAPP",
+  "WEBSITE",
+  "OTHER",
+  "DIRECT",
+  "INSTAGRAM",
+  "TIKTOK",
+  "EXCHANGE",
+  "MESSENGER",
+];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 // Free-text on the order, purely informational (see Order.deliveryMethod) —
 // not tied to any courier integration, so this list is just a starting set.

@@ -13,7 +13,19 @@ export type OrderStatus =
   | "PREORDER"
   | "LOST";
 
-export type OrderSource = "WEBSITE" | "MANUAL" | "FACEBOOK" | "PHONE" | "WHATSAPP" | "OTHER" | "UNKNOWN";
+export type OrderSource =
+  | "WEBSITE"
+  | "MANUAL"
+  | "FACEBOOK"
+  | "PHONE"
+  | "WHATSAPP"
+  | "OTHER"
+  | "UNKNOWN"
+  | "DIRECT"
+  | "INSTAGRAM"
+  | "TIKTOK"
+  | "EXCHANGE"
+  | "MESSENGER";
 export type CustomerResponseStatus =
   | "NO_RESPONSE"
   | "ON_HOLD"

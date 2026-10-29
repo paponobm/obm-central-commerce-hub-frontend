@@ -176,9 +176,27 @@ const SOURCE_STYLE: Record<OrderSource, string> = {
   WHATSAPP: "bg-green-100 text-green-700",
   OTHER: "bg-amber-100 text-amber-700",
   UNKNOWN: "bg-gray-200 text-gray-600",
+  DIRECT: "bg-slate-200 text-slate-700",
+  INSTAGRAM: "bg-pink-100 text-pink-700",
+  TIKTOK: "bg-rose-100 text-rose-700",
+  EXCHANGE: "bg-orange-100 text-orange-700",
+  MESSENGER: "bg-sky-100 text-sky-700",
 };
 
-const SOURCES: OrderSource[] = ["WEBSITE", "MANUAL", "FACEBOOK", "PHONE", "WHATSAPP", "OTHER", "UNKNOWN"];
+const SOURCES: OrderSource[] = [
+  "WEBSITE",
+  "MANUAL",
+  "FACEBOOK",
+  "PHONE",
+  "WHATSAPP",
+  "OTHER",
+  "UNKNOWN",
+  "DIRECT",
+  "INSTAGRAM",
+  "TIKTOK",
+  "EXCHANGE",
+  "MESSENGER",
+];
 const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PARTIAL", "PAID", "REFUNDED"];
 
 // Order list date format: 04/10/2026,\n12:48 pm

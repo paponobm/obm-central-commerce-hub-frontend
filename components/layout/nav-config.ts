@@ -103,6 +103,7 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: "Sales Report", href: "/reports" },
       { label: "Order Report", href: "/reports/order" },
       { label: "COD Report", href: "/reports/cod" },
+      { label: "Employee Report", href: "/reports/employee" },
     ],
   },
   // Each gated on its own nav-visibility-only permission, independent of
