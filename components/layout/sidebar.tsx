@@ -43,6 +43,16 @@ function CloseIcon(props: IconProps) {
     </svg>
   );
 }
+// A nested nav item's own marker — a plain circle, same hand-drawn-SVG
+// convention as every other icon here, replacing the old CSS dot so a
+// child row reads as a proper icon in front of its text.
+function ListItemIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden {...props}>
+      <circle cx="10" cy="10" r="3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 // "collapsed" is a desktop-only preference — on a narrow viewport the
 // drawer is always full-width/full-label, regardless of it. Knowing the
@@ -188,7 +198,7 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-3 py-2">
+        <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-2 pt-4">
           {NAV_ENTRIES.map((rawEntry) => {
             const inStore = !!activeChannel;
             if (inStore && rawEntry.centralOnly) return null;
@@ -208,7 +218,7 @@ export function Sidebar({
                   key={entry.href}
                   href={entry.href}
                   title={collapsed ? entry.label : undefined}
-                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-md font-medium transition-colors ${
+                  className={`mb-1 flex items-center gap-2.5 rounded-lg px-3 py-2 text-md font-medium transition-colors ${
                     collapsed ? "lg:justify-center lg:px-0" : ""
                   } ${active ? "bg-sidebar-active text-sidebar-active-fg" : "text-sidebar-fg hover:bg-white/5"}`}
                 >
@@ -222,7 +232,11 @@ export function Sidebar({
             const groupHasActiveChild = entry.children.some((c) => c.href === activeHref);
 
             return (
-              <div key={entry.label}>
+              // Extra margin (vs. the plain links' mb-1) so an expandable
+              // group — visually heavier, with its own chevron and nested
+              // rows — reads as its own block rather than blending into the
+              // flat list of single links around it.
+              <div key={entry.label} className="my-2">
                 <button
                   type="button"
                   onClick={() => handleGroupClick(entry.label)}
@@ -258,10 +272,7 @@ export function Sidebar({
                               : "text-sidebar-fg/80 hover:bg-white/5 hover:text-white"
                           }`}
                         >
-                          <span
-                            className={`h-1 w-1 shrink-0 rounded-full ${active ? "bg-white" : "bg-sidebar-fg/40"}`}
-                            aria-hidden
-                          />
+                          <ListItemIcon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-sidebar-fg/40"}`} />
                           {child.label}
                         </Link>
                       );
