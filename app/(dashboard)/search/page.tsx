@@ -119,6 +119,8 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
     shippingAddress: lead.address ?? "",
     notes: null,
     deliveryMethod: null,
+    preorderReason: null,
+    preorderNotifyAt: null,
     createdAt: lead.createdAt,
     updatedAt: lead.updatedAt,
     createdBy: null,

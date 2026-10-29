@@ -195,6 +195,10 @@ interface OrderBase {
   shippingAddress: string;
   notes: string | null;
   deliveryMethod: string | null;
+  // Only meaningful when status is PREORDER — see the matching column
+  // comment in schema.prisma.
+  preorderReason: string | null;
+  preorderNotifyAt: string | null;
   createdAt: string;
   updatedAt: string;
   items: OrderItem[];

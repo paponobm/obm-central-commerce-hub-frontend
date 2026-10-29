@@ -665,6 +665,23 @@ export default function OrdersPage() {
     return `Name: ${o.customer.name}\nPhone: ${o.customer.phone}\nAddress: ${o.shippingAddress}`;
   }
 
+  // Preorder's one real transition besides Cancel — its stock has arrived,
+  // so it joins the normal Pending queue. Mirrors TRANSITIONS.PREORDER on
+  // the backend (['PENDING', 'CANCELLED']), same as cancelOrder below.
+  async function moveToPending(e: React.MouseEvent, order: OrderListItem) {
+    e.stopPropagation();
+    setRowError(null);
+    setBusyId(order.id);
+    try {
+      await api.patch(`/admin/orders/${order.id}/status`, { status: "PENDING" });
+      await loadOrders(search);
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : "Failed to move order to Pending");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function cancelOrder(e: React.MouseEvent, order: OrderListItem) {
     e.stopPropagation();
     if (!confirm(`Cancel order ${order.orderNumber}? This releases its reserved stock.`)) return;
@@ -770,6 +787,7 @@ export default function OrdersPage() {
                   // decision below is accurate instead of guessing high.
                   const itemHeight = 36;
                   let menuHeight = itemHeight * 4 + 9 + 8; // Invoice, Sticker, Order Details, Edit + divider + padding
+                  if (o.status === "PREORDER") menuHeight += itemHeight;
                   if (CAN_CANCEL_FROM.has(o.status)) menuHeight += itemHeight;
                   if (o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") {
                     menuHeight += itemHeight;
@@ -839,6 +857,20 @@ export default function OrdersPage() {
                       <EditIcon className="h-4 w-4 text-foreground/50" />
                       Edit
                     </button>
+                    {o.status === "PREORDER" && (
+                      <button
+                        type="button"
+                        disabled={busyId === o.id}
+                        onClick={(e) => {
+                          setOpenMenuId(null);
+                          moveToPending(e, o);
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
+                      >
+                        <span aria-hidden>🛒</span>
+                        {busyId === o.id ? "Moving…" : "Move to Pending"}
+                      </button>
+                    )}
                     {CAN_CANCEL_FROM.has(o.status) && (
                       <button
                         type="button"

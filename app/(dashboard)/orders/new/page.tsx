@@ -10,12 +10,27 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 const SOURCES: OrderSource[] = ["UNKNOWN", "MANUAL", "PHONE", "FACEBOOK", "WHATSAPP", "WEBSITE", "OTHER"];
 const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFER", "CARD", "OTHER"];
 // Free-text on the order, purely informational (see Order.deliveryMethod) —
 // not tied to any courier integration, so this list is just a starting set.
 const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delivery", "Other"];
+// Starting set for the optional Preorder Reason dropdown — same "informational
+// starting list" convention as DELIVERY_METHODS above.
+const PREORDER_REASONS = ["Out of Stock", "Upcoming Launch", "Custom Order", "Other"];
+
+// Opens the Preorder Reason/Notification Date bar — same hand-drawn-SVG
+// convention as the sidebar's own icons.
+function BellIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M5 8a5 5 0 0 1 10 0c0 3 1 4.5 1.5 5H3.5C4 12.5 5 11 5 8Z" />
+      <path d="M8.3 15.5a1.8 1.8 0 0 0 3.4 0" />
+    </svg>
+  );
+}
 
 interface LineItem {
   productId: string;
@@ -47,6 +62,15 @@ export default function NewOrderPage() {
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS[0]);
   const [source, setSource] = useState<OrderSource>("UNKNOWN");
   const [channelId, setChannelId] = useState(globalChannelId ?? "");
+
+  // Preorder — the order starts life in the Preorder list instead of
+  // Pending; reason/notify date are both optional even when this is on.
+  const [isPreorder, setIsPreorder] = useState(false);
+  // Reason/date stay collapsed behind the bell icon until clicked — turning
+  // Preorder on by itself shouldn't immediately show them.
+  const [showPreorderDetails, setShowPreorderDetails] = useState(false);
+  const [preorderReason, setPreorderReason] = useState(PREORDER_REASONS[0]);
+  const [preorderNotifyAt, setPreorderNotifyAt] = useState("");
 
   // Follows the global Store Selector — creating an order while a specific
   // store is active shouldn't default to "no channel".
@@ -195,6 +219,9 @@ export default function NewOrderPage() {
         paymentMethod,
         advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
         transactionId: hasAdvance ? transactionId || undefined : undefined,
+        isPreorder,
+        preorderReason: isPreorder ? preorderReason || undefined : undefined,
+        preorderNotifyAt: isPreorder && preorderNotifyAt ? new Date(preorderNotifyAt).toISOString() : undefined,
       });
       setCreatedOrderNumber(order.orderNumber);
       setCustomerName("");
@@ -206,6 +233,10 @@ export default function NewOrderPage() {
       setAdvanceAmount("");
       setShippingFee("");
       setTransactionId("");
+      setIsPreorder(false);
+      setShowPreorderDetails(false);
+      setPreorderReason(PREORDER_REASONS[0]);
+      setPreorderNotifyAt("");
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
@@ -310,6 +341,64 @@ export default function NewOrderPage() {
                     </option>
                   ))}
                 </Select>
+                <div className="flex items-center justify-between gap-3 border-t border-black/5 pt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-medium text-foreground">Preorder</span>
+                    {isPreorder && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPreorderDetails((v) => !v)}
+                        aria-label="Preorder reason and notification date"
+                        title="Preorder reason and notification date"
+                        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                          showPreorderDetails ? "bg-primary/10 text-primary" : "text-foreground/50 hover:bg-black/5"
+                        }`}
+                      >
+                        <BellIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <Switch
+                    checked={isPreorder}
+                    onChange={() =>
+                      setIsPreorder((v) => {
+                        const next = !v;
+                        // Collapses the bar again whenever Preorder is
+                        // switched off, so turning it back on later starts
+                        // from the same "not shown yet" state.
+                        if (!next) setShowPreorderDetails(false);
+                        return next;
+                      })
+                    }
+                  />
+                </div>
+                {isPreorder && showPreorderDetails && (
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="!text-base !font-bold">Preorder Reason</Label>
+                      <Select
+                        className="w-full !text-base"
+                        value={preorderReason}
+                        onChange={(e) => setPreorderReason(e.target.value)}
+                      >
+                        {PREORDER_REASONS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="!text-base !font-bold">Notification Date</Label>
+                      <Input
+                        type="datetime-local"
+                        className="w-full !text-base"
+                        value={preorderNotifyAt}
+                        onChange={(e) => setPreorderNotifyAt(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
