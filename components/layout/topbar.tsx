@@ -4,7 +4,6 @@ import type { ReactNode, SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
-import { StoreSelector } from "./store-selector";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
@@ -54,9 +53,6 @@ export function Topbar({ onOpenMobileMenu }: { onOpenMobileMenu: () => void }) {
       >
         <HamburgerIcon className="h-5 w-5" />
       </button>
-
-      <StoreSelector />
-      <div className="mx-1 hidden h-6 w-px bg-white/10 sm:block" aria-hidden />
 
       {/* Opens the dedicated Search page (orders + web orders + customers
           in one place) rather than submitting a query inline. */}

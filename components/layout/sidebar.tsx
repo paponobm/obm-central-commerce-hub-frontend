@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { NAV_ENTRIES, type NavEntry } from "./nav-config";
 import { NAV_ICONS } from "./nav-icons";
+import { StoreSelector } from "./store-selector";
 
 function isActivePath(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -85,7 +86,7 @@ export function Sidebar({
   onCloseMobile: () => void;
 }) {
   const pathname = usePathname();
-  const { user, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const { activeChannel } = useChannelScope();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const isDesktop = useIsDesktop();
@@ -284,9 +285,11 @@ export function Sidebar({
           })}
         </nav>
 
-        <div className={`border-t border-white/10 px-5 py-4 ${collapsed ? "lg:hidden" : ""}`}>
-          <div className="text-sm font-medium text-white">{user?.name}</div>
-          <div className="text-xs text-sidebar-fg/60">{user?.role}</div>
+        {/* Store switcher, moved here from the topbar — name/email/log out
+            already live in the topbar's own profile menu (UserMenu), so
+            this footer no longer needs to repeat them. */}
+        <div className={`border-t border-white/10 px-3 py-3 ${collapsed ? "lg:hidden" : ""}`}>
+          <StoreSelector menuPlacement="up" />
         </div>
       </aside>
     </>

@@ -45,6 +45,7 @@ export function UserMenu() {
           <div className="px-3 py-2">
             <div className="truncate text-sm font-medium text-foreground">{user?.name}</div>
             <div className="truncate text-xs text-foreground/50">{user?.email}</div>
+            <div className="mt-1 truncate text-xs text-foreground/50">{user?.role}</div>
           </div>
           <div className="my-1 border-t border-black/5" />
           <button

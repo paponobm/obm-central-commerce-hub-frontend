@@ -6,7 +6,11 @@ import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { Spinner } from "@/components/ui/spinner";
 
-export function StoreSelector() {
+// "down" (default) is the original topbar placement, opening below the
+// trigger. "up" is for the sidebar footer: that trigger sits at the very
+// bottom of the screen, so a menu opening downward from there would render
+// off-screen below the viewport.
+export function StoreSelector({ menuPlacement = "down" }: { menuPlacement?: "down" | "up" }) {
   const { channels, loading, activeChannelId, activeChannel, setActiveChannelId } =
     useChannelScope();
   const { hasPermission } = useAuth();
@@ -39,7 +43,7 @@ export function StoreSelector() {
   // even when only one store exists.
   if (!loading && channels && channels.length <= 1 && !hasPermission("channels.all_access")) {
     return (
-      <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-fg">
+      <div className="flex items-center gap-2 rounded-lg border border-purple-400/60 px-3 py-2 text-sm font-medium text-sidebar-fg">
         <span aria-hidden>🏬</span>
         {channels[0]?.name ?? "No store assigned"}
       </div>
@@ -51,7 +55,7 @@ export function StoreSelector() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-fg transition-colors hover:bg-white/10 hover:text-white"
+        className="flex w-full items-center gap-2 rounded-lg border-2 border-purple-600/60 px-3 py-2 text-sm font-medium text-sidebar-fg transition-colors hover:border-purple-400 hover:bg-white/10 hover:text-white"
       >
         <span aria-hidden>🏬</span>
         {loading ? (
@@ -68,7 +72,11 @@ export function StoreSelector() {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg">
+        <div
+          className={`absolute left-0 z-20 w-56 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg ${
+            menuPlacement === "up" ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
+        >
           <button
             type="button"
             onClick={() => selectStore(null)}
