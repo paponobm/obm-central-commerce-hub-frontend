@@ -37,6 +37,8 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: "New Order", href: "/orders/new" },
       { label: "Web Orders", href: "/web-orders" },
       { label: "All Orders", href: "/orders" },
+      { label: "Scan To Update", href: "/orders/scan" },
+      { label: "Scan History", href: "/orders/scan-history" },
     ],
   },
   {

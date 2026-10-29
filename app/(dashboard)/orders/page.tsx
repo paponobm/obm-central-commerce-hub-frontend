@@ -17,7 +17,9 @@ import type {
 } from "@/lib/types";
 import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
+import { printStickers } from "@/lib/print-sticker";
 import { telHref } from "@/lib/phone";
+import { CAN_CANCEL_FROM, PIPELINE_LABEL, nextPathInPipeline, prevInPipeline } from "@/lib/order-pipeline";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,6 +63,15 @@ function PrinterIcon({ className }: { className?: string }) {
       <polyline points="6 9 6 2 18 2 18 9" />
       <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
       <rect x="6" y="14" width="12" height="8" />
+    </svg>
+  );
+}
+
+function TagIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3H4a1 1 0 0 0-1 1v5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l4.59-4.59a2 2 0 0 0 0-2.83Z" />
+      <circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -123,50 +134,6 @@ function tabToParam(value: OrderStatus | ""): string | null {
   if (value === "PENDING") return null;
   if (value === "") return "all";
   return value;
-}
-
-// Mirrors OrdersService's TRANSITIONS map — which statuses can still reach
-// CANCELLED, i.e. when the row-level Cancel shortcut should even appear.
-const CAN_CANCEL_FROM = new Set<OrderStatus>([
-  "PENDING",
-  "CONFIRMED",
-  "PROCESSING",
-  "READY_TO_SHIP",
-  "PENDING_CANCEL",
-  "PREORDER",
-]);
-
-// The plain fulfillment pipeline. Bulk status moves only ever step to an
-// order's own immediate neighbor here — never jump ahead or behind several
-// stages at once, in either direction.
-const PIPELINE: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "READY_TO_SHIP", "SHIPPED"];
-const PIPELINE_LABEL: Partial<Record<OrderStatus, string>> = {
-  PENDING: "Pending",
-  CONFIRMED: "Confirmed",
-  PROCESSING: "Processing",
-  READY_TO_SHIP: "RTS",
-  SHIPPED: "Shipped",
-};
-
-// The steps to walk for the bulk "move forward" action. Every stage steps
-// to just its immediate neighbor — except PENDING, which goes straight to
-// RTS: Confirmed and Processing have no tab of their own to stop at, so
-// there's nothing there for a bulk action to land on. An order already
-// sitting in Confirmed or Processing (reached some other way) still only
-// moves one step at a time from there.
-function nextPathInPipeline(status: OrderStatus): OrderStatus[] | null {
-  if (status === "PENDING") return ["CONFIRMED", "PROCESSING", "READY_TO_SHIP"];
-  const i = PIPELINE.indexOf(status);
-  return i >= 0 && i < PIPELINE.length - 1 ? [PIPELINE[i + 1]] : null;
-}
-
-function prevInPipeline(status: OrderStatus): OrderStatus | null {
-  // Mirrors nextPathInPipeline's own PENDING -> RTS shortcut in reverse —
-  // RTS steps straight back to PENDING, not PROCESSING, since neither
-  // CONFIRMED nor PROCESSING has a tab to land on.
-  if (status === "READY_TO_SHIP") return "PENDING";
-  const i = PIPELINE.indexOf(status);
-  return i > 0 ? PIPELINE[i - 1] : null;
 }
 
 type OrderFilters = {
@@ -598,6 +565,20 @@ export default function OrdersPage() {
     }
   }
 
+  // Courier sticker — one label per selected order, with the order's own
+  // barcode always printed and the courier's parcel barcode added once a
+  // consignment id exists (Entry to Steadfast sets it); unlike invoices this
+  // doesn't touch the Print column, since that tracks invoice printing only.
+  function runPrintSticker(ids: Set<string>) {
+    const selected = (allOrders ?? []).filter((o) => ids.has(o.id));
+    const storeName = globalChannelId
+      ? channels.find((c) => c.id === globalChannelId)?.name ?? "Sticker"
+      : "Sticker";
+    if (!printStickers(selected, storeName)) {
+      setRowError("Pop-up blocked. Allow pop-ups for this site to print stickers.");
+    }
+  }
+
   async function bulkCancel() {
     if (!allOrders) return;
     const targets = allOrders.filter((o) => selectedIds.has(o.id) && CAN_CANCEL_FROM.has(o.status));
@@ -788,7 +769,7 @@ export default function OrdersPage() {
                   // some statuses — estimate the real height so the flip
                   // decision below is accurate instead of guessing high.
                   const itemHeight = 36;
-                  let menuHeight = itemHeight * 3 + 9 + 8; // Invoice, Order Details, Edit + divider + padding
+                  let menuHeight = itemHeight * 4 + 9 + 8; // Invoice, Sticker, Order Details, Edit + divider + padding
                   if (CAN_CANCEL_FROM.has(o.status)) menuHeight += itemHeight;
                   if (o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") {
                     menuHeight += itemHeight;
@@ -823,6 +804,17 @@ export default function OrdersPage() {
                     >
                       <PrinterIcon className="h-4 w-4 text-foreground/50" />
                       Invoice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        runPrintSticker(new Set([o.id]));
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
+                    >
+                      <TagIcon className="h-4 w-4 text-foreground/50" />
+                      Sticker
                     </button>
                     <div className="my-1 border-t border-black/5" />
                     <button
@@ -1081,6 +1073,20 @@ export default function OrdersPage() {
               🧾
             </span>
             Invoice
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setBulkMenuOpen(false);
+              setPrintError(null);
+              runPrintSticker(selectedIds);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-foreground/60">
+              🏷️
+            </span>
+            Sticker
           </button>
 
           <div className="my-1 border-t border-black/5" />

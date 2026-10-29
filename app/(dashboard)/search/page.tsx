@@ -15,6 +15,11 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/badge";
 import { LoadingLine } from "@/components/ui/spinner";
 
+function dedupeById<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+}
+
 // Same plain outline icons the Orders/Web Orders tables use for the
 // Customer cell — duplicated locally since this app has no icon library
 // and every list page defines its own copy the same way.
@@ -478,26 +483,42 @@ export default function SearchPage() {
     // hid orders/customers that live in a different store than whatever
     // happened to be selected, which is exactly what this page exists to
     // find.
+    //
+    // An order number/phone never legitimately contains a space (unlike a
+    // customer name), so a stray space typed or scanned into one — "OBM-
+    // 10249", "10 249" — must still match. The `search` filter itself is a
+    // plain `contains`, so instead of touching that shared endpoint (used
+    // by the Orders list too), this also fires the same two queries with
+    // all whitespace stripped and merges the results in — additive only,
+    // so a legitimate multi-word name search is never narrowed by it.
     let cancelled = false;
     const timer = setTimeout(() => {
       setError(null);
+      const stripped = q.replace(/\s+/g, "");
+      const extra = stripped !== q && stripped.length > 0;
       Promise.all([
-        api.get<OrderListItem[]>(
-          `/admin/orders?search=${encodeURIComponent(q)}&includeWebUnapproved=true`,
-        ),
+        api.get<OrderListItem[]>(`/admin/orders?search=${encodeURIComponent(q)}&includeWebUnapproved=true`),
+        extra
+          ? api.get<OrderListItem[]>(`/admin/orders?search=${encodeURIComponent(stripped)}&includeWebUnapproved=true`)
+          : Promise.resolve<OrderListItem[]>([]),
         api.get<LeadResult[]>("/admin/orders/checkout-leads"),
         api.get<Customer[]>(`/admin/customers?search=${encodeURIComponent(q)}`),
+        extra ? api.get<Customer[]>(`/admin/customers?search=${encodeURIComponent(stripped)}`) : Promise.resolve<Customer[]>([]),
       ])
-        .then(([orderRows, leadRows, customerRows]) => {
+        .then(([orderRows, extraOrderRows, leadRows, customerRows, extraCustomerRows]) => {
           if (cancelled) return;
           const needle = q.toLowerCase();
-          setOrders(orderRows);
+          const strippedNeedle = stripped.toLowerCase();
+          setOrders(dedupeById([...orderRows, ...extraOrderRows]));
           setLeads(
             leadRows.filter(
-              (l) => (l.name ?? "").toLowerCase().includes(needle) || l.phone.toLowerCase().includes(needle),
+              (l) =>
+                (l.name ?? "").toLowerCase().includes(needle) ||
+                l.phone.toLowerCase().includes(needle) ||
+                l.phone.toLowerCase().includes(strippedNeedle),
             ),
           );
-          setCustomers(customerRows);
+          setCustomers(dedupeById([...customerRows, ...extraCustomerRows]));
         })
         .catch((err) => {
           if (!cancelled) setError(err instanceof ApiError ? err.message : "Search failed");
