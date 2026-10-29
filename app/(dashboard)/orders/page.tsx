@@ -142,11 +142,34 @@ type OrderFilters = {
   sku: string;
   name: string;
   includeOtherProducts: boolean;
+  employeeId: string;
+  uploadFilter: "all" | "uploaded" | "not";
+  advanceFilter: "all" | "with" | "without";
+  discountFilter: "all" | "with" | "without";
+  qtyMin: string;
+  qtyMax: string;
 };
 
 function orderMatchesFilters(o: OrderListItem, f: OrderFilters): boolean {
   if (f.printFilter === "printed" && !o.invoicePrinted) return false;
   if (f.printFilter === "not" && o.invoicePrinted) return false;
+  if (f.employeeId && o.createdBy?.id !== f.employeeId) return false;
+  // "Uploaded" mirrors the table's own Upload column — whether the order
+  // has been entered to Steadfast (has a real consignment id), not just
+  // "a shipment row exists".
+  if (f.uploadFilter === "uploaded" && !o.shipment?.externalConsignmentId) return false;
+  if (f.uploadFilter === "not" && o.shipment?.externalConsignmentId) return false;
+  // "With Advance" = any payment already collected up front — PARTIAL or
+  // PAID, same distinction the "All payments" filter already draws.
+  if (f.advanceFilter === "with" && o.paymentStatus === "UNPAID") return false;
+  if (f.advanceFilter === "without" && o.paymentStatus !== "UNPAID") return false;
+  if (f.discountFilter === "with" && Number(o.discount) <= 0) return false;
+  if (f.discountFilter === "without" && Number(o.discount) > 0) return false;
+  if (f.qtyMin || f.qtyMax) {
+    const totalQty = o.items.reduce((sum, item) => sum + item.quantity, 0);
+    if (f.qtyMin && totalQty < Number(f.qtyMin)) return false;
+    if (f.qtyMax && totalQty > Number(f.qtyMax)) return false;
+  }
   if (f.dateRange !== "all") {
     const days = f.dateRange === "today" ? 1 : Number(f.dateRange);
     const cutoff = f.dateRange === "today"
@@ -284,6 +307,12 @@ export default function OrdersPage() {
   const [skuFilter, setSkuFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [includeOtherProducts, setIncludeOtherProducts] = useState(true);
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [uploadFilter, setUploadFilter] = useState<"all" | "uploaded" | "not">("all");
+  const [advanceFilter, setAdvanceFilter] = useState<"all" | "with" | "without">("all");
+  const [discountFilter, setDiscountFilter] = useState<"all" | "with" | "without">("all");
+  const [qtyMin, setQtyMin] = useState("");
+  const [qtyMax, setQtyMax] = useState("");
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   // Fixed-position coords for the open row menu, captured from the trigger
@@ -352,6 +381,19 @@ export default function OrdersPage() {
     return c;
   }, [allOrders]);
 
+  // The Employee filter's own options — whoever has actually created an
+  // order in the current (already server-filtered) set, not every user in
+  // the system. Client-side, same as the rest of this popover's filters
+  // (Product SKU/Name, Print status): no new endpoint, just narrows what's
+  // already loaded.
+  const employees = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const o of allOrders ?? []) {
+      if (o.createdBy) byId.set(o.createdBy.id, o.createdBy.name);
+    }
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allOrders]);
+
   const visibleOrders = useMemo(() => {
     if (!allOrders) return null;
     const tabbed = activeTab ? allOrders.filter((o) => o.status === activeTab) : allOrders;
@@ -361,6 +403,12 @@ export default function OrdersPage() {
       sku: skuFilter.trim().toLowerCase(),
       name: nameFilter.trim().toLowerCase(),
       includeOtherProducts,
+      employeeId: employeeFilter,
+      uploadFilter,
+      advanceFilter,
+      discountFilter,
+      qtyMin,
+      qtyMax,
     }));
     if (!sort) return filtered;
     const sorted = [...filtered].sort((a, b) => {
@@ -371,7 +419,22 @@ export default function OrdersPage() {
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [allOrders, activeTab, sort, printFilter, dateRange, skuFilter, nameFilter, includeOtherProducts]);
+  }, [
+    allOrders,
+    activeTab,
+    sort,
+    printFilter,
+    dateRange,
+    skuFilter,
+    nameFilter,
+    includeOtherProducts,
+    employeeFilter,
+    uploadFilter,
+    advanceFilter,
+    discountFilter,
+    qtyMin,
+    qtyMax,
+  ]);
 
   // Drives which bulk "Update Status" buttons even show — e.g. selecting
   // only orders already sitting in RTS has nothing for "Sent to RTS" to do,
@@ -993,10 +1056,10 @@ export default function OrdersPage() {
           </Button>
 
           {filtersOpen && (
-            <div className="absolute left-0 top-11 z-30 w-72 space-y-4 rounded-xl border border-black/10 bg-white p-4 shadow-lg">
+            <div className="absolute left-0 top-11 z-30 max-h-[75vh] w-80 space-y-3 overflow-y-auto rounded-xl border border-black/10 bg-white p-4 shadow-lg">
               <div>
-                <div className="mb-1 text-sm font-medium text-foreground/70">Date range</div>
-                <Select value={dateRange} onChange={(e) => setDateRange(e.target.value as typeof dateRange)}>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Date range</div>
+                <Select className="w-full !py-1.5 !text-xs" value={dateRange} onChange={(e) => setDateRange(e.target.value as typeof dateRange)}>
                   <option value="all">All dates</option>
                   <option value="today">Today</option>
                   <option value="7">Last 7 days</option>
@@ -1004,7 +1067,7 @@ export default function OrdersPage() {
                 </Select>
               </div>
               <div>
-                <div className="mb-1 text-sm font-medium text-foreground/70">Print status</div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Print status</div>
                 <div className="flex gap-2">
                   {(
                     [
@@ -1017,7 +1080,7 @@ export default function OrdersPage() {
                       key={opt.value}
                       type="button"
                       onClick={() => setPrintFilter(opt.value)}
-                      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
                         printFilter === opt.value ? "bg-primary text-primary-fg" : "bg-black/5 text-foreground/70"
                       }`}
                     >
@@ -1027,17 +1090,86 @@ export default function OrdersPage() {
                 </div>
               </div>
               <div>
-                <div className="mb-1 text-sm font-medium text-foreground/70">Product SKU</div>
-                <Input placeholder="Enter SKU to filter" value={skuFilter} onChange={(e) => setSkuFilter(e.target.value)} />
+                <div className="mb-1 text-xs font-medium text-foreground/70">Upload status</div>
+                <div className="flex gap-2">
+                  {(
+                    [
+                      { value: "all", label: "All" },
+                      { value: "uploaded", label: "Uploaded" },
+                      { value: "not", label: "Not uploaded" },
+                    ] as { value: typeof uploadFilter; label: string }[]
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setUploadFilter(opt.value)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                        uploadFilter === opt.value ? "bg-primary text-primary-fg" : "bg-black/5 text-foreground/70"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
-                <div className="mb-1 text-sm font-medium text-foreground/70">Product name</div>
-                <Input placeholder="Enter product name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
+                <div className="mb-1 text-xs font-medium text-foreground/70">Advance payment</div>
+                <div className="flex gap-2">
+                  {(
+                    [
+                      { value: "all", label: "All" },
+                      { value: "with", label: "With advance" },
+                      { value: "without", label: "No advance" },
+                    ] as { value: typeof advanceFilter; label: string }[]
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setAdvanceFilter(opt.value)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                        advanceFilter === opt.value ? "bg-primary text-primary-fg" : "bg-black/5 text-foreground/70"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <label className="flex items-start justify-between gap-3 text-base">
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Discount</div>
+                <div className="flex gap-2">
+                  {(
+                    [
+                      { value: "all", label: "All" },
+                      { value: "with", label: "With discount" },
+                      { value: "without", label: "No discount" },
+                    ] as { value: typeof discountFilter; label: string }[]
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setDiscountFilter(opt.value)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                        discountFilter === opt.value ? "bg-primary text-primary-fg" : "bg-black/5 text-foreground/70"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Product SKU</div>
+                <Input className="w-full !py-1.5 !text-xs" placeholder="Enter SKU to filter" value={skuFilter} onChange={(e) => setSkuFilter(e.target.value)} />
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Product name</div>
+                <Input className="w-full !py-1.5 !text-xs" placeholder="Enter product name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
+              </div>
+              <label className="flex items-start justify-between gap-3 text-sm">
                 <span>
                   <span className="font-medium text-foreground">Include other products</span>
-                  <span className="block text-sm text-foreground/50">Orders that also contain other products are shown.</span>
+                  <span className="block text-xs text-foreground/50">Orders that also contain other products are shown.</span>
                 </span>
                 <input
                   type="checkbox"
@@ -1046,6 +1178,69 @@ export default function OrdersPage() {
                   className="mt-1 h-4 w-4 accent-primary"
                 />
               </label>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Employee</div>
+                <Select className="w-full !py-1.5 !text-xs" value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
+                  <option value="">All Employees</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Order Source</div>
+                {/* Same `source` state the toolbar's own "All sources" select
+                    uses — not a second, divergent filter — so picking it
+                    here or there always stays in sync. */}
+                <Select className="w-full !py-1.5 !text-xs" value={source} onChange={(e) => setSource(e.target.value)}>
+                  <option value="">All Sources</option>
+                  {SOURCES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.charAt(0) + s.slice(1).toLowerCase()}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {/* Only shown in "All Stores" mode — with one store active
+                  globally, every order here is already that store's, same
+                  condition the old toolbar version of this control used. */}
+              {!globalChannelId && (
+                <div>
+                  <div className="mb-1 text-xs font-medium text-foreground/70">Channel</div>
+                  <Select className="w-full !py-1.5 !text-xs" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+                    <option value="">All Channels</option>
+                    {channels.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+              <div>
+                <div className="mb-1 text-xs font-medium text-foreground/70">Quantity range</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    className="w-full !py-1.5 !text-xs"
+                    placeholder="Min"
+                    value={qtyMin}
+                    onChange={(e) => setQtyMin(e.target.value)}
+                  />
+                  <span className="text-foreground/40">–</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    className="w-full !py-1.5 !text-xs"
+                    placeholder="Max"
+                    value={qtyMax}
+                    onChange={(e) => setQtyMax(e.target.value)}
+                  />
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -1054,8 +1249,16 @@ export default function OrdersPage() {
                   setSkuFilter("");
                   setNameFilter("");
                   setIncludeOtherProducts(true);
+                  setEmployeeFilter("");
+                  setSource("");
+                  setUploadFilter("all");
+                  setAdvanceFilter("all");
+                  setDiscountFilter("all");
+                  setChannelId("");
+                  setQtyMin("");
+                  setQtyMax("");
                 }}
-                className="text-sm font-medium text-primary hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
               >
                 Reset filters
               </button>
