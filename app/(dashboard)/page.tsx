@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import type { DashboardData, TopProduct } from "@/lib/types";
-import { formatAmount } from "@/lib/format";
+import { formatAmount, formatRelativeTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/badge";
 import { DonutChart } from "@/components/ui/donut-chart";
 import { BarTrendChart } from "@/components/ui/bar-trend-chart";
 import { WebOrderReport } from "@/components/dashboard/web-order-report";
@@ -67,7 +69,8 @@ function StatCard({
 }
 
 export default function DashboardPage() {
-  const { activeChannelId, activeChannel } = useChannelScope();
+  const router = useRouter();
+  const { activeChannelId, activeChannel, setActiveChannelId } = useChannelScope();
   const [data, setData] = useState<DashboardData | null>(null);
   const [topProducts, setTopProducts] = useState<TopProduct[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -149,33 +152,54 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* <h2 className="mb-3 mt-6 text-base font-semibold text-foreground">
-        {activeChannel ? "This store" : "Stores"}
-      </h2>
-      {data.ordersByChannel.length === 0 ? (
-        <Card>
-          <p className="text-base text-foreground/50">No orders yet.</p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {data.ordersByChannel.map((c) => (
-            <Card key={c.channelId ?? "none"}>
-              <div className="truncate text-base text-foreground/60">{c.channelName}</div>
-              <div className="mt-2 text-3xl font-semibold text-foreground">{formatAmount(c.salesTotal)}</div>
-              <div className="mt-1 text-sm text-foreground/50">
-                {c.orderCount} {c.orderCount === 1 ? "order" : "orders"}
-              </div>
+      {/* All-stores only — a per-store rollup, same data the sidebar's own
+          store switcher list draws from. Clicking a card scopes the whole
+          app to that store, same as picking it from the sidebar. Left out
+          entirely once a single store is active, since "this store vs.
+          every store" has nothing left to compare. */}
+      {!activeChannel && (
+        <>
+          <h2 className="mb-3 mt-6 text-base font-semibold text-foreground">Stores</h2>
+          {data.ordersByChannel.length === 0 ? (
+            <Card>
+              <p className="text-base text-foreground/50">No orders yet.</p>
             </Card>
-          ))}
-        </div>
-      )} */}
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[...data.ordersByChannel]
+                .sort((a, b) => b.salesTotal - a.salesTotal)
+                .map((c) => (
+                  <button
+                    key={c.channelId ?? "none"}
+                    type="button"
+                    disabled={!c.channelId}
+                    onClick={() => {
+                      if (!c.channelId) return;
+                      setActiveChannelId(c.channelId);
+                      router.push("/");
+                    }}
+                    className={`rounded-card border border-black/5 bg-card p-5 text-left shadow-card transition-shadow ${
+                      c.channelId ? "hover:shadow-md" : "cursor-default opacity-80"
+                    }`}
+                  >
+                    <div className="truncate text-base text-foreground/60">{c.channelName}</div>
+                    <div className="mt-2 text-3xl font-semibold text-foreground">{formatAmount(c.salesTotal)}</div>
+                    <div className="mt-1 text-sm text-foreground/50">
+                      {c.orderCount} {c.orderCount === 1 ? "order" : "orders"}
+                    </div>
+                  </button>
+                ))}
+            </div>
+          )}
+        </>
+      )}
 
       {/* Web Order Report is store-specific (a web order funnel only means
           something for one store at a time), so it only joins this row
-          when a store is active; otherwise Orders by Source takes it alone. */}
-      <div className={`mt-6 grid grid-cols-1 gap-6 ${activeChannel ? "lg:grid-cols-2" : ""}`}>
-        
-         {activeChannel ? (
+          when a store is active; otherwise Orders by Source pairs with the
+          all-stores Orders by Status card instead. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {activeChannel ? (
           // Store-scoped and filterable, same "Today ▾" control as Web Order
           // Report. The all-stores view below has no single channel to scope
           // a live order fetch to, so it keeps the original unfiltered stat.
@@ -194,9 +218,24 @@ export default function DashboardPage() {
             />
           </Card>
         )}
-        {activeChannel && <WebOrderReport channelId={activeChannel.id} />}
-
-       
+        {activeChannel ? (
+          <WebOrderReport channelId={activeChannel.id} />
+        ) : (
+          <Card>
+            <h2 className="mb-4 text-base font-semibold text-foreground">Orders by Status</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {Object.entries(data.ordersByStatus)
+                .filter(([, count]) => count > 0)
+                .sort((a, b) => b[1] - a[1])
+                .map(([status, count]) => (
+                  <div key={status} className="rounded-lg border border-black/5 p-3">
+                    <StatusBadge status={status} compact />
+                    <div className="mt-2 text-xl font-semibold text-foreground">{count}</div>
+                  </div>
+                ))}
+            </div>
+          </Card>
+        )}
       </div>
 
       <Card className="mt-6">
@@ -282,6 +321,44 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+        </Card>
+      )}
+
+      {!activeChannel && (
+        <Card className="mt-6">
+          <h2 className="mb-4 text-base font-semibold text-foreground">Recent Orders</h2>
+          {data.recentOrders.length === 0 ? (
+            <p className="text-base text-foreground/50">No orders yet.</p>
+          ) : (
+            <table className="w-full text-base">
+              <thead>
+                <tr className="border-b border-black/5 text-left text-sm text-foreground/50">
+                  <th className="pb-2 font-medium">Order</th>
+                  <th className="pb-2 font-medium">Store</th>
+                  <th className="pb-2 font-medium">Customer</th>
+                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 font-medium text-right">Total</th>
+                  <th className="pb-2 font-medium text-right">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recentOrders.map((o) => (
+                  <tr key={o.id} className="border-b border-black/5 last:border-0">
+                    <td className="py-2.5 font-medium text-foreground">{o.orderNumber}</td>
+                    <td className="py-2.5 text-foreground/60">{o.channelName}</td>
+                    <td className="py-2.5 text-foreground/60">{o.customerName ?? "—"}</td>
+                    <td className="py-2.5">
+                      <StatusBadge status={o.status} compact />
+                    </td>
+                    <td className="py-2.5 text-right font-medium text-foreground">{formatAmount(o.total)}</td>
+                    <td className="py-2.5 text-right text-sm text-foreground/50">
+                      {formatRelativeTime(o.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </Card>
       )}
     </div>
