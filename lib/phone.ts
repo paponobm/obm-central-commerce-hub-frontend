@@ -15,3 +15,7 @@ export function whatsappHref(phone: string): string {
   if (digits.startsWith("0")) digits = `88${digits}`;
   return `https://wa.me/${digits}`;
 }
+
+export function smsHref(phone: string): string {
+  return `sms:${digitsOnly(phone)}`;
+}

@@ -45,6 +45,84 @@ function BellIcon({ className }: { className?: string }) {
   );
 }
 
+// One icon per OrderSource for the Extra Options source picker — same
+// hand-drawn-SVG convention as every other icon in this codebase, since a
+// native <select>'s <option>s can't render icons at all.
+const SOURCE_ICONS: Record<OrderSource, (props: { className?: string }) => JSX.Element> = {
+  UNKNOWN: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5" />
+      <path d="M12 17h.01" />
+    </svg>
+  ),
+  MANUAL: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  ),
+  PHONE: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M4.5 4h3.5l1.5 5-2 1.5a12 12 0 0 0 6 6l1.5-2 5 1.5V19a2 2 0 0 1-2.2 2A17 17 0 0 1 2.5 6.2 2 2 0 0 1 4.5 4Z" />
+    </svg>
+  ),
+  FACEBOOK: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M14 8.5h-1.5A1.5 1.5 0 0 0 11 10v2m0 0H9m2 0v6m0-6h2.2" />
+    </svg>
+  ),
+  WHATSAPP: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M4 20l1.3-3.8A8 8 0 1 1 8.5 19L4 20Z" />
+      <path d="M9 10.5c.3 1.8 1.7 3.2 3.5 3.5" />
+    </svg>
+  ),
+  WEBSITE: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z" />
+    </svg>
+  ),
+  OTHER: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className} aria-hidden>
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
+    </svg>
+  ),
+  DIRECT: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M3 10.5 12 4l9 6.5" />
+      <path d="M5 9.5V20h14V9.5" />
+    </svg>
+  ),
+  INSTAGRAM: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17" cy="7" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  TIKTOK: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M14 3v11.5a3.5 3.5 0 1 1-3.5-3.5" />
+      <path d="M14 3a5 5 0 0 0 5 5" />
+    </svg>
+  ),
+  EXCHANGE: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M4 7h13l-3-3M20 17H7l3 3" />
+    </svg>
+  ),
+  MESSENGER: ({ className }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M12 3C6.9 3 3 6.7 3 11.5c0 2.6 1.2 4.9 3.2 6.4V21l3-1.6c.9.25 1.8.4 2.8.4 5.1 0 9-3.7 9-8.3S17.1 3 12 3Z" />
+      <path d="m8 12 3-3.5 2.6 2 3-2.5-3 3.5-2.6-2-3 2.5Z" />
+    </svg>
+  ),
+};
+
 interface LineItem {
   productId: string;
   productName: string;
@@ -74,6 +152,17 @@ export default function NewOrderPage() {
 
   const [deliveryMethod, setDeliveryMethod] = useState(DELIVERY_METHODS[0]);
   const [source, setSource] = useState<OrderSource>("UNKNOWN");
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const sourceRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (sourceRef.current && !sourceRef.current.contains(e.target as Node)) {
+        setSourceOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   const [channelId, setChannelId] = useState(globalChannelId ?? "");
 
   // Preorder — the order starts life in the Preorder list instead of
@@ -205,6 +294,10 @@ export default function NewOrderPage() {
       setFormError("Mobile number and name are required.");
       return;
     }
+    if (!/^\d{11}$/.test(customerPhone)) {
+      setFormError("Mobile number must be exactly 11 digits.");
+      return;
+    }
     if (!shippingAddress) {
       setFormError("Address is required.");
       return;
@@ -273,9 +366,13 @@ export default function NewOrderPage() {
         <Card>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
-              <Label className="!text-base !font-bold">Mobile Number</Label>
+              <Label className="!text-base !font-bold">
+                Mobile Number <span className="text-status-cancelled">*</span>
+              </Label>
               <Input
                 required
+                maxLength={11}
+                inputMode="numeric"
                 className="w-full !text-base"
                 placeholder="Mobile Number"
                 value={customerPhone}
@@ -283,7 +380,9 @@ export default function NewOrderPage() {
               />
             </div>
             <div>
-              <Label className="!text-base !font-bold">Name</Label>
+              <Label className="!text-base !font-bold">
+                Name <span className="text-status-cancelled">*</span>
+              </Label>
               <Input
                 required
                 className="w-full !text-base"
@@ -310,7 +409,9 @@ export default function NewOrderPage() {
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
-              <Label className="!text-base !font-bold">Address</Label>
+              <Label className="!text-base !font-bold">
+                Address <span className="text-status-cancelled">*</span>
+              </Label>
               <Textarea
                 required
                 rows={3}
@@ -343,17 +444,46 @@ export default function NewOrderPage() {
                     ))}
                   </Select>
                 )}
-                <Select
-                  className="w-full !text-base"
-                  value={source}
-                  onChange={(e) => setSource(e.target.value as OrderSource)}
-                >
-                  {SOURCES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.charAt(0) + s.slice(1).toLowerCase()}
-                    </option>
-                  ))}
-                </Select>
+                <div ref={sourceRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSourceOpen((v) => !v)}
+                    className="flex w-full items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-base text-foreground outline-none hover:border-black/20 focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    {(() => {
+                      const SourceIcon = SOURCE_ICONS[source];
+                      return <SourceIcon className="h-4 w-4 shrink-0 text-foreground/80" />;
+                    })()}
+                    <span className="flex-1">{source.charAt(0) + source.slice(1).toLowerCase()}</span>
+                    <span className="text-xs text-foreground/40" aria-hidden>
+                      ▾
+                    </span>
+                  </button>
+                  {sourceOpen && (
+                    <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-black/10 bg-white py-1 shadow-lg">
+                      {SOURCES.map((s) => {
+                        const SourceIcon = SOURCE_ICONS[s];
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => {
+                              setSource(s);
+                              setSourceOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-base hover:bg-black/5 ${
+                              source === s ? "font-medium text-foreground" : "text-foreground/70"
+                            }`}
+                          >
+                            <SourceIcon className="h-4 w-4 shrink-0 text-foreground/80" />
+                            <span className="flex-1">{s.charAt(0) + s.slice(1).toLowerCase()}</span>
+                            {source === s && <span aria-hidden>✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between gap-3 border-t border-black/5 pt-3">
                   <div className="flex items-center gap-2">
                     <span className="text-base font-medium text-foreground">Preorder</span>

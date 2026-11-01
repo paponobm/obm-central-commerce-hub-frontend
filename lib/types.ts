@@ -168,10 +168,13 @@ export interface Customer {
   city: string | null;
   notes: string | null;
   createdAt: string;
+  orderCount: number;
+  totalSpent: number;
+  lastSource: OrderSource | null;
 }
 
 export interface CustomerDetail extends Customer {
-  stats: { totalOrders: number; totalSpent: number; lastOrderAt: string | null };
+  stats: { totalOrders: number; totalSpent: number; lastOrderAt: string | null; returnedCount: number };
   ordersByChannel: {
     channelId: string | null;
     channelName: string;
@@ -186,6 +189,7 @@ export interface CustomerDetail extends Customer {
     total: number;
     createdAt: string;
     channelName: string;
+    createdByName: string | null;
   }[];
 }
 
