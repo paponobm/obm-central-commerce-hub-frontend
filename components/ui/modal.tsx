@@ -54,7 +54,7 @@ export function Modal({
             ✕
           </button>
         </div>
-        {children}
+        <div className="min-h-0 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

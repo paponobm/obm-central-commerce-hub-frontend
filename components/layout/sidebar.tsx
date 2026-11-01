@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
+import { useInventoryAlertCount } from "@/lib/use-inventory-alert-count";
 import { NAV_ENTRIES, type NavEntry } from "./nav-config";
 import { NAV_ICONS } from "./nav-icons";
 import { StoreSelector } from "./store-selector";
@@ -55,6 +56,21 @@ function ListItemIcon(props: IconProps) {
   );
 }
 
+// Low/Out of Stock alert count — shown on the Inventory group itself
+// whenever its children aren't visible (icon-only sidebar, or the group
+// closed), and moves to "All Stock" once the group is open so it points
+// at the exact page that explains it.
+function CountBadge({ count, className = "" }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-status-cancelled px-1 text-[10px] font-bold leading-none text-white ${className}`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 // "collapsed" is a desktop-only preference — on a narrow viewport the
 // drawer is always full-width/full-label, regardless of it. Knowing the
 // real viewport (not just Tailwind's CSS-only lg: breakpoint) is what lets
@@ -94,6 +110,12 @@ export function Sidebar({
   // the drawer is always full-label, even if the desktop preference is
   // "collapsed" (e.g. collapsed there, then the window was resized down).
   const iconOnly = collapsed && isDesktop;
+
+  // The Inventory nav entry is centralOnly (hidden once a store is picked),
+  // so there's no point fetching this outside "All Stores" scope.
+  const inventoryAlertCount = useInventoryAlertCount(
+    !activeChannel && hasPermission("inventory.view"),
+  );
 
   // Whichever group contains the current route starts expanded, so landing
   // on e.g. /categories directly (not via a sidebar click) doesn't leave
@@ -231,6 +253,8 @@ export function Sidebar({
 
             const open = openGroups.has(entry.label);
             const groupHasActiveChild = entry.children.some((c) => c.href === activeHref);
+            const childrenVisible = open && !iconOnly;
+            const showInventoryBadge = entry.label === "Inventory" && !!inventoryAlertCount;
 
             return (
               // Extra margin (vs. the plain links' mb-1) so an expandable
@@ -247,8 +271,17 @@ export function Sidebar({
                   } ${groupHasActiveChild ? "bg-sidebar-active text-sidebar-active-fg" : "text-sidebar-fg hover:bg-white/5"}`}
                 >
                   <span className="flex items-center gap-2.5">
-                    <Icon className="h-[18px] w-[18px] shrink-0 opacity-80" />
+                    <span className="relative shrink-0">
+                      <Icon className="h-[18px] w-[18px] opacity-80" />
+                      {showInventoryBadge && iconOnly && (
+                        <CountBadge
+                          count={inventoryAlertCount!}
+                          className="absolute -right-2 -top-2 h-3.5 min-w-[14px] px-0.5 text-[9px]"
+                        />
+                      )}
+                    </span>
                     <span className={collapsed ? "lg:hidden" : ""}>{entry.label}</span>
+                    {showInventoryBadge && !iconOnly && !childrenVisible && <CountBadge count={inventoryAlertCount!} />}
                   </span>
                   <span
                     className={`text-sm text-sidebar-fg/50 transition-transform ${open ? "rotate-90" : ""} ${
@@ -259,7 +292,7 @@ export function Sidebar({
                     ›
                   </span>
                 </button>
-                {open && !iconOnly && (
+                {childrenVisible && (
                   <div className="mt-1 space-y-0.5 border-l border-white/10 pl-4">
                     {entry.children.map((child) => {
                       const active = child.href === activeHref;
@@ -274,7 +307,8 @@ export function Sidebar({
                           }`}
                         >
                           <ListItemIcon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-sidebar-fg/40"}`} />
-                          {child.label}
+                          <span className="flex-1">{child.label}</span>
+                          {showInventoryBadge && child.label === "All Stock" && <CountBadge count={inventoryAlertCount!} />}
                         </Link>
                       );
                     })}

@@ -139,6 +139,7 @@ export interface InventorySummary {
   sku: string;
   name: string;
   imageUrl: string | null;
+  isActive: boolean;
   currentStock: number;
   reservedStock: number;
   availableStock: number;

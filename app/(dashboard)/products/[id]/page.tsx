@@ -270,10 +270,10 @@ export default function ProductDetailsTab() {
 
         <Card>
           <h2 className="mb-1 text-lg font-bold text-primary">Thumbnail</h2>
-          <p className="mb-3 text-sm text-foreground/50">
+          {/* <p className="mb-3 text-sm text-foreground/50">
             Used wherever this product shows as a small icon — order lines, inventory, and
             product lists.
-          </p>
+          </p> */}
           <div className="mb-3 flex items-center justify-center gap-3">
             {product.thumbnailUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
@@ -309,11 +309,11 @@ export default function ProductDetailsTab() {
         </Card>
 
         <Card>
-          <h2 className="mb-1 text-lg font-bold text-primary">Gallery Images</h2>
-          <p className="mb-3 text-sm text-foreground/50">
+          <h2 className="mb-10 text-lg font-bold text-primary">Gallery Images</h2>
+          {/* <p className="mb-3 text-sm text-foreground/50">
             The full photo gallery shown on the storefront product page — add as many as you
             like.
-          </p>
+          </p> */}
           <div className="mb-3 flex flex-wrap justify-center gap-2">
             {galleryImages.map((img) => (
               <div key={img.id} className="group relative">

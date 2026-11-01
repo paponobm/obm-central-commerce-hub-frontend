@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { Switch } from "@/components/ui/switch";
 import { LoadingLine } from "@/components/ui/spinner";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
@@ -74,7 +75,6 @@ interface CreateFormState {
   sku: string;
   name: string;
   description: string;
-  costPrice: string;
   basePrice: string;
   unit: string;
   categoryId: string;
@@ -86,7 +86,6 @@ const EMPTY_CREATE_FORM: CreateFormState = {
   sku: "",
   name: "",
   description: "",
-  costPrice: "",
   basePrice: "",
   unit: "pcs",
   categoryId: "",
@@ -119,6 +118,8 @@ export default function ProductsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<{ url: string; name: string } | null>(null);
 
   // Thumbnail/gallery images need a real product id to attach to (same
   // upload endpoints the detail page uses), which doesn't exist until
@@ -219,8 +220,8 @@ export default function ProductsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
-    if (!form.sku.trim() || !form.name.trim() || !form.costPrice || !form.basePrice) {
-      setFormError("Please fill out SKU, Name, Cost Price, and Base Price.");
+    if (!form.sku.trim() || !form.name.trim() || !form.basePrice) {
+      setFormError("Please fill out SKU, Name, and Base Price.");
       return;
     }
     setSubmitting(true);
@@ -229,7 +230,7 @@ export default function ProductsPage() {
         sku: form.sku,
         name: form.name,
         description: form.description || undefined,
-        costPrice: Number(form.costPrice),
+        costPrice: 0,
         basePrice: Number(form.basePrice),
         unit: form.unit || undefined,
         categoryId: form.categoryId || undefined,
@@ -264,6 +265,31 @@ export default function ProductsPage() {
       setLoadError(err instanceof ApiError ? err.message : "Failed to delete product");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleToggleActive(product: Product) {
+    const willDeactivate = product.isActive;
+    if (willDeactivate && (product.channels?.length ?? 0) > 0) {
+      const ok = confirm(
+        `"${product.name}" is published to ${product.channels!.length} storefront${
+          product.channels!.length > 1 ? "s" : ""
+        }. Marking it inactive will not remove it from ${
+          product.channels!.length > 1 ? "those storefronts" : "that storefront"
+        } — unpublish it from the product page if you want it fully removed. Continue?`,
+      );
+      if (!ok) return;
+    }
+    setTogglingId(product.id);
+    setLoadError(null);
+    try {
+      await api.patch(`/admin/products/${product.id}`, { isActive: !product.isActive });
+      await loadProducts();
+      window.dispatchEvent(new Event("inventory-alert:refresh"));
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : "Failed to update product status");
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -390,12 +416,20 @@ export default function ProductsPage() {
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">
                         {image ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image, not part of the Next.js image pipeline
-                          <img
-                            src={image}
-                            alt={p.name}
-                            className="h-9 w-9 shrink-0 rounded object-cover"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => setZoomedImage({ url: image, name: p.name })}
+                            className="shrink-0 rounded"
+                            aria-label={`View ${p.name}'s image`}
+                            title="Click to zoom"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image, not part of the Next.js image pipeline */}
+                            <img
+                              src={image}
+                              alt={p.name}
+                              className="h-9 w-9 rounded object-cover transition-transform hover:scale-105"
+                            />
+                          </button>
                         ) : (
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
                             —
@@ -444,9 +478,16 @@ export default function ProductsPage() {
                       {money(p.basePrice)}
                     </td>
                     <td className="px-3 py-3">
-                      <Pill tone={p.isActive ? "success" : "danger"}>
-                        {p.isActive ? "Active" : "Inactive"}
-                      </Pill>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={p.isActive}
+                          disabled={togglingId === p.id}
+                          onChange={() => handleToggleActive(p)}
+                        />
+                        <Pill tone={p.isActive ? "success" : "danger"}>
+                          {p.isActive ? "Active" : "Inactive"}
+                        </Pill>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -535,27 +576,14 @@ export default function ProductsPage() {
           <Card className="lg:col-span-2">
             <h2 className="mb-4 text-lg font-bold text-primary">Details</h2>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="!text-base">SKU</Label>
-                  <Input
-                    className="w-full !text-base"
-                    value={form.sku}
-                    onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
-                    placeholder="e.g. SHK-001"
-                  />
-                </div>
-                <div>
-                  <Label className="!text-base">Cost Price</Label>
-                  <Input
-                    className="w-full !text-base"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.costPrice}
-                    onChange={(e) => setForm((f) => ({ ...f, costPrice: e.target.value }))}
-                  />
-                </div>
+              <div>
+                <Label className="!text-base">SKU</Label>
+                <Input
+                  className="w-full !text-base"
+                  value={form.sku}
+                  onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                  placeholder="e.g. SHK-001"
+                />
               </div>
 
               <div>
@@ -660,11 +688,11 @@ export default function ProductsPage() {
 
           <div className="space-y-6">
             <Card>
-              <h2 className="mb-1 text-lg font-bold text-primary">Thumbnail</h2>
-              <p className="mb-3 text-sm text-foreground/50">
+              <h2 className="mb-10 text-lg font-bold text-primary">Thumbnail</h2>
+              {/* <p className="mb-3 text-sm text-foreground/50">
                 Used wherever this product shows as a small icon — order lines, inventory, and
                 product lists.
-              </p>
+              </p> */}
               <div className="flex items-center justify-center gap-3">
                 {thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
@@ -700,11 +728,11 @@ export default function ProductsPage() {
             </Card>
 
             <Card>
-              <h2 className="mb-1 text-lg font-bold text-primary">Gallery Images</h2>
-              <p className="mb-3 text-sm text-foreground/50">
+              <h2 className="mb-10 text-lg font-bold text-primary">Gallery Images</h2>
+              {/* <p className="mb-3 text-sm text-foreground/50">
                 The full photo gallery shown on the storefront product page — add as many as you
                 like.
-              </p>
+              </p> */}
               <div className="mb-3 flex flex-wrap justify-center gap-2">
                 {galleryUrls.map((url) => (
                   <div key={url} className="group relative">
@@ -739,6 +767,30 @@ export default function ProductsPage() {
           </div>
         </form>
       </Modal>
+
+      {zoomedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setZoomedImage(null)}
+        >
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image, zoomed view */}
+            <img
+              src={zoomedImage.url}
+              alt={zoomedImage.name}
+              className="max-h-[80vh] max-w-[80vw] rounded-xl border-4 border-white object-contain shadow-card"
+            />
+            <button
+              type="button"
+              onClick={() => setZoomedImage(null)}
+              aria-label="Close"
+              className="absolute -right-3 -top-3 flex h-9 w-9 items-center justify-center rounded-full bg-status-cancelled text-base text-white hover:opacity-90"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -55,6 +55,14 @@ function HistoryIcon({ className }: { className?: string }) {
   );
 }
 
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
 // Single source of truth for which of the three buckets a row falls into —
 // driven by availableStock (what's actually shown in the Available column
 // and what a customer could still order), not currentStock. A product can
@@ -84,23 +92,13 @@ function SummaryCard({
   label,
   value,
   tone,
-  active,
-  onClick,
 }: {
   label: string;
   value: number;
   tone: keyof typeof SUMMARY_DOT_CLASSES;
-  active: boolean;
-  onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border bg-white p-4 text-left transition hover:shadow-sm ${
-        active ? "border-primary" : "border-black/10 hover:border-black/20"
-      }`}
-    >
+    <div className="rounded-xl border border-black/10 bg-white p-4 text-left">
       <div className="flex items-center justify-between">
         <span className="text-md font-bold text-foreground/60">{label}</span>
         <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${SUMMARY_BADGE_CLASSES[tone]}`}>
@@ -108,8 +106,7 @@ function SummaryCard({
         </span>
       </div>
       <div className="mt-2 text-3xl font-bold text-foreground">{value}</div>
-      {/* <div className="mt-1 text-xs text-primary">Click to filter</div> */}
-    </button>
+    </div>
   );
 }
 
@@ -127,6 +124,7 @@ export function InventoryList({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "healthy" | "low" | "out">("");
+  const [activeFilter, setActiveFilter] = useState<"" | "active" | "inactive">("active");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
@@ -149,6 +147,16 @@ export function InventoryList({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Minimum quantity (low stock threshold) — submitted together with the
+  // stock-count adjustment by the same "Apply Adjustment" button; either
+  // can be present on its own. Falls back to 10 (the schema's own default)
+  // whenever a row somehow has no threshold set.
+  const [thresholdInput, setThresholdInput] = useState("");
+  const [thresholdError, setThresholdError] = useState<string | null>(null);
+
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<{ url: string; name: string } | null>(null);
 
   const [activityFor, setActivityFor] = useState<InventorySummary | null>(null);
   const [activityRows, setActivityRows] = useState<StockMovement[] | null>(null);
@@ -189,7 +197,21 @@ export function InventoryList({
   // that no longer exists.
   useEffect(() => {
     setPage(1);
-  }, [search, lowStockOnly, statusFilter, pageSize]);
+  }, [search, lowStockOnly, statusFilter, activeFilter, pageSize]);
+
+  async function handleActivate(row: InventorySummary) {
+    setActivatingId(row.productId);
+    setLoadError(null);
+    try {
+      await api.patch(`/admin/products/${row.productId}`, { isActive: true });
+      await load();
+      window.dispatchEvent(new Event("inventory-alert:refresh"));
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : "Failed to activate product");
+    } finally {
+      setActivatingId(null);
+    }
+  }
 
   function openAdjust(row: InventorySummary) {
     setAdjusting(row);
@@ -197,23 +219,53 @@ export function InventoryList({
     setType("ADJUSTMENT");
     setNote("");
     setFormError(null);
+    setThresholdInput(String(row.lowStockThreshold || 10));
+    setThresholdError(null);
   }
 
+  // One submit drives both the stock-count adjustment and the minimum
+  // quantity — either can be present on its own (e.g. just raising the
+  // threshold with no stock change), so each only fires its own request
+  // when it actually has something to apply.
   async function handleAdjust(e: FormEvent) {
     e.preventDefault();
     if (!adjusting) return;
     setFormError(null);
+    setThresholdError(null);
+
+    const hasDelta = !!delta && Number(delta) !== 0;
+    const n = Number(thresholdInput);
+    const thresholdValid = thresholdInput !== "" && Number.isInteger(n) && n >= 0;
+    const thresholdChanged = thresholdValid && n !== adjusting.lowStockThreshold;
+
+    if (!thresholdValid) {
+      setThresholdError("Enter a whole number of 0 or more.");
+      return;
+    }
+    if (!hasDelta && !thresholdChanged) {
+      setFormError("Change the stock amount or the minimum quantity before applying.");
+      return;
+    }
+
     setSaving(true);
     try {
-      const n = Number(delta);
-      await api.post(`/admin/inventory/${adjusting.productId}/adjust`, {
-        // Damage is always a reduction — let the admin type a plain positive count.
-        delta: type === "DAMAGE" ? -Math.abs(n) : n,
-        type,
-        note: note || undefined,
-      });
+      if (hasDelta) {
+        const delta_ = Number(delta);
+        await api.post(`/admin/inventory/${adjusting.productId}/adjust`, {
+          // Damage is always a reduction — let the admin type a plain positive count.
+          delta: type === "DAMAGE" ? -Math.abs(delta_) : delta_,
+          type,
+          note: note || undefined,
+        });
+      }
+      if (thresholdChanged) {
+        await api.patch(`/admin/inventory/${adjusting.productId}/threshold`, {
+          lowStockThreshold: n,
+        });
+      }
       setAdjusting(null);
       await load();
+      window.dispatchEvent(new Event("inventory-alert:refresh"));
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
@@ -221,18 +273,21 @@ export function InventoryList({
     }
   }
 
-  const totalProducts = summary?.length ?? 0;
-  const outOfStockCount = summary?.filter((r) => stockBucket(r) === "out").length ?? 0;
-  const lowStockCount = summary?.filter((r) => stockBucket(r) === "low").length ?? 0;
-  const healthyStockCount = summary?.filter((r) => stockBucket(r) === "healthy").length ?? 0;
+  const activeSummary = summary?.filter((r) => r.isActive);
+  const totalProducts = activeSummary?.length ?? 0;
+  const outOfStockCount = activeSummary?.filter((r) => stockBucket(r) === "out").length ?? 0;
+  const lowStockCount = activeSummary?.filter((r) => stockBucket(r) === "low").length ?? 0;
+  const healthyStockCount = activeSummary?.filter((r) => stockBucket(r) === "healthy").length ?? 0;
 
   // Same three buckets the summary cards above count, applied here as a
   // client-side filter on top of the search — the backend's own `lowStock`
   // param bundles "low but not zero" and "zero" together, which isn't
   // granular enough to pick just one of these three.
   const filteredRows = rows?.filter((r) => {
-    if (statusFilter === "") return true;
-    return stockBucket(r) === statusFilter;
+    if (statusFilter !== "" && stockBucket(r) !== statusFilter) return false;
+    if (activeFilter === "active" && !r.isActive) return false;
+    if (activeFilter === "inactive" && r.isActive) return false;
+    return true;
   });
 
   const totalPages = filteredRows ? Math.max(1, Math.ceil(filteredRows.length / pageSize)) : 1;
@@ -244,34 +299,10 @@ export function InventoryList({
 
       {!lowStockOnly && (
         <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <SummaryCard
-            label="Total Products"
-            value={totalProducts}
-            tone="primary"
-            active={statusFilter === ""}
-            onClick={() => setStatusFilter("")}
-          />
-          <SummaryCard
-            label="Healthy Stock"
-            value={healthyStockCount}
-            tone="delivered"
-            active={statusFilter === "healthy"}
-            onClick={() => setStatusFilter("healthy")}
-          />
-          <SummaryCard
-            label="Low Stock"
-            value={lowStockCount}
-            tone="pending"
-            active={statusFilter === "low"}
-            onClick={() => setStatusFilter("low")}
-          />
-          <SummaryCard
-            label="Out of Stock"
-            value={outOfStockCount}
-            tone="cancelled"
-            active={statusFilter === "out"}
-            onClick={() => setStatusFilter("out")}
-          />
+          <SummaryCard label="Total Products" value={totalProducts} tone="primary" />
+          <SummaryCard label="Healthy Stock" value={healthyStockCount} tone="delivered" />
+          <SummaryCard label="Low Stock" value={lowStockCount} tone="pending" />
+          <SummaryCard label="Out of Stock" value={outOfStockCount} tone="cancelled" />
         </div>
       )}
 
@@ -297,6 +328,16 @@ export function InventoryList({
             <option value="healthy">Healthy Stock</option>
             <option value="low">Low Stock</option>
             <option value="out">Out of Stock</option>
+          </Select>
+        </div>
+        <div className="w-48">
+          <Select
+            value={activeFilter}
+            onChange={(e) => setActiveFilter(e.target.value as typeof activeFilter)}
+          >
+            <option value="">All Products</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
           </Select>
         </div>
       </div>
@@ -336,18 +377,29 @@ export function InventoryList({
                   <td className="py-2.5">
                     <div className="flex items-center gap-2.5">
                       {r.imageUrl ? (
-                        <img
-                          src={r.imageUrl}
-                          alt={r.name}
-                          className="h-9 w-9 shrink-0 rounded object-cover"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => setZoomedImage({ url: r.imageUrl!, name: r.name })}
+                          className="shrink-0 rounded"
+                          aria-label={`View ${r.name}'s image`}
+                          title="Click to zoom"
+                        >
+                          <img
+                            src={r.imageUrl}
+                            alt={r.name}
+                            className="h-9 w-9 rounded object-cover transition-transform hover:scale-105"
+                          />
+                        </button>
                       ) : (
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-black/5 text-xs text-foreground/30">
                           —
                         </span>
                       )}
                       <div>
-                        <div className="font-bold text-primary">{r.name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-primary">{r.name}</span>
+                          {!r.isActive && <Pill tone="danger">Inactive</Pill>}
+                        </div>
                         <div className="text-xs text-foreground/50">{r.sku}</div>
                       </div>
                     </div>
@@ -370,6 +422,18 @@ export function InventoryList({
                   </td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      {/* {!r.isActive && hasPermission("inventory.adjust") && (
+                        <button
+                          type="button"
+                          title="Activate"
+                          aria-label={`Activate ${r.name}`}
+                          disabled={activatingId === r.productId}
+                          onClick={() => handleActivate(r)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-status-delivered hover:bg-status-delivered/10 disabled:opacity-50"
+                        >
+                          <CheckIcon className="h-4 w-4" />
+                        </button>
+                      )} */}
                       <button
                         type="button"
                         title="Activity log"
@@ -470,7 +534,6 @@ export function InventoryList({
               </Label>
               <Input
                 className="w-full !text-base"
-                required
                 type="number"
                 step="1"
                 value={delta}
@@ -481,13 +544,41 @@ export function InventoryList({
               <Label className="!text-base">Note (optional)</Label>
               <Textarea className="w-full !text-base" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
+
+            <div className="space-y-2 border-t border-black/10 pt-4">
+              <Label className="!text-base">Minimum quantity (low stock alert)</Label>
+              <p className="text-sm text-foreground/50">
+                Stock at or below this amount is shown as Low Stock. Defaults to 10 when not set.
+              </p>
+              <Input
+                className="w-32 !text-base"
+                type="number"
+                min="0"
+                step="1"
+                value={thresholdInput}
+                onChange={(e) => setThresholdInput(e.target.value)}
+              />
+              {thresholdError && (
+                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
+                  {thresholdError}
+                </p>
+              )}
+            </div>
+
             {formError && (
               <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
                 {formError}
               </p>
             )}
             <div className="flex items-center gap-2">
-              <Button type="submit" className="!text-base" disabled={saving || !delta || Number(delta) === 0}>
+              <Button
+                type="submit"
+                className="!text-base"
+                disabled={
+                  saving ||
+                  ((!delta || Number(delta) === 0) && Number(thresholdInput) === adjusting.lowStockThreshold)
+                }
+              >
                 {saving ? "Saving…" : "Apply Adjustment"}
               </Button>
               <Button type="button" variant="secondary" className="!text-base" onClick={() => setAdjusting(null)}>
@@ -572,6 +663,30 @@ export function InventoryList({
           )}
         </div>
       </Modal>
+
+      {zoomedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setZoomedImage(null)}
+        >
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image, zoomed view */}
+            <img
+              src={zoomedImage.url}
+              alt={zoomedImage.name}
+              className="max-h-[80vh] max-w-[80vw] rounded-xl border-4 border-white object-contain shadow-card"
+            />
+            <button
+              type="button"
+              onClick={() => setZoomedImage(null)}
+              aria-label="Close"
+              className="absolute -right-3 -top-3 flex h-9 w-9 items-center justify-center rounded-full bg-status-cancelled text-base text-white hover:opacity-90"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
