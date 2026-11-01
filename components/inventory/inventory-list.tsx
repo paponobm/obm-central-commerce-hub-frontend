@@ -422,7 +422,7 @@ export function InventoryList({
                   </td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      {/* {!r.isActive && hasPermission("inventory.adjust") && (
+                      {!r.isActive && hasPermission("inventory.adjust") && (
                         <button
                           type="button"
                           title="Activate"
@@ -433,7 +433,7 @@ export function InventoryList({
                         >
                           <CheckIcon className="h-4 w-4" />
                         </button>
-                      )} */}
+                      )}
                       <button
                         type="button"
                         title="Activity log"
