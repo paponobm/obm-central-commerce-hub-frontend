@@ -65,7 +65,7 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
     preorderNotifyAt: null,
     createdAt: lead.createdAt,
     updatedAt: lead.updatedAt,
-    customer: { id: "", name: lead.name ?? "", phone: lead.phone, email: null, address: lead.address, city: null, notes: null, createdAt: lead.createdAt, orderCount: 0, totalSpent: 0, lastSource: null },
+    customer: { id: "", name: lead.name ?? "", phone: lead.phone, email: null, address: lead.address, city: null, district: null, notes: null, createdAt: lead.createdAt, orderCount: 0, totalSpent: 0, lastSource: null },
     statusHistory: [],
     timeline: [],
     payments: [],

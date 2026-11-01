@@ -166,6 +166,10 @@ export interface Customer {
   email: string | null;
   address: string | null;
   city: string | null;
+  // Bangladesh district — auto-detected from the address (see the
+  // "Auto-detect Districts" action), or set manually. Thana/upazila not
+  // tracked yet.
+  district: string | null;
   notes: string | null;
   createdAt: string;
   orderCount: number;

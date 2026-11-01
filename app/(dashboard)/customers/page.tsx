@@ -14,6 +14,7 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { LoadingLine } from "@/components/ui/spinner";
+import { DistrictMap } from "@/components/customers/district-map";
 import { money } from "@/lib/format";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
@@ -97,6 +98,156 @@ function SummaryCard({
   );
 }
 
+interface ThanaBreakdown {
+  district: string;
+  customers: number;
+  orders: number;
+  revenue: number;
+  withoutThana: number;
+  thanas: { name: string; customers: number; orders: number; revenue: number }[];
+}
+
+type ThanaMetric = "customers" | "orders" | "revenue";
+
+// Thana Breakdown — opened by clicking a district in "Top Districts by
+// Customers". Self-contained: fetches its own data for just that one
+// district rather than the parent page carrying it for every district.
+function ThanaBreakdownModal({
+  district,
+  channelId,
+  onClose,
+}: {
+  district: string;
+  channelId: string | null;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<ThanaBreakdown | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [metric, setMetric] = useState<ThanaMetric>("customers");
+  const [detecting, setDetecting] = useState(false);
+  const [detectMessage, setDetectMessage] = useState<string | null>(null);
+
+  function load() {
+    const params = new URLSearchParams({ district });
+    if (channelId) params.set("channelId", channelId);
+    api
+      .get<ThanaBreakdown>(`/admin/customers/thana-breakdown?${params.toString()}`)
+      .then(setData)
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load thana breakdown."));
+  }
+
+  useEffect(load, [district, channelId]);
+
+  async function handleAutoFillThana() {
+    setDetecting(true);
+    setDetectMessage(null);
+    try {
+      const params = new URLSearchParams({ district });
+      if (channelId) params.set("channelId", channelId);
+      const result = await api.post<{ scanned: number; updated: number; unmatched: number }>(
+        `/admin/customers/detect-thanas?${params.toString()}`,
+      );
+      setDetectMessage(
+        result.scanned === 0
+          ? "Every customer here already has a thana."
+          : `Scanned ${result.scanned} — detected ${result.updated}, ${result.unmatched} left unmatched.`,
+      );
+      load();
+    } catch (err) {
+      setDetectMessage(err instanceof ApiError ? err.message : "Failed to auto-fill thanas.");
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  const sortedThanas = data
+    ? [...data.thanas].sort((a, b) => b[metric] - a[metric])
+    : [];
+  const topValue = sortedThanas[0]?.[metric] ?? 0;
+
+  return (
+    <Modal open onClose={onClose} title={`${district} - Thana Breakdown`} size="lg">
+      {error && (
+        <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">{error}</p>
+      )}
+      {!data ? (
+        <LoadingLine />
+      ) : (
+        <>
+          <div className="mb-4 grid grid-cols-3 gap-3">
+            <SummaryCard label="Customers" value={data.customers} tone="primary" />
+            <SummaryCard label="Orders" value={data.orders} tone="primary" />
+            <div className="rounded-xl border border-black/10 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground/60">Revenue</span>
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-status-delivered/10">
+                  <span className="h-2 w-2 rounded-full bg-status-delivered" />
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-bold text-foreground">৳{money(data.revenue)}</div>
+            </div>
+          </div>
+
+          <div className="mb-3 flex gap-1 border-b border-black/10">
+            {(["customers", "orders", "revenue"] as ThanaMetric[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMetric(m)}
+                className={`border-b-2 px-3 py-2 text-sm font-medium capitalize ${
+                  metric === m ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {sortedThanas.length === 0 ? (
+              <p className="text-sm text-foreground/50">No customer here has a detected thana yet.</p>
+            ) : (
+              sortedThanas.map((t, i) => (
+                <div key={t.name} className="flex items-center gap-3">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">{t.name}</span>
+                      <span className="text-foreground/60">
+                        {metric === "revenue" ? `৳${money(t.revenue)}` : t[metric]}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-black/5">
+                      <div
+                        className="h-1.5 rounded-full bg-primary"
+                        style={{ width: `${Math.max(4, (t[metric] / (topValue || 1)) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {data.withoutThana > 0 && (
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-status-pending/10 px-3 py-2.5">
+              <span className="text-sm text-status-pending">
+                {data.withoutThana} customer{data.withoutThana === 1 ? "" : "s"} without thana data
+              </span>
+              <Button type="button" variant="secondary" disabled={detecting} onClick={handleAutoFillThana}>
+                {detecting ? "Detecting…" : "Auto-fill Thana"}
+              </Button>
+            </div>
+          )}
+          {detectMessage && <p className="mt-2 text-sm text-foreground/60">{detectMessage}</p>}
+        </>
+      )}
+    </Modal>
+  );
+}
+
 interface FormState {
   id: string;
   name: string;
@@ -111,6 +262,8 @@ export default function CustomersPage() {
   const router = useRouter();
   const { hasPermission } = useAuth();
   const { activeChannelId } = useChannelScope();
+
+  const [view, setView] = useState<"list" | "districts">("list");
 
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -128,6 +281,43 @@ export default function CustomersPage() {
   const [form, setForm] = useState<FormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  // District Analytics tab — which district's "Thana Breakdown" modal (if
+  // any) is open, keyed by district name.
+  const [thanaModalDistrict, setThanaModalDistrict] = useState<string | null>(null);
+
+  // One button runs both passes — thana detection depends on a customer
+  // already having a district (see detectThana's district-scoping), so
+  // these must run one after the other, never in parallel.
+  async function handleSyncDistrictThana() {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      const params = new URLSearchParams();
+      if (activeChannelId) params.set("channelId", activeChannelId);
+      const qs = params.toString();
+      const districtResult = await api.post<{ scanned: number; updated: number; unmatched: number }>(
+        `/admin/customers/detect-districts${qs ? `?${qs}` : ""}`,
+      );
+      const thanaResult = await api.post<{ scanned: number; updated: number; unmatched: number }>(
+        `/admin/customers/detect-thanas${qs ? `?${qs}` : ""}`,
+      );
+      setSyncResult(
+        `Districts: detected ${districtResult.updated} of ${districtResult.scanned}. ` +
+          `Thanas: detected ${thanaResult.updated} of ${thanaResult.scanned}.`,
+      );
+      await load();
+    } catch (err) {
+      setSyncError(err instanceof ApiError ? err.message : "Failed to sync customer thana/district.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function load() {
     const params = new URLSearchParams();
@@ -200,10 +390,143 @@ export default function CustomersPage() {
   const totalPages = filteredCustomers ? Math.max(1, Math.ceil(filteredCustomers.length / pageSize)) : 1;
   const pagedCustomers = filteredCustomers?.slice((page - 1) * pageSize, page * pageSize);
 
+  // District Analytics tab — all derived from the same `customers` list the
+  // List tab already fetched, no separate request.
+  const withoutDistrict = customers?.filter((c) => !c.district) ?? [];
+  const districtCounts = (() => {
+    const counts = new Map<string, number>();
+    for (const c of customers ?? []) {
+      if (!c.district) continue;
+      counts.set(c.district, (counts.get(c.district) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  })();
+  const topDistrictCount = districtCounts[0]?.[1] ?? 0;
+  const districtOrderCounts = (() => {
+    const counts = new Map<string, number>();
+    for (const c of customers ?? []) {
+      if (!c.district) continue;
+      counts.set(c.district, (counts.get(c.district) ?? 0) + c.orderCount);
+    }
+    return Object.fromEntries(counts);
+  })();
+  const totalOrdersAll = customers?.reduce((sum, c) => sum + c.orderCount, 0) ?? 0;
+  const reorderedCount = customers?.filter((c) => c.orderCount > 1).length ?? 0;
+  const revenueAll = customers?.reduce((sum, c) => sum + c.totalSpent, 0) ?? 0;
+
   return (
     <div>
-      <PageHeader title="Customers" description="One shared customer list across every storefront." />
+      <PageHeader
+        title="Customers"
+        description="One shared customer list across every storefront."
+        actions={
+          hasPermission("customers.manage") && (
+            <Button variant="secondary" onClick={handleSyncDistrictThana} disabled={syncing}>
+              {syncing ? "Syncing…" : "Sync customer thana/district"}
+            </Button>
+          )
+        }
+      />
 
+      {syncResult && (
+        <p className="mb-4 rounded-lg bg-status-delivered/10 px-3 py-2 text-sm text-status-delivered">
+          {syncResult}
+        </p>
+      )}
+      {syncError && (
+        <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+          {syncError}
+        </p>
+      )}
+
+      <div className="mb-4 flex gap-1 border-b border-black/10">
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium ${
+            view === "list" ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
+          }`}
+        >
+          Customer List
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("districts")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium ${
+            view === "districts" ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
+          }`}
+        >
+          District Analytics
+          {withoutDistrict.length > 0 && (
+            <span className="ml-1.5 rounded-full bg-status-pending/15 px-1.5 py-0.5 text-xs font-semibold text-status-pending">
+              {withoutDistrict.length} without district
+            </span>
+          )}
+        </button>
+      </div>
+
+      {view === "districts" ? (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="space-y-6 lg:col-span-2">
+            <Card>
+              <h2 className="mb-1 text-base font-semibold text-foreground">Customer Distribution by District</h2>
+              <p className="mb-4 text-sm text-foreground/50">
+                Darker shading means more customers. Hover a district for its exact count.
+              </p>
+              <DistrictMap counts={Object.fromEntries(districtCounts)} orderCounts={districtOrderCounts} />
+            </Card>
+
+          </div>
+
+          <div className="space-y-4">
+            <SummaryCard label="Customers" value={customers?.length ?? 0} tone="primary" />
+            <SummaryCard label="Total Orders" value={totalOrdersAll} tone="primary" />
+            <SummaryCard label="Reordered Customers" value={reorderedCount} tone="delivered" />
+            <div className="rounded-xl border border-black/10 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground/60">Revenue</span>
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-status-delivered/10">
+                  <span className="h-2 w-2 rounded-full bg-status-delivered" />
+                </span>
+              </div>
+              <div className="mt-2 text-3xl font-bold text-foreground">৳{money(revenueAll)}</div>
+            </div>
+
+            <Card>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Top Districts by Customers</h2>
+              {districtCounts.length === 0 ? (
+                <p className="text-sm text-foreground/50">
+                  No customers have a detected district yet — run Auto-detect Districts above.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {districtCounts.slice(0, 8).map(([district, count]) => (
+                    <button
+                      key={district}
+                      type="button"
+                      onClick={() => setThanaModalDistrict(district)}
+                      className="block w-full text-left"
+                      title={`View thana breakdown for ${district}`}
+                    >
+                      <div className="mb-1 flex items-center justify-between text-sm">
+                        <span className="font-medium text-foreground hover:text-primary hover:underline">{district}</span>
+                        <span className="text-foreground/60">{count}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-black/5">
+                        <div
+                          className="h-1.5 rounded-full bg-status-delivered"
+                          style={{ width: `${Math.max(4, (count / topDistrictCount) * 100)}%` }}
+                        />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="mb-4 grid grid-cols-2 gap-4 lg:w-1/2">
         <SummaryCard label="Total Customer" value={customers?.length ?? 0} tone="primary" />
         <SummaryCard
@@ -294,6 +617,7 @@ export default function CustomersPage() {
                         growing the row (not a floating overlay). */}
                     <span className="block max-w-[320px] truncate text-sm text-foreground/50 group-hover:whitespace-normal">
                       {c.address ?? "—"}
+                      {c.district && <span className="text-foreground/40"> · {c.district}</span>}
                     </span>
                   </td>
                   <td className="px-3 py-3">
@@ -373,6 +697,8 @@ export default function CustomersPage() {
           </div>
         )}
       </Card>
+        </>
+      )}
 
       <Modal
         open={!!form}
@@ -423,6 +749,14 @@ export default function CustomersPage() {
           </form>
         )}
       </Modal>
+
+      {thanaModalDistrict && (
+        <ThanaBreakdownModal
+          district={thanaModalDistrict}
+          channelId={activeChannelId}
+          onClose={() => setThanaModalDistrict(null)}
+        />
+      )}
     </div>
   );
 }
