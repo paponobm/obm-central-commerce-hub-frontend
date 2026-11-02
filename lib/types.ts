@@ -46,8 +46,22 @@ export type ShipmentStatus =
   | "RETURNED";
 export type PaymentMethod = "COD" | "BKASH" | "NAGAD" | "BANK_TRANSFER" | "CARD" | "OTHER";
 
+export interface ChannelHeroCoupon {
+  enabled: boolean;
+  label: string;
+  code: string;
+}
+
+export interface ChannelHeroSlide {
+  image: string;
+  title?: string;
+  description?: string;
+  coupon?: ChannelHeroCoupon;
+}
+
 export interface ChannelThemeConfig {
-  heroCoupon?: { enabled: boolean; label: string; code: string };
+  heroCoupon?: ChannelHeroCoupon;
+  heroSlides?: ChannelHeroSlide[];
 }
 
 export interface Channel {
