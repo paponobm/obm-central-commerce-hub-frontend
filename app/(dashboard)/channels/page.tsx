@@ -69,7 +69,7 @@ export default function ChannelsPage() {
   }
 
   function manageChannel(channel: ChannelWithStats) {
-    router.push(`/channels/${channel.id}`);
+    router.push(`/channels/${channel.id}/settings`);
   }
 
   return (

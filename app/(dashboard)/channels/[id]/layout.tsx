@@ -59,6 +59,13 @@ export default function ChannelWorkspaceLayout({ children }: { children: ReactNo
     );
   }
 
+  // Reached via the Channels list's "Manage" button — a standalone settings
+  // view, not the tabbed Overview/Orders/Products workspace below (those
+  // tabs still work if visited directly, e.g. from a bookmark).
+  if (suffix === "/settings") {
+    return activeChannelId === id ? children : <LoadingLine />;
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
