@@ -8,7 +8,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/layout/page-header";
@@ -62,6 +62,7 @@ const DEFAULT_COMBO_BANNER: ChannelComboBanner = {
   ],
 };
 const MAX_COMBO_TIERS = 10;
+const MAX_COMBO_BANNERS = 2;
 
 // Older saves stored trustBadges as plain strings (fixed 4 slots, no icon)
 // or objects without the on/off toggle yet — normalized here so an older
@@ -114,10 +115,9 @@ export default function ChannelSettingsPage() {
   // null = "no restriction saved yet" — every category counts as included,
   // same as the storefront's own fallback when categorySlugs is unset.
   const [categorySlugs, setCategorySlugs] = useState<string[] | null>(null);
-  const [comboNewBadge, setComboNewBadge] = useState(DEFAULT_COMBO_BANNER.newBadge);
-  const [comboTitle, setComboTitle] = useState(DEFAULT_COMBO_BANNER.title);
-  const [comboDescription, setComboDescription] = useState(DEFAULT_COMBO_BANNER.description);
-  const [comboTiers, setComboTiers] = useState<ChannelComboTier[]>(DEFAULT_COMBO_BANNER.tiers);
+  // Up to MAX_COMBO_BANNERS separate combo promos — shown side by side on
+  // larger screens once there are 2 (see the storefront's ComboBanner).
+  const [comboBanners, setComboBanners] = useState<ChannelComboBanner[]>([DEFAULT_COMBO_BANNER]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null);
@@ -152,11 +152,8 @@ export default function ChannelSettingsPage() {
     setHeroSlides((channel.themeConfig?.heroSlides ?? []).map(toSlideForm));
     setTrustBadges(normalizeTrustBadges(channel.themeConfig?.trustBadges));
     setCategorySlugs(channel.themeConfig?.categorySlugs ?? null);
-    const combo = channel.themeConfig?.comboBanner ?? DEFAULT_COMBO_BANNER;
-    setComboNewBadge(combo.newBadge);
-    setComboTitle(combo.title);
-    setComboDescription(combo.description);
-    setComboTiers(combo.tiers);
+    const savedCombos = channel.themeConfig?.comboBanners;
+    setComboBanners(savedCombos?.length ? savedCombos : [DEFAULT_COMBO_BANNER]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 
@@ -286,18 +283,48 @@ export default function ChannelSettingsPage() {
     });
   }
 
-  function addComboTier() {
-    setComboTiers((prev) =>
-      prev.length >= MAX_COMBO_TIERS ? prev : [...prev, { title: "", description: "", enabled: true }],
+  function addComboBanner() {
+    setComboBanners((prev) =>
+      prev.length >= MAX_COMBO_BANNERS
+        ? prev
+        : [...prev, { newBadge: false, title: "", description: "", tiers: [] }],
     );
   }
 
-  function removeComboTier(index: number) {
-    setComboTiers((prev) => prev.filter((_, i) => i !== index));
+  function removeComboBanner(index: number) {
+    setComboBanners((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function updateComboTier(index: number, patch: Partial<ChannelComboTier>) {
-    setComboTiers((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+  function updateComboBanner(index: number, patch: Partial<ChannelComboBanner>) {
+    setComboBanners((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  }
+
+  function addComboTier(comboIndex: number) {
+    setComboBanners((prev) =>
+      prev.map((c, i) =>
+        i !== comboIndex
+          ? c
+          : c.tiers.length >= MAX_COMBO_TIERS
+            ? c
+            : { ...c, tiers: [...c.tiers, { title: "", description: "", enabled: true }] },
+      ),
+    );
+  }
+
+  function removeComboTier(comboIndex: number, tierIndex: number) {
+    setComboBanners((prev) =>
+      prev.map((c, i) => (i !== comboIndex ? c : { ...c, tiers: c.tiers.filter((_, ti) => ti !== tierIndex) })),
+    );
+  }
+
+  function updateComboTier(comboIndex: number, tierIndex: number, patch: Partial<ChannelComboTier>) {
+    setComboBanners((prev) =>
+      prev.map((c, i) =>
+        i !== comboIndex
+          ? c
+          : { ...c, tiers: c.tiers.map((t, ti) => (ti === tierIndex ? { ...t, ...patch } : t)) },
+      ),
+    );
   }
 
   // Auto-slugify only works for Latin names — most category names here are
@@ -398,14 +425,17 @@ export default function ChannelSettingsPage() {
       // Flattens the "no restriction yet" default into an explicit saved
       // list, same reasoning as heroSlides/trustBadges above.
       themeConfig.categorySlugs = activeCategorySlugs;
-      themeConfig.comboBanner = {
-        newBadge: comboNewBadge,
-        title: comboTitle.trim(),
-        description: comboDescription.trim(),
-        tiers: comboTiers
-          .filter((t) => t.title.trim())
-          .map((t) => ({ title: t.title.trim(), description: t.description.trim(), enabled: t.enabled })),
-      };
+      // Blank combos (never given a title) are dropped, same as blank tiers.
+      themeConfig.comboBanners = comboBanners
+        .filter((c) => c.title.trim())
+        .map((c) => ({
+          newBadge: c.newBadge,
+          title: c.title.trim(),
+          description: c.description.trim(),
+          tiers: c.tiers
+            .filter((t) => t.title.trim())
+            .map((t) => ({ title: t.title.trim(), description: t.description.trim(), enabled: t.enabled })),
+        }));
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -855,79 +885,116 @@ export default function ChannelSettingsPage() {
 
             {tab === "combo" && (
               <div className="space-y-4">
-                <div className="rounded-lg border border-black/10 p-3">
-                  <Label>Combo banner</Label>
-                  <p className="mb-2 text-xs text-foreground/50">
-                    The &ldquo;Build your own combo&rdquo; promo shown on the homepage, right after Categories.
-                  </p>
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm">
-                      <Switch checked={comboNewBadge} onChange={() => setComboNewBadge(!comboNewBadge)} />
-                      Show the &ldquo;নতুন&rdquo; badge
-                    </label>
-                    <div>
-                      <Label>Title</Label>
-                      <Input value={comboTitle} onChange={(e) => setComboTitle(e.target.value)} maxLength={80} />
-                    </div>
-                    <div>
-                      <Label>Description</Label>
-                      <Input
-                        value={comboDescription}
-                        onChange={(e) => setComboDescription(e.target.value)}
-                        maxLength={160}
-                      />
-                    </div>
-                  </div>
-                </div>
+                <p className="text-xs text-foreground/50">
+                  The &ldquo;Build your own combo&rdquo; promo shown on the homepage, right after Categories. Up to{" "}
+                  {MAX_COMBO_BANNERS} combos — with 2, they show side by side on larger screens.
+                </p>
 
-                <div className="rounded-lg border border-black/10 p-3">
-                  <Label>Pricing tier cards</Label>
-                  <p className="mb-2 text-xs text-foreground/50">
-                    The cards inside the banner (e.g. &ldquo;৳১,২০০+ / ফ্রি ডেলিভারি&rdquo;) — add, remove, and toggle
-                    each on/off. Off cards stay here but won&rsquo;t show on the storefront.
-                  </p>
-                  <div className="space-y-2">
-                    {comboTiers.map((tier, i) => (
-                      <div key={i} className={`flex items-center gap-2 ${tier.enabled ? "" : "opacity-50"}`}>
-                        <span title={tier.enabled ? "On — shown on storefront" : "Off — hidden from storefront"}>
-                          <Switch
-                            checked={tier.enabled}
-                            onChange={() => updateComboTier(i, { enabled: !tier.enabled })}
-                          />
-                        </span>
-                        <Input
-                          value={tier.title}
-                          onChange={(e) => updateComboTier(i, { title: e.target.value })}
-                          placeholder="Card title, e.g. ৳১,২০০+"
-                          maxLength={60}
-                        />
-                        <Input
-                          value={tier.description}
-                          onChange={(e) => updateComboTier(i, { description: e.target.value })}
-                          placeholder="Card description, e.g. ফ্রি ডেলিভারি"
-                          maxLength={80}
-                        />
+                {comboBanners.map((combo, ci) => (
+                  <div key={ci} className="rounded-lg border border-black/10 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <Label className="!mb-0">Combo {ci + 1}</Label>
+                      {comboBanners.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => removeComboTier(i)}
-                          className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
-                          title="Remove"
+                          onClick={() => removeComboBanner(ci)}
+                          className="rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
                         >
-                          ✕
+                          Remove this combo
                         </button>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-2 text-sm">
+                        <Switch
+                          checked={combo.newBadge}
+                          onChange={() => updateComboBanner(ci, { newBadge: !combo.newBadge })}
+                        />
+                        Show the &ldquo;নতুন&rdquo; badge
+                      </label>
+                      <div>
+                        <Label>Title</Label>
+                        <Input
+                          value={combo.title}
+                          onChange={(e) => updateComboBanner(ci, { title: e.target.value })}
+                          maxLength={80}
+                        />
                       </div>
-                    ))}
+                      <div>
+                        <Label>Description</Label>
+                        <Input
+                          value={combo.description}
+                          onChange={(e) => updateComboBanner(ci, { description: e.target.value })}
+                          maxLength={160}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 border-t border-black/5 pt-3">
+                      <Label>Pricing tier cards</Label>
+                      <p className="mb-2 text-xs text-foreground/50">
+                        The cards inside this banner (e.g. &ldquo;৳১,২০০+ / ফ্রি ডেলিভারি&rdquo;) — add, remove, and
+                        toggle each on/off. Off cards stay here but won&rsquo;t show on the storefront.
+                      </p>
+                      <div className="space-y-2">
+                        {combo.tiers.map((tier, ti) => (
+                          <div key={ti} className={`flex items-start gap-2 ${tier.enabled ? "" : "opacity-50"}`}>
+                            <span
+                              title={tier.enabled ? "On — shown on storefront" : "Off — hidden from storefront"}
+                              className="pt-2"
+                            >
+                              <Switch
+                                checked={tier.enabled}
+                                onChange={() => updateComboTier(ci, ti, { enabled: !tier.enabled })}
+                              />
+                            </span>
+                            <Input
+                              value={tier.title}
+                              onChange={(e) => updateComboTier(ci, ti, { title: e.target.value })}
+                              placeholder="Card title, e.g. ৳১,২০০+"
+                              maxLength={60}
+                            />
+                            <Textarea
+                              value={tier.description}
+                              onChange={(e) => updateComboTier(ci, ti, { description: e.target.value })}
+                              placeholder={"Card description — one line each, e.g.\nফ্রি ডেলিভারি\nফ্রি সমাধান কিট"}
+                              maxLength={160}
+                              rows={2}
+                              className="w-full resize-y"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeComboTier(ci, ti)}
+                              className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {combo.tiers.length < MAX_COMBO_TIERS && (
+                        <button
+                          type="button"
+                          onClick={() => addComboTier(ci)}
+                          className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                        >
+                          + Add card
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {comboTiers.length < MAX_COMBO_TIERS && (
-                    <button
-                      type="button"
-                      onClick={addComboTier}
-                      className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
-                    >
-                      + Add card
-                    </button>
-                  )}
-                </div>
+                ))}
+
+                {comboBanners.length < MAX_COMBO_BANNERS && (
+                  <button
+                    type="button"
+                    onClick={addComboBanner}
+                    className="inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                  >
+                    + Add another combo
+                  </button>
+                )}
               </div>
             )}
           </div>

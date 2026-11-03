@@ -83,7 +83,7 @@ export interface ChannelThemeConfig {
   heroSlides?: ChannelHeroSlide[];
   trustBadges?: ChannelTrustBadge[];
   categorySlugs?: string[];
-  comboBanner?: ChannelComboBanner;
+  comboBanners?: ChannelComboBanner[];
 }
 
 export interface Channel {
