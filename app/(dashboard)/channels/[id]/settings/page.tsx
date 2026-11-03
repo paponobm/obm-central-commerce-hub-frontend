@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { Card } from "@/components/ui/card";
@@ -82,7 +83,8 @@ function toSlideForm(s: ChannelHeroSlide): SlideForm {
 
 export default function ChannelSettingsPage() {
   const { id } = useParams<{ id: string }>();
-  const { channels, refresh } = useChannelScope();
+  const router = useRouter();
+  const { channels, refresh, setActiveChannelId } = useChannelScope();
   const channel = channels?.find((c) => c.id === id);
 
   const [tab, setTab] = useState<TabKey>("logoBanner");
@@ -100,6 +102,8 @@ export default function ChannelSettingsPage() {
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null);
+  const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
+  const [editingPositionValue, setEditingPositionValue] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategorySlug, setNewCategorySlug] = useState("");
   const [newCategorySlugTouched, setNewCategorySlugTouched] = useState(false);
@@ -109,6 +113,15 @@ export default function ChannelSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The floating Save bar is portaled straight to <body> (see its render
+  // below) so it's truly fixed to the viewport — nested inside this page it
+  // would get dragged along by the dashboard layout's own scrolling <main>.
+  // document.body only exists once mounted on the client.
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!channel) return;
@@ -133,6 +146,15 @@ export default function ChannelSettingsPage() {
   // The working "is this category included on this storefront" list —
   // categorySlugs===null means every category currently counts as on.
   const activeCategorySlugs = categorySlugs ?? (allCategories ?? []).map((c) => c.slug);
+
+  // On categories first, in activeCategorySlugs' own order (their numbered
+  // position = their position on the storefront) — off categories follow,
+  // unordered, since reordering them has no effect until switched on.
+  const orderedOnCategories = activeCategorySlugs
+    .map((slug) => (allCategories ?? []).find((c) => c.slug === slug))
+    .filter((c): c is Category => !!c);
+  const offCategories = (allCategories ?? []).filter((c) => !activeCategorySlugs.includes(c.slug));
+  const displayCategories = [...orderedOnCategories, ...offCategories];
 
   async function handleLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -205,6 +227,38 @@ export default function ChannelSettingsPage() {
     setCategorySlugs((prev) => {
       const base = prev ?? (allCategories ?? []).map((c) => c.slug);
       return base.includes(slug) ? base.filter((s) => s !== slug) : [...base, slug];
+    });
+  }
+
+  // Swaps this slug with its neighbor — the array's own order is the
+  // storefront's display order (see the backend's getCategories), so this
+  // is what the numbering on each row reflects.
+  function moveCategoryOrder(slug: string, dir: -1 | 1) {
+    setCategorySlugs((prev) => {
+      const base = prev ?? (allCategories ?? []).map((c) => c.slug);
+      const index = base.indexOf(slug);
+      const target = index + dir;
+      if (index < 0 || target < 0 || target >= base.length) return base;
+      const next = [...base];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  // Jumps this slug straight to a typed position (1-based) — everything
+  // between its old and new spot shifts down/up by one, unlike the ▲/▼
+  // buttons above which only ever swap one adjacent pair.
+  function moveCategoryToPosition(slug: string, position: number) {
+    setCategorySlugs((prev) => {
+      const base = prev ?? (allCategories ?? []).map((c) => c.slug);
+      const from = base.indexOf(slug);
+      if (from < 0 || !Number.isFinite(position)) return base;
+      const to = Math.min(Math.max(Math.round(position), 1), base.length) - 1;
+      if (to === from) return base;
+      const next = [...base];
+      next.splice(from, 1);
+      next.splice(to, 0, slug);
+      return next;
     });
   }
 
@@ -325,11 +379,15 @@ export default function ChannelSettingsPage() {
     }
   }
 
-  const storefrontHref = channel?.domain
-    ? channel.domain.startsWith("http")
-      ? channel.domain
-      : `https://${channel.domain}`
-    : null;
+  // Switches the admin's global scope to this store and drops onto the
+  // Dashboard — Settings itself is deliberately scope-preserving (see
+  // channels/[id]/layout.tsx), so this is the one explicit action that
+  // actually enters this store's own workspace (its orders, stats, sidebar).
+  function enterStoreDashboard() {
+    if (!channel) return;
+    setActiveChannelId(channel.id);
+    router.push("/");
+  }
 
   return (
     <div>
@@ -342,21 +400,20 @@ export default function ChannelSettingsPage() {
         actions={
           <>
             {channel && <Pill tone={channel.isActive ? "primary" : "default"}>{channel.isActive ? "Active" : "Inactive"}</Pill>}
-            {storefrontHref ? (
-              <a href={storefrontHref} target="_blank" rel="noopener noreferrer">
-                <Button variant="secondary">Visit storefront ↗</Button>
-              </a>
-            ) : (
-              <Button variant="secondary" disabled title="Set a domain below to enable this">
-                Visit storefront ↗
-              </Button>
-            )}
+            <Button variant="secondary" disabled={!channel} onClick={enterStoreDashboard}>
+              Visit store dashboard →
+            </Button>
           </>
         }
       />
-      <form onSubmit={handleSubmit} className="max-w-xl">
+      <form
+        id="channel-settings-form"
+        onSubmit={handleSubmit}
+        className="grid grid-cols-1 gap-6 pb-24 lg:grid-cols-[380px_1fr]"
+      >
         <Card>
           <div className="space-y-4">
+            <h2 className="text-base font-semibold text-foreground">General</h2>
             <div>
               <Label>Name</Label>
               <Input required value={name} onChange={(e) => setName(e.target.value)} />
@@ -375,7 +432,12 @@ export default function ChannelSettingsPage() {
               <Label>Domain</Label>
               <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="e.g. dryfoodmarket.com" />
             </div>
+          </div>
+        </Card>
 
+        <Card>
+          <div className="space-y-4">
+            <h2 className="text-base font-semibold text-foreground">Storefront content</h2>
             <div className="flex gap-1 border-b border-black/5">
               {TABS.map((t) => (
                 <button
@@ -603,11 +665,77 @@ export default function ChannelSettingsPage() {
                     <p className="text-xs text-foreground/50">Loading categories…</p>
                   ) : (
                     <div className="space-y-2">
-                      {allCategories.map((category) => {
+                      {displayCategories.map((category) => {
                         const on = activeCategorySlugs.includes(category.slug);
+                        const orderIndex = activeCategorySlugs.indexOf(category.slug);
                         const busy = busyCategoryId === category.id;
                         return (
                           <div key={category.id} className={`flex items-center gap-2 ${on ? "" : "opacity-50"}`}>
+                            {on ? (
+                              <span className="flex shrink-0 items-center gap-0.5">
+                                {editingPositionSlug === category.slug ? (
+                                  // Not a <form> — this already lives inside the page's
+                                  // one outer <form>, and a nested <form> is invalid
+                                  // HTML that breaks hydration (browsers hoist it out).
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={activeCategorySlugs.length}
+                                    autoFocus
+                                    value={editingPositionValue}
+                                    onChange={(e) => setEditingPositionValue(e.target.value)}
+                                    onBlur={() => {
+                                      moveCategoryToPosition(category.slug, Number(editingPositionValue));
+                                      setEditingPositionSlug(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        moveCategoryToPosition(category.slug, Number(editingPositionValue));
+                                        setEditingPositionSlug(null);
+                                      } else if (e.key === "Escape") {
+                                        setEditingPositionSlug(null);
+                                      }
+                                    }}
+                                    className="num h-6 w-10 rounded border border-black/10 px-1 text-xs"
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    title="Click to type a position"
+                                    onClick={() => {
+                                      setEditingPositionSlug(category.slug);
+                                      setEditingPositionValue(String(orderIndex + 1));
+                                    }}
+                                    className="num grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary hover:bg-primary/20"
+                                  >
+                                    {orderIndex + 1}
+                                  </button>
+                                )}
+                                <span className="flex flex-col">
+                                  <button
+                                    type="button"
+                                    onClick={() => moveCategoryOrder(category.slug, -1)}
+                                    disabled={orderIndex === 0}
+                                    title="Move up"
+                                    className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                                  >
+                                    ▲
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => moveCategoryOrder(category.slug, 1)}
+                                    disabled={orderIndex === activeCategorySlugs.length - 1}
+                                    title="Move down"
+                                    className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                                  >
+                                    ▼
+                                  </button>
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="w-6 shrink-0 text-center text-xs text-foreground/30">—</span>
+                            )}
                             <span title={on ? "On — shown on this storefront" : "Off — hidden from this storefront"}>
                               <Switch checked={on} onChange={() => toggleCategory(category.slug)} />
                             </span>
@@ -678,7 +806,19 @@ export default function ChannelSettingsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </Card>
+      </form>
 
+      {/* Portaled straight to <body>: nested inside the page, "fixed" gets
+          clipped/dragged by the dashboard layout's own scrolling <main>
+          (overflow-y-auto), so it only ever appeared once scrolled into that
+          container's view instead of staying pinned to the real viewport.
+          `form="channel-settings-form"` keeps the submit button wired to the
+          form even though it now renders outside of it in the DOM. */}
+      {mounted &&
+        createPortal(
+          <div className="fixed bottom-6 right-6 z-20 flex items-center gap-3 rounded-card border border-black/5 bg-card p-3 shadow-card">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
               Active (storefront is live)
@@ -686,15 +826,13 @@ export default function ChannelSettingsPage() {
             {error && (
               <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">{error}</p>
             )}
-            <div className="flex items-center gap-3">
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save Changes"}
-              </Button>
-              {saved && <span className="text-sm text-status-delivered">Saved</span>}
-            </div>
-          </div>
-        </Card>
-      </form>
+            <Button type="submit" form="channel-settings-form" disabled={saving}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Button>
+            {saved && <span className="text-sm text-status-delivered">Saved</span>}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

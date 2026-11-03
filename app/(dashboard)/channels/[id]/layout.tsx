@@ -37,6 +37,11 @@ export default function ChannelWorkspaceLayout({ children }: { children: ReactNo
 
   useEffect(() => {
     if (!channel) return;
+    // Settings is reached via the Channels list's "Manage" button and is
+    // deliberately scope-preserving — editing one store's banner/badges/
+    // categories from here must never pull the sidebar, Dashboard, Orders,
+    // etc. out of whatever scope (e.g. "All Stores") was already active.
+    if (suffix === "/settings") return;
     if (activeChannelId === id) {
       pinned.current = true;
     } else if (!pinned.current) {
@@ -48,7 +53,7 @@ export default function ChannelWorkspaceLayout({ children }: { children: ReactNo
       router.replace(activeChannelId ? `/channels/${activeChannelId}${suffix}` : "/channels");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, channel, activeChannelId]);
+  }, [id, channel, activeChannelId, suffix]);
 
   if (loading || !channels) return <LoadingLine />;
   if (!channel) {
@@ -61,9 +66,10 @@ export default function ChannelWorkspaceLayout({ children }: { children: ReactNo
 
   // Reached via the Channels list's "Manage" button — a standalone settings
   // view, not the tabbed Overview/Orders/Products workspace below (those
-  // tabs still work if visited directly, e.g. from a bookmark).
+  // tabs still work if visited directly, e.g. from a bookmark). Renders
+  // immediately, independent of the global scope (see the effect above).
   if (suffix === "/settings") {
-    return activeChannelId === id ? children : <LoadingLine />;
+    return children;
   }
 
   return (
