@@ -76,6 +76,7 @@ export interface ChannelComboBanner {
   title: string;
   description: string;
   tiers: ChannelComboTier[];
+  enabled: boolean;
 }
 
 export interface ChannelThemeConfig {

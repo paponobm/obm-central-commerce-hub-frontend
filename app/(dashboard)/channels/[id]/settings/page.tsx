@@ -60,6 +60,7 @@ const DEFAULT_COMBO_BANNER: ChannelComboBanner = {
     { title: "৳২,০০০+", description: "+ ৫% ছাড়", enabled: true },
     { title: "৳৩,০০০+", description: "+ ৬% ছাড় + VIP", enabled: true },
   ],
+  enabled: true,
 };
 const MAX_COMBO_TIERS = 10;
 const MAX_COMBO_BANNERS = 2;
@@ -153,7 +154,10 @@ export default function ChannelSettingsPage() {
     setTrustBadges(normalizeTrustBadges(channel.themeConfig?.trustBadges));
     setCategorySlugs(channel.themeConfig?.categorySlugs ?? null);
     const savedCombos = channel.themeConfig?.comboBanners;
-    setComboBanners(savedCombos?.length ? savedCombos : [DEFAULT_COMBO_BANNER]);
+    // Missing `enabled` (saved before the toggle existed) defaults to on.
+    setComboBanners(
+      savedCombos?.length ? savedCombos.map((c) => ({ ...c, enabled: c.enabled ?? true })) : [DEFAULT_COMBO_BANNER],
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 
@@ -287,7 +291,7 @@ export default function ChannelSettingsPage() {
     setComboBanners((prev) =>
       prev.length >= MAX_COMBO_BANNERS
         ? prev
-        : [...prev, { newBadge: false, title: "", description: "", tiers: [] }],
+        : [...prev, { newBadge: false, title: "", description: "", tiers: [], enabled: true }],
     );
   }
 
@@ -435,6 +439,7 @@ export default function ChannelSettingsPage() {
           tiers: c.tiers
             .filter((t) => t.title.trim())
             .map((t) => ({ title: t.title.trim(), description: t.description.trim(), enabled: t.enabled })),
+          enabled: c.enabled,
         }));
 
       await api.patch(`/admin/channels/${id}`, {
@@ -891,9 +896,17 @@ export default function ChannelSettingsPage() {
                 </p>
 
                 {comboBanners.map((combo, ci) => (
-                  <div key={ci} className="rounded-lg border border-black/10 p-3">
+                  <div key={ci} className={`rounded-lg border border-black/10 p-3 ${combo.enabled ? "" : "opacity-50"}`}>
                     <div className="mb-2 flex items-center justify-between">
-                      <Label className="!mb-0">Combo {ci + 1}</Label>
+                      <div className="flex items-center gap-2">
+                        <span title={combo.enabled ? "On — shown on storefront" : "Off — hidden from storefront"}>
+                          <Switch
+                            checked={combo.enabled}
+                            onChange={() => updateComboBanner(ci, { enabled: !combo.enabled })}
+                          />
+                        </span>
+                        <Label className="!mb-0">Combo {ci + 1}</Label>
+                      </div>
                       {comboBanners.length > 1 && (
                         <button
                           type="button"
