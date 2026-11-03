@@ -59,9 +59,17 @@ export interface ChannelHeroSlide {
   coupon?: ChannelHeroCoupon;
 }
 
+export interface ChannelTrustBadge {
+  text: string;
+  icon: string;
+  enabled: boolean;
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
+  trustBadges?: ChannelTrustBadge[];
+  categorySlugs?: string[];
 }
 
 export interface Channel {
