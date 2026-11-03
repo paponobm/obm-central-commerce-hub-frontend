@@ -65,11 +65,25 @@ export interface ChannelTrustBadge {
   enabled: boolean;
 }
 
+export interface ChannelComboTier {
+  title: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface ChannelComboBanner {
+  newBadge: boolean;
+  title: string;
+  description: string;
+  tiers: ChannelComboTier[];
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
   trustBadges?: ChannelTrustBadge[];
   categorySlugs?: string[];
+  comboBanner?: ChannelComboBanner;
 }
 
 export interface Channel {
