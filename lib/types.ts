@@ -138,16 +138,41 @@ export interface RawInventory {
   updatedAt: string;
 }
 
+export interface ProductVariant {
+  id: string;
+  sku: string;
+  unitLabel: string | null;
+  basePrice: string;
+  compareAtPrice: string | null;
+  stock: number;
+  sortOrder: number;
+  imageUrl: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+}
+
+export interface ProductSpecification {
+  key: string;
+  value: string;
+}
+
 export interface Product {
   id: string;
   sku: string;
   name: string;
+  slogan: string | null;
+  shortDescription: string | null;
   description: string | null;
+  slug: string | null;
+  specifications: ProductSpecification[] | null;
   costPrice: string;
   basePrice: string;
+  compareAtPrice: string | null;
   unit: string;
+  importCountry: string | null;
   categoryId: string | null;
   brandId: string | null;
+  hasVariants: boolean;
   // The single image shown wherever a small product icon is needed (order
   // lines, inventory, product lists) — distinct from `images`, the
   // storefront's full gallery. Falls back to images[0] on the backend
@@ -158,6 +183,7 @@ export interface Product {
   brand?: Brand | null;
   inventory?: RawInventory | null;
   images?: ProductImage[];
+  variants?: ProductVariant[];
   // Only published (isPublished: true) rows — see ProductsService.findAll.
   channels?: { channelId: string; channel: { name: string } }[];
 }

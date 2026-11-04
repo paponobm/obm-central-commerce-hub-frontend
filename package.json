@@ -9,6 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tiptap/extension-image": "^3.32.2",
+    "@tiptap/extension-link": "^3.32.2",
+    "@tiptap/pm": "^3.32.2",
+    "@tiptap/react": "^3.32.2",
+    "@tiptap/starter-kit": "^3.32.2",
     "jsbarcode": "^3.12.3",
     "next": "14.2.35",
     "react": "^18",

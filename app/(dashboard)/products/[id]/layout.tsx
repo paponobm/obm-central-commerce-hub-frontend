@@ -11,7 +11,6 @@ import { LoadingLine } from "@/components/ui/spinner";
 
 const TABS: { label: string; path: string }[] = [
   { label: "Details", path: "" },
-  { label: "Publishing", path: "/publishing" },
   { label: "Order History", path: "/orders" },
 ];
 

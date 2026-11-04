@@ -159,3 +159,26 @@ body {
 :root[data-theme="dark"] .text-foreground\/30 {
   color: rgba(229, 231, 235, 0.36);
 }
+
+/* Full Description's rich-text editor (components/ui/rich-text-editor.tsx)
+   — Tailwind's base reset strips default heading/list appearance, so
+   without this a toggled H2/bullet list looks identical to plain text
+   while editing even though the saved HTML is correct. */
+.ProseMirror h2 {
+  margin: 0.5em 0 0.2em;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.ProseMirror ul {
+  margin: 0.25em 0 0.25em 1.25em;
+  list-style: disc;
+}
+.ProseMirror a {
+  color: var(--primary, #2f6feb);
+  text-decoration: underline;
+}
+.ProseMirror img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin: 0.4em 0;
+}

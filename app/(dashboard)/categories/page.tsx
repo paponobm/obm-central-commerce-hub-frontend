@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api-client";
-import type { Category } from "@/lib/types";
+import type { Category, Channel } from "@/lib/types";
 import { slugify } from "@/lib/slugify";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -36,10 +36,12 @@ function SummaryCard({
   label,
   value,
   tone,
+  extra,
 }: {
   label: string;
   value: string;
   tone: "primary" | "delivered" | "pending";
+  extra?: ReactNode;
 }) {
   const dotClasses = { primary: "bg-primary", delivered: "bg-status-delivered", pending: "bg-status-pending" };
   const badgeClasses = {
@@ -56,6 +58,7 @@ function SummaryCard({
         </span>
       </div>
       <div className="mt-2 text-3xl font-bold text-foreground">{value}</div>
+      {extra}
     </div>
   );
 }
@@ -101,7 +104,12 @@ interface FormState {
   slugTouched: boolean;
   imageUrl: string;
   parentId: string;
-  isPublished: boolean;
+  // Active channels this category should be published to — exhaustive, sent
+  // to PUT /admin/categories/:id/channels on save. Whether any are checked
+  // is also what drives the category's own isPublished flag (see
+  // handleSubmit) — a separate "Published" switch would just duplicate
+  // what this section already controls.
+  channelIds: string[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -111,8 +119,20 @@ const EMPTY_FORM: FormState = {
   slugTouched: false,
   imageUrl: "",
   parentId: "",
-  isPublished: true,
+  channelIds: [],
 };
+
+// A channel with no explicit categorySlugs (or an empty one) is
+// "unrestricted" — every published category shows on it, same fallback the
+// storefront's own StorefrontService.getCategories uses. Mirrors that
+// filter exactly so this admin page never shows a category as published
+// somewhere the storefront wouldn't actually show it.
+function isCategoryOnChannel(category: Category, channel: Channel): boolean {
+  if (!category.isPublished) return false;
+  const slugs = channel.themeConfig?.categorySlugs;
+  if (!slugs || slugs.length === 0) return true;
+  return slugs.includes(category.slug);
+}
 
 function CategoryThumb({ imageUrl, name }: { imageUrl: string | null; name: string }) {
   if (imageUrl) {
@@ -134,7 +154,11 @@ function CategoryThumb({ imageUrl, name }: { imageUrl: string | null; name: stri
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[] | null>(null);
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [channelFilter, setChannelFilter] = useState(""); // "" = all stores
 
   const [form, setForm] = useState<FormState | null>(null); // null = modal closed
   const [formError, setFormError] = useState<string | null>(null);
@@ -143,7 +167,6 @@ export default function CategoriesPage() {
   const [previewFailed, setPreviewFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [publishBusyId, setPublishBusyId] = useState<string | null>(null);
 
   async function loadCategories() {
     try {
@@ -154,15 +177,28 @@ export default function CategoriesPage() {
     }
   }
 
+  async function loadChannels() {
+    try {
+      const data = await api.get<Channel[]>("/admin/channels");
+      setChannels(data.filter((c) => c.isActive));
+    } catch {
+      // Non-fatal — the Published To column/badges just stay empty.
+    }
+  }
+
   useEffect(() => {
     loadCategories();
+    loadChannels();
   }, []);
 
   function openCreateForm() {
     setFormError(null);
     setPreviewFailed(false);
     setUploadError(null);
-    setForm({ ...EMPTY_FORM });
+    // A brand-new category isn't in any channel's categorySlugs yet, which
+    // means it's implicitly included everywhere unrestricted channels
+    // already show it — default every active channel checked to match.
+    setForm({ ...EMPTY_FORM, channelIds: channels.map((c) => c.id) });
   }
 
   function openEditForm(category: Category) {
@@ -176,7 +212,7 @@ export default function CategoriesPage() {
       slugTouched: true, // editing an existing slug shouldn't auto-regenerate under the admin
       imageUrl: category.imageUrl ?? "",
       parentId: category.parentId ?? "",
-      isPublished: category.isPublished,
+      channelIds: channels.filter((ch) => isCategoryOnChannel(category, ch)).map((ch) => ch.id),
     });
   }
 
@@ -236,17 +272,24 @@ export default function CategoriesPage() {
       slug: form.slug,
       imageUrl: form.imageUrl.trim() || undefined,
       parentId: form.parentId || undefined,
-      isPublished: form.isPublished,
+      // No separate Published switch — a category with no storefront
+      // checked below is, by definition, published nowhere.
+      isPublished: form.channelIds.length > 0,
     };
 
     try {
+      let categoryId = form.id;
       if (form.id) {
         await api.patch(`/admin/categories/${form.id}`, payload);
       } else {
-        await api.post("/admin/categories", payload);
+        const created = await api.post<Category>("/admin/categories", payload);
+        categoryId = created.id;
       }
+      await api.put(`/admin/categories/${categoryId}/channels`, {
+        channelIds: form.channelIds,
+      });
       closeForm();
-      await loadCategories();
+      await Promise.all([loadCategories(), loadChannels()]);
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
@@ -254,21 +297,17 @@ export default function CategoriesPage() {
     }
   }
 
-  async function togglePublish(category: Category) {
-    setPublishBusyId(category.id);
-    setLoadError(null);
-    try {
-      await api.patch(`/admin/categories/${category.id}`, {
-        isPublished: !category.isPublished,
-      });
-      await loadCategories();
-    } catch (err) {
-      setLoadError(
-        err instanceof ApiError ? err.message : "Failed to update category",
-      );
-    } finally {
-      setPublishBusyId(null);
-    }
+  function toggleFormChannel(channelId: string) {
+    setForm((prev) =>
+      prev
+        ? {
+            ...prev,
+            channelIds: prev.channelIds.includes(channelId)
+              ? prev.channelIds.filter((id) => id !== channelId)
+              : [...prev.channelIds, channelId],
+          }
+        : prev,
+    );
   }
 
   async function handleDelete(category: Category) {
@@ -288,10 +327,21 @@ export default function CategoriesPage() {
   }
 
   const parentOptions = (categories ?? []).filter((c) => c.id !== form?.id);
-  const rows = categories ? flattenTree(buildTree(categories)) : [];
   const totalCategories = categories?.length ?? 0;
   const publishedCount = categories?.filter((c) => c.isPublished).length ?? 0;
   const unpublishedCount = totalCategories - publishedCount;
+  const categoryChannels = (category: Category) =>
+    channels.filter((ch) => isCategoryOnChannel(category, ch));
+
+  const filterChannel = channels.find((ch) => ch.id === channelFilter) ?? null;
+  const searchLower = search.trim().toLowerCase();
+  const rows = (categories ? flattenTree(buildTree(categories)) : []).filter(({ category: c }) => {
+    if (searchLower && !c.name.toLowerCase().includes(searchLower) && !c.slug.toLowerCase().includes(searchLower)) {
+      return false;
+    }
+    if (filterChannel && !isCategoryOnChannel(c, filterChannel)) return false;
+    return true;
+  });
 
   return (
     <div>
@@ -315,12 +365,43 @@ export default function CategoriesPage() {
           label="Published"
           value={String(publishedCount)}
           tone="delivered"
+          extra={
+            channels.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {channels.map((ch) => (
+                  <Pill key={ch.id} tone="default">
+                    {ch.name}: {categories?.filter((c) => isCategoryOnChannel(c, ch)).length ?? 0}
+                  </Pill>
+                ))}
+              </div>
+            )
+          }
         />
         <SummaryCard
           label="Unpublished"
           value={String(unpublishedCount)}
           tone="pending"
         />
+      </div>
+
+      <div className="mb-4 flex items-center gap-3">
+        <div className="w-64">
+          <Input
+            placeholder="Search by name or slug…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="w-56">
+          <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}>
+            <option value="">All stores</option>
+            {channels.map((ch) => (
+              <option key={ch.id} value={ch.id}>
+                {ch.name}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <Card>
@@ -336,6 +417,8 @@ export default function CategoriesPage() {
           <p className="text-base text-foreground/50">
             No categories yet. Create the first one to start organizing products.
           </p>
+        ) : rows.length === 0 ? (
+          <p className="text-base text-foreground/50">No categories match your search/filter.</p>
         ) : (
           <table className="w-full text-left text-base">
             <thead>
@@ -343,7 +426,7 @@ export default function CategoriesPage() {
                 <th className="rounded-l-lg px-3 py-3 font-bold">#</th>
                 <th className="px-3 py-3 font-bold">Name</th>
                 <th className="px-3 py-3 font-bold">Slug</th>
-                <th className="px-3 py-3 font-bold">Published</th>
+                <th className="px-3 py-3 font-bold">Published To</th>
                 <th className="rounded-r-lg px-3 py-3 text-right font-bold">Actions</th>
               </tr>
             </thead>
@@ -363,16 +446,19 @@ export default function CategoriesPage() {
                   </td>
                   <td className="px-3 py-3 text-foreground/60">{c.slug}</td>
                   <td className="px-3 py-3">
-                    <button
-                      type="button"
-                      disabled={publishBusyId === c.id}
-                      onClick={() => togglePublish(c)}
-                      className="disabled:opacity-50"
-                    >
-                      <Pill tone={c.isPublished ? "success" : "default"}>
-                        {c.isPublished ? "Published" : "Unpublished"}
-                      </Pill>
-                    </button>
+                    {!c.isPublished ? (
+                      <Pill tone="default">Unpublished</Pill>
+                    ) : categoryChannels(c).length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {categoryChannels(c).map((ch) => (
+                          <Pill key={ch.id} tone="primary">
+                            {ch.name}
+                          </Pill>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-foreground/40">Not published</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
@@ -503,20 +589,25 @@ export default function CategoriesPage() {
             </div>
 
             <div>
-              <label className="inline-flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.isPublished}
-                  onChange={(e) =>
-                    setForm((prev) =>
-                      prev ? { ...prev, isPublished: e.target.checked } : prev,
-                    )
-                  }
-                />
-                <span className="text-base text-foreground">
-                  Published (visible on the storefront)
-                </span>
-              </label>
+              <Label className="!text-base !font-bold">Publish</Label>
+              <p className="mb-2 text-xs text-foreground/50">
+                Which storefronts show this category — leave all unchecked to take it down everywhere.
+              </p>
+              <div className="space-y-1.5">
+                {channels.map((ch) => (
+                  <label key={ch.id} className="flex items-center gap-2 text-base text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={form.channelIds.includes(ch.id)}
+                      onChange={() => toggleFormChannel(ch.id)}
+                    />
+                    {ch.name}
+                  </label>
+                ))}
+                {channels.length === 0 && (
+                  <p className="text-sm text-foreground/50">No active storefronts found.</p>
+                )}
+              </div>
             </div>
 
             {formError && (

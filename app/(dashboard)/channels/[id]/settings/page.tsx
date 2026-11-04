@@ -8,7 +8,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Textarea } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/layout/page-header";
@@ -121,13 +121,13 @@ export default function ChannelSettingsPage() {
   const [comboBanners, setComboBanners] = useState<ChannelComboBanner[]>([DEFAULT_COMBO_BANNER]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
-  const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
   const [editingPositionValue, setEditingPositionValue] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategorySlug, setNewCategorySlug] = useState("");
   const [newCategorySlugTouched, setNewCategorySlugTouched] = useState(false);
   const [creatingCategory, setCreatingCategory] = useState(false);
+  const [existingCategoryToAdd, setExistingCategoryToAdd] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadingSlides, setUploadingSlides] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -172,14 +172,21 @@ export default function ChannelSettingsPage() {
   // categorySlugs===null means every category currently counts as on.
   const activeCategorySlugs = categorySlugs ?? (allCategories ?? []).map((c) => c.slug);
 
-  // On categories first, in activeCategorySlugs' own order (their numbered
-  // position = their position on the storefront) — off categories follow,
-  // unordered, since reordering them has no effect until switched on.
+  // In activeCategorySlugs' own order — that order is the storefront's
+  // display order (see the backend's getCategories). Unpublishing a
+  // category from this storefront happens from the Categories page now
+  // (its own Publish checkboxes), not here — but adding an existing,
+  // already-global category back onto this storefront still happens here
+  // via the picker below, alongside creating a brand-new one.
   const orderedOnCategories = activeCategorySlugs
     .map((slug) => (allCategories ?? []).find((c) => c.slug === slug))
     .filter((c): c is Category => !!c);
-  const offCategories = (allCategories ?? []).filter((c) => !activeCategorySlugs.includes(c.slug));
-  const displayCategories = [...orderedOnCategories, ...offCategories];
+  // Only globally-published categories are offered here — adding an
+  // unpublished one's slug would be a silent no-op (the storefront's own
+  // category endpoint filters isPublished:true first regardless).
+  const offCategories = (allCategories ?? []).filter(
+    (c) => c.isPublished && !activeCategorySlugs.includes(c.slug),
+  );
 
   async function handleLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -248,13 +255,6 @@ export default function ChannelSettingsPage() {
     setTrustBadges((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
   }
 
-  function toggleCategory(slug: string) {
-    setCategorySlugs((prev) => {
-      const base = prev ?? (allCategories ?? []).map((c) => c.slug);
-      return base.includes(slug) ? base.filter((s) => s !== slug) : [...base, slug];
-    });
-  }
-
   // Swaps this slug with its neighbor — the array's own order is the
   // storefront's display order (see the backend's getCategories), so this
   // is what the numbering on each row reflects.
@@ -284,6 +284,18 @@ export default function ChannelSettingsPage() {
       next.splice(from, 1);
       next.splice(to, 0, slug);
       return next;
+    });
+  }
+
+  // Adds an already-global category (created elsewhere, or previously
+  // unpublished from this storefront via the Categories page) back onto
+  // this storefront — append-only, never removes, so it can't be used to
+  // accidentally unpublish something. It's added at the end of the current
+  // order; drag/reorder it from there like any other row.
+  function addExistingCategory(slug: string) {
+    setCategorySlugs((prev) => {
+      const base = prev ?? (allCategories ?? []).map((c) => c.slug);
+      return base.includes(slug) ? base : [...base, slug];
     });
   }
 
@@ -364,35 +376,6 @@ export default function ChannelSettingsPage() {
       setCategoryError(err instanceof ApiError ? err.message : "Failed to create category");
     } finally {
       setCreatingCategory(false);
-    }
-  }
-
-  async function handleCategoryImage(category: Category, file: File) {
-    setCategoryError(null);
-    setBusyCategoryId(category.id);
-    try {
-      const { url } = await api.upload<{ url: string }>("/admin/uploads/image", file);
-      const updated = await api.patch<Category>(`/admin/categories/${category.id}`, { imageUrl: url });
-      setAllCategories((prev) => (prev ?? []).map((c) => (c.id === category.id ? updated : c)));
-    } catch (err) {
-      setCategoryError(err instanceof ApiError ? err.message : "Failed to upload image");
-    } finally {
-      setBusyCategoryId(null);
-    }
-  }
-
-  async function handleDeleteCategory(category: Category) {
-    if (!confirm(`Delete "${category.name}"? This removes it from every storefront, not just this one.`)) return;
-    setCategoryError(null);
-    setBusyCategoryId(category.id);
-    try {
-      await api.delete(`/admin/categories/${category.id}`);
-      setAllCategories((prev) => (prev ?? []).filter((c) => c.id !== category.id));
-      setCategorySlugs((prev) => (prev === null ? null : prev.filter((s) => s !== category.slug)));
-    } catch (err) {
-      setCategoryError(err instanceof ApiError ? err.message : "Failed to delete category");
-    } finally {
-      setBusyCategoryId(null);
     }
   }
 
@@ -733,9 +716,9 @@ export default function ChannelSettingsPage() {
                 <div className="rounded-lg border border-black/10 p-3">
                   <Label>Categories</Label>
                   <p className="mb-2 text-xs text-foreground/50">
-                    Which categories this storefront shows, with an image for each. Categories are shared across
-                    every storefront — adding, deleting, or changing an image here applies everywhere immediately.
-                    The on/off switch only controls whether it&rsquo;s included on this storefront.
+                    Reorder the categories currently published to this storefront — this is the order the
+                    storefront&rsquo;s category grid shows them in. To publish, unpublish, or re-image a category, use
+                    the Categories page.
                   </p>
                   {categoryError && (
                     <p className="mb-2 rounded-lg bg-status-cancelled/10 px-3 py-2 text-xs text-status-cancelled">
@@ -744,81 +727,76 @@ export default function ChannelSettingsPage() {
                   )}
                   {!allCategories ? (
                     <p className="text-xs text-foreground/50">Loading categories…</p>
+                  ) : orderedOnCategories.length === 0 ? (
+                    <p className="text-xs text-foreground/50">
+                      No categories published to this storefront yet — publish one from the Categories page.
+                    </p>
                   ) : (
                     <div className="space-y-2">
-                      {displayCategories.map((category) => {
-                        const on = activeCategorySlugs.includes(category.slug);
+                      {orderedOnCategories.map((category) => {
                         const orderIndex = activeCategorySlugs.indexOf(category.slug);
-                        const busy = busyCategoryId === category.id;
                         return (
-                          <div key={category.id} className={`flex items-center gap-2 ${on ? "" : "opacity-50"}`}>
-                            {on ? (
-                              <span className="flex shrink-0 items-center gap-0.5">
-                                {editingPositionSlug === category.slug ? (
-                                  // Not a <form> — this already lives inside the page's
-                                  // one outer <form>, and a nested <form> is invalid
-                                  // HTML that breaks hydration (browsers hoist it out).
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    max={activeCategorySlugs.length}
-                                    autoFocus
-                                    value={editingPositionValue}
-                                    onChange={(e) => setEditingPositionValue(e.target.value)}
-                                    onBlur={() => {
+                          <div key={category.id} className="flex items-center gap-2">
+                            <span className="flex shrink-0 items-center gap-0.5">
+                              {editingPositionSlug === category.slug ? (
+                                // Not a <form> — this already lives inside the page's
+                                // one outer <form>, and a nested <form> is invalid
+                                // HTML that breaks hydration (browsers hoist it out).
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={activeCategorySlugs.length}
+                                  autoFocus
+                                  value={editingPositionValue}
+                                  onChange={(e) => setEditingPositionValue(e.target.value)}
+                                  onBlur={() => {
+                                    moveCategoryToPosition(category.slug, Number(editingPositionValue));
+                                    setEditingPositionSlug(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
                                       moveCategoryToPosition(category.slug, Number(editingPositionValue));
                                       setEditingPositionSlug(null);
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        moveCategoryToPosition(category.slug, Number(editingPositionValue));
-                                        setEditingPositionSlug(null);
-                                      } else if (e.key === "Escape") {
-                                        setEditingPositionSlug(null);
-                                      }
-                                    }}
-                                    className="num h-6 w-10 rounded border border-black/10 px-1 text-xs"
-                                  />
-                                ) : (
-                                  <button
-                                    type="button"
-                                    title="Click to type a position"
-                                    onClick={() => {
-                                      setEditingPositionSlug(category.slug);
-                                      setEditingPositionValue(String(orderIndex + 1));
-                                    }}
-                                    className="num grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary hover:bg-primary/20"
-                                  >
-                                    {orderIndex + 1}
-                                  </button>
-                                )}
-                                <span className="flex flex-col">
-                                  <button
-                                    type="button"
-                                    onClick={() => moveCategoryOrder(category.slug, -1)}
-                                    disabled={orderIndex === 0}
-                                    title="Move up"
-                                    className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
-                                  >
-                                    ▲
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => moveCategoryOrder(category.slug, 1)}
-                                    disabled={orderIndex === activeCategorySlugs.length - 1}
-                                    title="Move down"
-                                    className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
-                                  >
-                                    ▼
-                                  </button>
-                                </span>
+                                    } else if (e.key === "Escape") {
+                                      setEditingPositionSlug(null);
+                                    }
+                                  }}
+                                  className="num h-6 w-10 rounded border border-black/10 px-1 text-xs"
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  title="Click to type a position"
+                                  onClick={() => {
+                                    setEditingPositionSlug(category.slug);
+                                    setEditingPositionValue(String(orderIndex + 1));
+                                  }}
+                                  className="num grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary hover:bg-primary/20"
+                                >
+                                  {orderIndex + 1}
+                                </button>
+                              )}
+                              <span className="flex flex-col">
+                                <button
+                                  type="button"
+                                  onClick={() => moveCategoryOrder(category.slug, -1)}
+                                  disabled={orderIndex === 0}
+                                  title="Move up"
+                                  className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                                >
+                                  ▲
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveCategoryOrder(category.slug, 1)}
+                                  disabled={orderIndex === activeCategorySlugs.length - 1}
+                                  title="Move down"
+                                  className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                                >
+                                  ▼
+                                </button>
                               </span>
-                            ) : (
-                              <span className="w-6 shrink-0 text-center text-xs text-foreground/30">—</span>
-                            )}
-                            <span title={on ? "On — shown on this storefront" : "Off — hidden from this storefront"}>
-                              <Switch checked={on} onChange={() => toggleCategory(category.slug)} />
                             </span>
                             {category.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded, not part of the Next.js image pipeline
@@ -829,35 +807,39 @@ export default function ChannelSettingsPage() {
                               </span>
                             )}
                             <span className="flex-1 text-sm font-medium">{category.name}</span>
-                            <label className="inline-flex cursor-pointer items-center rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-xs font-medium hover:bg-black/5">
-                              {busy ? "Uploading…" : category.imageUrl ? "Replace image" : "Add image"}
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp,image/gif"
-                                className="hidden"
-                                disabled={busy}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  e.target.value = "";
-                                  if (file) handleCategoryImage(category, file);
-                                }}
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCategory(category)}
-                              disabled={busy}
-                              className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled disabled:opacity-50"
-                              title="Delete"
-                            >
-                              ✕
-                            </button>
                           </div>
                         );
                       })}
                     </div>
                   )}
-                  <div className="mt-3 flex items-center gap-2">
+                  {offCategories.length > 0 && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Select
+                        value={existingCategoryToAdd}
+                        onChange={(e) => setExistingCategoryToAdd(e.target.value)}
+                        className="w-full text-sm"
+                      >
+                        <option value="">Add an existing category…</option>
+                        {offCategories.map((c) => (
+                          <option key={c.id} value={c.slug}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={!existingCategoryToAdd}
+                        onClick={() => {
+                          addExistingCategory(existingCategoryToAdd);
+                          setExistingCategoryToAdd("");
+                        }}
+                      >
+                        + Add to storefront
+                      </Button>
+                    </div>
+                  )}
+                  {/* <div className="mt-3 flex items-center gap-2">
                     <Input
                       value={newCategoryName}
                       onChange={(e) => handleNewCategoryNameChange(e.target.value)}
@@ -883,7 +865,7 @@ export default function ChannelSettingsPage() {
                     >
                       {creatingCategory ? "Adding…" : "+ Add category"}
                     </Button>
-                  </div>
+                  </div> */}
                 </div>
               </div>
             )}

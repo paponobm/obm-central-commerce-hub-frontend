@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
-import type { Category, Brand, Product } from "@/lib/types";
+import type { Category, Product } from "@/lib/types";
 import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
 import { LoadingLine } from "@/components/ui/spinner";
 
@@ -71,35 +70,12 @@ function SummaryCard({
   );
 }
 
-interface CreateFormState {
-  sku: string;
-  name: string;
-  description: string;
-  basePrice: string;
-  unit: string;
-  categoryId: string;
-  brandId: string;
-  isActive: boolean;
-}
-
-const EMPTY_CREATE_FORM: CreateFormState = {
-  sku: "",
-  name: "",
-  description: "",
-  basePrice: "",
-  unit: "pcs",
-  categoryId: "",
-  brandId: "",
-  isActive: true,
-};
-
 export default function ProductsPage() {
   const router = useRouter();
   const { activeChannelId } = useChannelScope();
 
   const [products, setProducts] = useState<Product[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
@@ -113,26 +89,9 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<CreateFormState>(EMPTY_CREATE_FORM);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [zoomedImage, setZoomedImage] = useState<{ url: string; name: string } | null>(null);
-
-  // Thumbnail/gallery images need a real product id to attach to (same
-  // upload endpoints the detail page uses), which doesn't exist until
-  // Create Product succeeds — so these upload immediately to get a URL,
-  // staged here, and only get attached to the product right after it's
-  // created.
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [thumbnailError, setThumbnailError] = useState<string | null>(null);
-
-  const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [imageError, setImageError] = useState<string | null>(null);
 
   async function loadProducts() {
     const params = new URLSearchParams();
@@ -151,7 +110,6 @@ export default function ProductsPage() {
 
   useEffect(() => {
     api.get<Category[]>("/admin/categories").then(setCategories).catch(() => {});
-    api.get<Brand[]>("/admin/brands").then(setBrands).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -166,93 +124,6 @@ export default function ProductsPage() {
   useEffect(() => {
     setPage(1);
   }, [search, categoryFilter, activeChannelId, statusFilter, pageSize]);
-
-  function openCreate() {
-    setFormError(null);
-    setForm(EMPTY_CREATE_FORM);
-    setThumbnailUrl(null);
-    setThumbnailError(null);
-    setGalleryUrls([]);
-    setImageError(null);
-    setCreateOpen(true);
-  }
-
-  async function handleThumbnailSelect(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setThumbnailError(null);
-    setUploadingThumbnail(true);
-    try {
-      const { url } = await api.upload<{ url: string }>("/admin/uploads/image", file);
-      setThumbnailUrl(url);
-    } catch (err) {
-      setThumbnailError(err instanceof ApiError ? err.message : "Failed to upload thumbnail");
-    } finally {
-      setUploadingThumbnail(false);
-    }
-  }
-
-  async function handleImageSelect(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setImageError(null);
-    setUploadingImage(true);
-    try {
-      const { url } = await api.upload<{ url: string }>("/admin/uploads/image", file);
-      setGalleryUrls((urls) => [...urls, url]);
-    } catch (err) {
-      setImageError(err instanceof ApiError ? err.message : "Failed to upload image");
-    } finally {
-      setUploadingImage(false);
-    }
-  }
-
-  function handleRemoveThumbnail() {
-    setThumbnailUrl(null);
-  }
-
-  function handleRemoveGalleryUrl(url: string) {
-    setGalleryUrls((urls) => urls.filter((u) => u !== url));
-  }
-
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    setFormError(null);
-    if (!form.sku.trim() || !form.name.trim() || !form.basePrice) {
-      setFormError("Please fill out SKU, Name, and Base Price.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const product = await api.post<Product>("/admin/products", {
-        sku: form.sku,
-        name: form.name,
-        description: form.description || undefined,
-        costPrice: 0,
-        basePrice: Number(form.basePrice),
-        unit: form.unit || undefined,
-        categoryId: form.categoryId || undefined,
-        brandId: form.brandId || undefined,
-        thumbnailUrl: thumbnailUrl || undefined,
-        isActive: form.isActive,
-      });
-      // Gallery images attach one at a time to an existing product (same
-      // endpoint the detail page uses) — the product only exists now.
-      for (const url of galleryUrls) {
-        await api.post(`/admin/products/${product.id}/images`, { url });
-      }
-      setCreateOpen(false);
-      // Channel publishing still needs the product to exist first, so
-      // creation always lands on the detail page rather than staying here.
-      router.push(`/products/${product.id}`);
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function handleDelete(product: Product) {
     if (!confirm(`Delete "${product.name}"? This can't be undone.`)) return;
@@ -317,7 +188,7 @@ export default function ProductsPage() {
         description="Your master catalog — publish products to storefronts from each product's page."
         actions={
           !activeChannelId && (
-            <Button variant="primary" onClick={openCreate}>
+            <Button variant="primary" onClick={() => router.push("/products/new")}>
               New Product
             </Button>
           )
@@ -563,210 +434,6 @@ export default function ProductsPage() {
           </div>
         )}
       </Card>
-
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Product" size="xl">
-        {/* noValidate: required fields are checked in handleCreate instead,
-            so a missing field shows the same styled error banner every
-            other failure here does, not the browser's native tooltip.
-            Same two-column card format as the product detail/edit page —
-            Details on the left, Thumbnail/Gallery Images stacked on the
-            right (no Inventory card here — a product has no stock until
-            after it exists). */}
-        <form onSubmit={handleCreate} className="grid grid-cols-1 gap-6 lg:grid-cols-3" noValidate>
-          <Card className="lg:col-span-2">
-            <h2 className="mb-4 text-lg font-bold text-primary">Details</h2>
-            <div className="space-y-4">
-              <div>
-                <Label className="!text-base">SKU</Label>
-                <Input
-                  className="w-full !text-base"
-                  value={form.sku}
-                  onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
-                  placeholder="e.g. SHK-001"
-                />
-              </div>
-
-              <div>
-                <Label className="!text-base">Name</Label>
-                <Input
-                  className="w-full !text-base"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Premium Shutki"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label className="!text-base">Category</Label>
-                  <Select
-                    className="w-full !text-base"
-                    value={form.categoryId}
-                    onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
-                  >
-                    <option value="">None</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div>
-                  <Label className="!text-base">Base Price</Label>
-                  <Input
-                    className="w-full !text-base"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.basePrice}
-                    onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label className="!text-base">Unit</Label>
-                  <Input
-                    className="w-full !text-base"
-                    value={form.unit}
-                    onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
-                    placeholder="pcs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label className="!text-base">Brand</Label>
-                <Select
-                  className="w-full !text-base"
-                  value={form.brandId}
-                  onChange={(e) => setForm((f) => ({ ...f, brandId: e.target.value }))}
-                >
-                  <option value="">None</option>
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-
-              <div>
-                <Label className="!text-base">Description</Label>
-                <Textarea
-                  className="w-full !text-base"
-                  rows={7}
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                />
-              </div>
-
-              <label className="flex items-center gap-2 text-base text-foreground">
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                />
-                Active (sellable — uncheck to hide from ordering everywhere, including storefronts)
-              </label>
-
-              {formError && (
-                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
-                  {formError}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-3">
-                <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} className="!text-base">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={submitting} className="!text-base">
-                  {submitting ? "Creating…" : "Create Product"}
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          <div className="space-y-6">
-            <Card>
-              <h2 className="mb-10 text-lg font-bold text-primary">Thumbnail</h2>
-              {/* <p className="mb-3 text-sm text-foreground/50">
-                Used wherever this product shows as a small icon — order lines, inventory, and
-                product lists.
-              </p> */}
-              <div className="flex items-center justify-center gap-3">
-                {thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                  <img
-                    src={thumbnailUrl}
-                    alt="Thumbnail preview"
-                    className="h-20 w-20 shrink-0 rounded-md border border-black/10 object-cover"
-                  />
-                ) : (
-                  <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
-                    None
-                  </span>
-                )}
-                <div className="flex items-center gap-2">
-                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-fg hover:opacity-90">
-                    {uploadingThumbnail ? "Uploading…" : thumbnailUrl ? "Replace" : "Add Thumbnail"}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="hidden"
-                      disabled={uploadingThumbnail}
-                      onChange={handleThumbnailSelect}
-                    />
-                  </label>
-                  {thumbnailUrl && (
-                    <Button type="button" variant="ghost" className="!px-2.5 !py-1 !text-xs" onClick={handleRemoveThumbnail}>
-                      Remove
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {thumbnailError && <p className="mt-2 text-center text-sm text-status-cancelled">{thumbnailError}</p>}
-            </Card>
-
-            <Card>
-              <h2 className="mb-10 text-lg font-bold text-primary">Gallery Images</h2>
-              {/* <p className="mb-3 text-sm text-foreground/50">
-                The full photo gallery shown on the storefront product page — add as many as you
-                like.
-              </p> */}
-              <div className="mb-3 flex flex-wrap justify-center gap-2">
-                {galleryUrls.map((url) => (
-                  <div key={url} className="group relative">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image */}
-                    <img src={url} alt="Gallery preview" className="h-16 w-16 rounded-md object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveGalleryUrl(url)}
-                      className="absolute -right-1 -top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-status-cancelled text-xs text-white group-hover:flex"
-                      aria-label="Remove image"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                {galleryUrls.length === 0 && <p className="text-sm text-foreground/50">No gallery images yet.</p>}
-              </div>
-              <div className="flex justify-center">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-black/10 bg-white px-2.5 py-1 text-xs font-medium text-foreground hover:bg-black/5">
-                  {uploadingImage ? "Uploading…" : "Add Image"}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="hidden"
-                    disabled={uploadingImage}
-                    onChange={handleImageSelect}
-                  />
-                </label>
-              </div>
-              {imageError && <p className="mt-2 text-center text-sm text-status-cancelled">{imageError}</p>}
-            </Card>
-          </div>
-        </form>
-      </Modal>
 
       {zoomedImage && (
         <div
