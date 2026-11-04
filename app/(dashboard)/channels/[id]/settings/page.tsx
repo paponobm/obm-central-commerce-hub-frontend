@@ -12,8 +12,7 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/layout/page-header";
-import { slugify } from "@/lib/slugify";
-import type { Category, ChannelComboBanner, ChannelComboTier, ChannelHeroSlide, ChannelTrustBadge } from "@/lib/types";
+import type { Category, ChannelComboBanner, ChannelComboTier, ChannelHeroSlide, ChannelTrustBadge, Product } from "@/lib/types";
 
 interface SlideForm {
   image: string;
@@ -84,8 +83,25 @@ const TABS = [
   { key: "logoBanner", label: "Logo & Banner" },
   { key: "badges", label: "Badge & Category" },
   { key: "combo", label: "Home Page Combo" },
+  { key: "flashSale", label: "Flash Sale" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
+
+// <input type="datetime-local"> wants/returns "YYYY-MM-DDTHH:mm" in the
+// browser's local time, with no timezone — these two convert that to/from
+// the ISO string actually saved (and read by the storefront's countdown).
+function isoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 function toSlideForm(s: ChannelHeroSlide): SlideForm {
   return {
@@ -119,14 +135,16 @@ export default function ChannelSettingsPage() {
   // Up to MAX_COMBO_BANNERS separate combo promos — shown side by side on
   // larger screens once there are 2 (see the storefront's ComboBanner).
   const [comboBanners, setComboBanners] = useState<ChannelComboBanner[]>([DEFAULT_COMBO_BANNER]);
+  // Flash Sale — selected products (order = display order) + countdown.
+  const [flashSaleEnabled, setFlashSaleEnabled] = useState(false);
+  const [flashSaleEndsAt, setFlashSaleEndsAt] = useState("");
+  const [flashSaleProductIds, setFlashSaleProductIds] = useState<string[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[] | null>(null);
+  const [productToAdd, setProductToAdd] = useState("");
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
   const [editingPositionValue, setEditingPositionValue] = useState("");
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategorySlug, setNewCategorySlug] = useState("");
-  const [newCategorySlugTouched, setNewCategorySlugTouched] = useState(false);
-  const [creatingCategory, setCreatingCategory] = useState(false);
   const [existingCategoryToAdd, setExistingCategoryToAdd] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadingSlides, setUploadingSlides] = useState(false);
@@ -158,6 +176,10 @@ export default function ChannelSettingsPage() {
     setComboBanners(
       savedCombos?.length ? savedCombos.map((c) => ({ ...c, enabled: c.enabled ?? true })) : [DEFAULT_COMBO_BANNER],
     );
+    const flashSale = channel.themeConfig?.flashSale;
+    setFlashSaleEnabled(flashSale?.enabled ?? false);
+    setFlashSaleEndsAt(isoToLocalInput(flashSale?.endsAt));
+    setFlashSaleProductIds(flashSale?.productIds ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 
@@ -166,7 +188,38 @@ export default function ChannelSettingsPage() {
       .get<Category[]>("/admin/categories")
       .then(setAllCategories)
       .catch((err) => setCategoryError(err instanceof ApiError ? err.message : "Failed to load categories"));
+    api.get<Product[]>("/admin/products").then(setAllProducts).catch(() => {});
   }, []);
+
+  // Only products actually published on this storefront are offered for
+  // Flash Sale — picking from the full catalog could select one that isn't
+  // even live here yet.
+  const channelProducts = (allProducts ?? []).filter((p) =>
+    p.channels?.some((c) => c.channelId === id),
+  );
+  const orderedFlashProducts = flashSaleProductIds
+    .map((pid) => channelProducts.find((p) => p.id === pid))
+    .filter((p): p is Product => !!p);
+  const offFlashProducts = channelProducts.filter((p) => !flashSaleProductIds.includes(p.id));
+
+  function moveFlashProduct(productId: string, dir: -1 | 1) {
+    setFlashSaleProductIds((prev) => {
+      const index = prev.indexOf(productId);
+      const target = index + dir;
+      if (index < 0 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function addFlashProduct(productId: string) {
+    setFlashSaleProductIds((prev) => (prev.includes(productId) ? prev : [...prev, productId]));
+  }
+
+  function removeFlashProduct(productId: string) {
+    setFlashSaleProductIds((prev) => prev.filter((pid) => pid !== productId));
+  }
 
   // The working "is this category included on this storefront" list —
   // categorySlugs===null means every category currently counts as on.
@@ -343,42 +396,6 @@ export default function ChannelSettingsPage() {
     );
   }
 
-  // Auto-slugify only works for Latin names — most category names here are
-  // Bengali, where it produces an empty string, so the slug field is shown
-  // and editable (same slugTouched pattern as the dedicated Categories page).
-  function handleNewCategoryNameChange(value: string) {
-    setNewCategoryName(value);
-    if (!newCategorySlugTouched) setNewCategorySlug(slugify(value));
-  }
-
-  // Categories are a shared, global taxonomy (not per-channel) — creating,
-  // deleting, or re-imaging one here takes effect immediately and on every
-  // storefront that uses it, same as the dedicated Categories page. Only
-  // the on/off toggle above is specific to this channel.
-  async function handleCreateCategory() {
-    const name = newCategoryName.trim();
-    const slug = newCategorySlug.trim();
-    if (!name || !slug) return;
-    setCategoryError(null);
-    setCreatingCategory(true);
-    try {
-      const created = await api.post<Category>("/admin/categories", {
-        name,
-        slug,
-        isPublished: true,
-      });
-      setAllCategories((prev) => [...(prev ?? []), created]);
-      setCategorySlugs((prev) => (prev === null ? null : [...prev, created.slug]));
-      setNewCategoryName("");
-      setNewCategorySlug("");
-      setNewCategorySlugTouched(false);
-    } catch (err) {
-      setCategoryError(err instanceof ApiError ? err.message : "Failed to create category");
-    } finally {
-      setCreatingCategory(false);
-    }
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -424,6 +441,11 @@ export default function ChannelSettingsPage() {
             .map((t) => ({ title: t.title.trim(), description: t.description.trim(), enabled: t.enabled })),
           enabled: c.enabled,
         }));
+      themeConfig.flashSale = {
+        enabled: flashSaleEnabled,
+        endsAt: localInputToIso(flashSaleEndsAt),
+        productIds: flashSaleProductIds,
+      };
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -839,33 +861,6 @@ export default function ChannelSettingsPage() {
                       </Button>
                     </div>
                   )}
-                  {/* <div className="mt-3 flex items-center gap-2">
-                    <Input
-                      value={newCategoryName}
-                      onChange={(e) => handleNewCategoryNameChange(e.target.value)}
-                      placeholder="New category name"
-                      className="w-full text-sm"
-                    />
-                    <Input
-                      value={newCategorySlug}
-                      onChange={(e) => {
-                        setNewCategorySlug(e.target.value);
-                        setNewCategorySlugTouched(true);
-                      }}
-                      placeholder="slug"
-                      pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                      title="lowercase kebab-case, e.g. hair-care"
-                      className="w-40 text-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={creatingCategory || !newCategoryName.trim() || !newCategorySlug.trim()}
-                      onClick={handleCreateCategory}
-                    >
-                      {creatingCategory ? "Adding…" : "+ Add category"}
-                    </Button>
-                  </div> */}
                 </div>
               </div>
             )}
@@ -990,6 +985,133 @@ export default function ChannelSettingsPage() {
                     + Add another combo
                   </button>
                 )}
+              </div>
+            )}
+
+            {tab === "flashSale" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-black/10 p-3">
+                  <div className="flex items-center gap-2">
+                    <span title={flashSaleEnabled ? "On — shown on storefront" : "Off — hidden from storefront"}>
+                      <Switch checked={flashSaleEnabled} onChange={() => setFlashSaleEnabled((v) => !v)} />
+                    </span>
+                    <Label className="!mb-0">Show the homepage Flash Deal section</Label>
+                  </div>
+                  <p className="mt-2 text-xs text-foreground/50">
+                    The horizontally-scrolling deal strip right after the home page combo banner — pick which
+                    products show, in what order, and an optional countdown deadline.
+                  </p>
+                  <div className="mt-3 max-w-xs">
+                    <Label>Countdown ends at</Label>
+                    <input
+                      type="datetime-local"
+                      value={flashSaleEndsAt}
+                      onChange={(e) => setFlashSaleEndsAt(e.target.value)}
+                      className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    />
+                    <p className="mt-1 text-xs text-foreground/40">
+                      Leave blank to show the section without a countdown.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Products in this Flash Deal</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    The order below is the order shown on the storefront. Only products already published to this
+                    storefront can be added here.
+                  </p>
+                  {!allProducts ? (
+                    <p className="text-xs text-foreground/50">Loading products…</p>
+                  ) : orderedFlashProducts.length === 0 ? (
+                    <p className="text-xs text-foreground/50">No products selected yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {orderedFlashProducts.map((product, index) => (
+                        <div key={product.id} className="flex items-center gap-2">
+                          <span className="flex shrink-0 items-center gap-0.5">
+                            <span className="num grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                              {index + 1}
+                            </span>
+                            <span className="flex flex-col">
+                              <button
+                                type="button"
+                                onClick={() => moveFlashProduct(product.id, -1)}
+                                disabled={index === 0}
+                                title="Move up"
+                                className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveFlashProduct(product.id, 1)}
+                                disabled={index === orderedFlashProducts.length - 1}
+                                title="Move down"
+                                className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                              >
+                                ▼
+                              </button>
+                            </span>
+                          </span>
+                          {product.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded, not part of the Next.js image pipeline
+                            <img src={product.thumbnailUrl} alt={product.name} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                          ) : (
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/40">
+                              {product.name.charAt(0)}
+                            </span>
+                          )}
+                          <span className="flex-1">
+                            <span className="block text-sm font-medium">{product.name}</span>
+                            <span className="block text-xs text-foreground/40">{product.sku}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeFlashProduct(product.id)}
+                            className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {offFlashProducts.length > 0 && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Select
+                        value={productToAdd}
+                        onChange={(e) => setProductToAdd(e.target.value)}
+                        className="w-full text-sm"
+                      >
+                        <option value="">Add a product…</option>
+                        {offFlashProducts.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.sku})
+                          </option>
+                        ))}
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={!productToAdd}
+                        onClick={() => {
+                          addFlashProduct(productToAdd);
+                          setProductToAdd("");
+                        }}
+                      >
+                        + Add to Flash Deal
+                      </Button>
+                    </div>
+                  )}
+                  {allProducts && channelProducts.length === 0 && (
+                    <p className="mt-2 text-xs text-foreground/50">
+                      No products are published to this storefront yet — publish one from a product&rsquo;s Details
+                      page first.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

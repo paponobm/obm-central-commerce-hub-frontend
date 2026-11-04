@@ -79,12 +79,20 @@ export interface ChannelComboBanner {
   enabled: boolean;
 }
 
+export interface ChannelFlashSale {
+  enabled: boolean;
+  endsAt: string | null;
+  // Order here IS display order.
+  productIds: string[];
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
   trustBadges?: ChannelTrustBadge[];
   categorySlugs?: string[];
   comboBanners?: ChannelComboBanner[];
+  flashSale?: ChannelFlashSale;
 }
 
 export interface Channel {
