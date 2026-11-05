@@ -38,16 +38,28 @@ const EMPTY_VARIANT_ROW: VariantRowData = {
   isActive: true,
 };
 
-interface SpecRow {
-  key: number;
-  label: string;
-  value: string;
-}
-
 let idSeq = 1;
 function nextId() {
   return idSeq++;
 }
+
+// Matches the storefront's own flag lookup (relief-care-bd's
+// components/flash-deal.tsx COUNTRY_FLAGS) — keeping the same list and
+// spelling here is what makes a product's flag badge actually show up.
+const ORIGIN_COUNTRIES = [
+  "Bangladesh",
+  "India",
+  "Thailand",
+  "China",
+  "Indonesia",
+  "Malaysia",
+  "USA",
+  "UK",
+  "Germany",
+  "Japan",
+  "Pakistan",
+  "Sri Lanka",
+];
 
 // Abbreviates one option value into a SKU token — a single word becomes
 // itself (alnum only, "250g" -> "250G"); multiple words become initials
@@ -90,8 +102,11 @@ export default function NewProductPage() {
   const [unit, setUnit] = useState("pcs");
   const [categoryId, setCategoryId] = useState("");
 
-  // Specifications / Key Features
-  const [specs, setSpecs] = useState<SpecRow[]>([{ key: nextId(), label: "", value: "" }]);
+  // Specifications / Key Features — just the one field (country of origin)
+  // in practice, so it's a single dropdown rather than a generic key/value
+  // list (which only ever led to inconsistent keys like "Country" vs
+  // "Origin" across products).
+  const [origin, setOrigin] = useState("");
 
   // Thumbnail / gallery — same staged-upload pattern as before: upload
   // immediately to get a URL, attach to the product right after it's created.
@@ -159,17 +174,6 @@ export default function NewProductPage() {
     }
   }
 
-  // Specifications
-  function addSpecRow() {
-    setSpecs((rows) => [...rows, { key: nextId(), label: "", value: "" }]);
-  }
-  function updateSpecRow(key: number, patch: Partial<SpecRow>) {
-    setSpecs((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  }
-  function removeSpecRow(key: number) {
-    setSpecs((rows) => (rows.length > 1 ? rows.filter((r) => r.key !== key) : rows));
-  }
-
   // Options (attributes)
   function addOption() {
     setOptions((prev) =>
@@ -189,7 +193,10 @@ export default function NewProductPage() {
     setOptions((prev) =>
       prev.map((o) => {
         if (o.id !== id) return o;
-        const v = o.draft.trim();
+        // The option's name feeds the storefront's "২টি সাইজ · বাছুন"-style
+        // button label now, not just a cosmetic column header — so a value
+        // can't be added until it's named.
+        const v = o.name.trim() ? o.draft.trim() : "";
         if (!v || o.values.includes(v)) return { ...o, draft: "" };
         return { ...o, values: [...o.values, v], draft: "" };
       }),
@@ -357,9 +364,15 @@ export default function NewProductPage() {
       if (id) categoryIdSet.add(id);
     }
 
-    const specifications = specs
-      .filter((s) => s.label.trim())
-      .map((s) => ({ key: s.label.trim(), value: s.value.trim() }));
+    const specifications = origin.trim() ? [{ key: "Origin", value: origin.trim() }] : [];
+
+    // The storefront's "২টি সাইজ · বাছুন"-style button label — only
+    // meaningful when every variant came from exactly one named option;
+    // two or more (e.g. Size + Flavor combined) falls back to a generic
+    // "ভ্যারিয়েন্ট" label on the storefront instead of naming just one of them.
+    const usedOptions = options.filter((o) => o.name.trim() && o.values.length > 0);
+    const variantOptionLabel =
+      mode === "variable" && usedOptions.length === 1 ? usedOptions[0].name.trim() : undefined;
 
     setSubmitting(true);
     try {
@@ -381,6 +394,7 @@ export default function NewProductPage() {
         // action (Product Details tab), not something to decide at creation.
         isActive: true,
         hasVariants: mode === "variable",
+        variantOptionLabel,
         initialStock: mode === "single" ? initialStock : undefined,
         variants: variantsPayload,
         channelIds: selectedChannelIds.length ? selectedChannelIds : undefined,
@@ -522,38 +536,21 @@ export default function NewProductPage() {
           </Card>
 
           <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-primary">Specifications / Key Features</h2>
-              <Button type="button" variant="secondary" onClick={addSpecRow} className="!text-sm">
-                + Add row
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {specs.map((row) => (
-                <div key={row.key} className="grid grid-cols-[1fr_2fr_auto] items-center gap-3">
-                  <Input
-                    className="w-full !text-base"
-                    value={row.label}
-                    onChange={(e) => updateSpecRow(row.key, { label: e.target.value })}
-                    placeholder="e.g. Origin"
-                  />
-                  <Input
-                    className="w-full !text-base"
-                    value={row.value}
-                    onChange={(e) => updateSpecRow(row.key, { value: e.target.value })}
-                    placeholder="e.g. Cox's Bazar"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeSpecRow(row.key)}
-                    disabled={specs.length <= 1}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-30"
-                    aria-label="Remove row"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+            <h2 className="mb-3 text-lg font-bold text-primary">Specifications / Key Features</h2>
+            <div>
+              <Label className="!text-base">Origin</Label>
+              <Input
+                list="origin-countries"
+                className="w-full !text-base"
+                value={origin}
+                onChange={(e) => setOrigin(e.target.value)}
+                placeholder="Select or type a country"
+              />
+              <datalist id="origin-countries">
+                {ORIGIN_COUNTRIES.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
             </div>
           </Card>
 
@@ -643,7 +640,11 @@ export default function NewProductPage() {
                           onChange={(e) => updateOptionName(option.id, e.target.value)}
                           placeholder="e.g. Weight"
                         />
-                        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2 py-1.5">
+                        <div
+                          className={`flex flex-wrap items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2 py-1.5 ${
+                            option.name.trim() ? "" : "opacity-50"
+                          }`}
+                        >
                           {option.values.map((v) => (
                             <span
                               key={v}
@@ -660,7 +661,7 @@ export default function NewProductPage() {
                             </span>
                           ))}
                           <input
-                            className="min-w-[80px] flex-1 border-none text-sm outline-none"
+                            className="min-w-[80px] flex-1 border-none text-sm outline-none disabled:cursor-not-allowed"
                             value={option.draft}
                             onChange={(e) => updateOptionDraft(option.id, e.target.value)}
                             onKeyDown={(e) => {
@@ -670,7 +671,8 @@ export default function NewProductPage() {
                               }
                             }}
                             onBlur={() => addOptionValue(option.id)}
-                            placeholder="value, Enter…"
+                            disabled={!option.name.trim()}
+                            placeholder={option.name.trim() ? "value, Enter…" : "Name this option first…"}
                           />
                         </div>
                         <button

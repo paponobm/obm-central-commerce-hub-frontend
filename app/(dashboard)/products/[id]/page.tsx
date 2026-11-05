@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { Category, Channel, Product, ProductVariant } from "@/lib/types";
@@ -19,28 +20,34 @@ interface MasterForm {
   description: string;
   unit: string;
   categoryId: string;
-  isActive: boolean;
 }
 
-// Simple-product pricing + stock — its own card/save (matching the New
-// Product page's "Pricing & Variants" section), separate from the Details
-// form above it.
+// Simple-product pricing + stock — its own card (matching the New Product
+// page's "Pricing & Variants" section), separate from the Details card
+// above it, but all saved together by the one page-level Save button.
 interface PricingForm {
   basePrice: string;
   compareAtPrice: string;
   stock: string;
 }
 
-interface SpecRow {
-  key: number;
-  label: string;
-  value: string;
-}
-
-let specRowSeq = 1;
-function nextSpecRowId() {
-  return specRowSeq++;
-}
+// Matches the storefront's own flag lookup (relief-care-bd's
+// components/flash-deal.tsx COUNTRY_FLAGS) — keeping the same list and
+// spelling here is what makes a product's flag badge actually show up.
+const ORIGIN_COUNTRIES = [
+  "Bangladesh",
+  "India",
+  "Thailand",
+  "China",
+  "Indonesia",
+  "Malaysia",
+  "USA",
+  "UK",
+  "Germany",
+  "Japan",
+  "Pakistan",
+  "Sri Lanka",
+];
 
 // One row of the single Pricing & Variants table — same shape whether it
 // already exists (id set) or is a new, not-yet-saved row (id null), so the
@@ -135,27 +142,25 @@ export default function ProductDetailsTab() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [master, setMaster] = useState<MasterForm | null>(null);
-  const [masterSaving, setMasterSaving] = useState(false);
-  const [masterError, setMasterError] = useState<string | null>(null);
-  const [masterSaved, setMasterSaved] = useState(false);
 
   // Simple-product Pricing & Variants card — stock here is the product's
   // real Inventory.currentStock, edited as an absolute number but saved as
   // a delta through the same adjust endpoint the Inventory page uses.
   const [pricing, setPricing] = useState<PricingForm | null>(null);
   const [originalStock, setOriginalStock] = useState(0);
-  const [pricingSaving, setPricingSaving] = useState(false);
-  const [pricingError, setPricingError] = useState<string | null>(null);
-  const [pricingSaved, setPricingSaved] = useState(false);
 
-  // Specifications / Key Features
-  const [specs, setSpecs] = useState<SpecRow[]>([]);
+  // Specifications / Key Features — just the one field (country of origin)
+  // in practice, so it's a single dropdown rather than a generic key/value
+  // list (which only ever led to inconsistent keys like "Country" vs
+  // "Origin" across products).
+  const [origin, setOrigin] = useState("");
 
-  // Pricing & Variants (Variable product) — one flat list, one Save,
-  // exactly like the New Product page's Step 2 table.
+  // Pricing & Variants (Variable product) — one flat list, exactly like the
+  // New Product page's Step 2 table, saved by the one page-level button.
   const [variantDrafts, setVariantDrafts] = useState<VariantDraft[]>([]);
-  const [variantsSaving, setVariantsSaving] = useState(false);
-  const [variantsSaved, setVariantsSaved] = useState(false);
+  // Still used for the row-level actions that save immediately, independent
+  // of the page's main Save button: a variant's own image upload, and
+  // removing an already-saved row.
   const [variantsError, setVariantsError] = useState<string | null>(null);
   const [genOptions, setGenOptions] = useState<ProductOption[]>([]);
 
@@ -170,9 +175,17 @@ export default function ProductDetailsTab() {
   // override table.
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [channelCategoryId, setChannelCategoryId] = useState<Record<string, string>>({});
-  const [publishSaving, setPublishSaving] = useState(false);
-  const [publishSaved, setPublishSaved] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
+
+  // The one page-level Save — persists Details, Specifications, Pricing &
+  // Variants, and Publish together (see handleSaveAll).
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function loadProduct() {
     try {
@@ -187,7 +200,6 @@ export default function ProductDetailsTab() {
         description: data.description ?? "",
         unit: data.unit,
         categoryId: data.categoryId ?? "",
-        isActive: data.isActive,
       });
       const currentStock = data.inventory?.currentStock ?? 0;
       setPricing({
@@ -196,14 +208,17 @@ export default function ProductDetailsTab() {
         stock: String(currentStock),
       });
       setOriginalStock(currentStock);
-      setSpecs(
-        (data.specifications ?? []).map((s) => ({ key: nextSpecRowId(), label: s.key, value: s.value })),
-      );
+      // "Origin" is the only key this page ever writes now, but older
+      // products may still have it saved as "Country" from before this
+      // became a single dedicated field — read either so nothing's lost.
+      const originSpec = (data.specifications ?? []).find((s) => /^origin$|^country$/i.test(s.key));
+      setOrigin(originSpec?.value ?? "");
       setVariantDrafts((data.variants ?? []).map(draftFromVariant));
       // Seed Step 1 with the existing variants' own labels (e.g. "red") as
-      // an unnamed option's value tags, so they're visible and the admin
-      // can just add more values (e.g. "blue") instead of retyping them —
-      // only on first load, so it never clobbers an in-progress edit.
+      // one option's value tags, named from the product's own saved
+      // variantOptionLabel when it has one (e.g. "সাইজ") so it doesn't come
+      // back blank every time — only on first load, so it never clobbers an
+      // in-progress edit.
       setGenOptions((prev) => {
         if (prev.length > 0) return prev;
         const labels = Array.from(
@@ -214,7 +229,7 @@ export default function ProductDetailsTab() {
           ),
         );
         return labels.length > 0
-          ? [{ id: nextOptionId(), name: "", values: labels, draft: "" }]
+          ? [{ id: nextOptionId(), name: data.variantOptionLabel ?? "", values: labels, draft: "" }]
           : prev;
       });
       const channelRows = await api.get<{ channelId: string; isPublished: boolean }[]>(
@@ -252,78 +267,6 @@ export default function ProductDetailsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
-  async function handleMasterSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!master) return;
-    setMasterError(null);
-    setMasterSaving(true);
-    setMasterSaved(false);
-    const specifications = specs
-      .filter((s) => s.label.trim())
-      .map((s) => ({ key: s.label.trim(), value: s.value.trim() }));
-    try {
-      await api.patch(`/admin/products/${productId}`, {
-        name: master.name,
-        sku: master.baseSku.trim(),
-        slug: master.urlSlug.trim() || undefined,
-        slogan: master.slogan.trim() || undefined,
-        shortDescription: master.shortDescription.trim() || undefined,
-        description: master.description || undefined,
-        specifications,
-        unit: master.unit || undefined,
-        categoryId: master.categoryId || undefined,
-        isActive: master.isActive,
-      });
-      await loadProduct();
-      setMasterSaved(true);
-      setTimeout(() => setMasterSaved(false), 2000);
-    } catch (err) {
-      setMasterError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
-    } finally {
-      setMasterSaving(false);
-    }
-  }
-
-  async function handlePricingSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!pricing) return;
-    setPricingError(null);
-    setPricingSaving(true);
-    setPricingSaved(false);
-    try {
-      await api.patch(`/admin/products/${productId}`, {
-        basePrice: Number(pricing.basePrice),
-        compareAtPrice: pricing.compareAtPrice ? Number(pricing.compareAtPrice) : null,
-      });
-      const newStock = pricing.stock ? Number(pricing.stock) : 0;
-      const delta = newStock - originalStock;
-      if (delta !== 0) {
-        await api.post(`/admin/inventory/${productId}/adjust`, {
-          delta,
-          note: "Stock set from the product's Pricing & Variants card",
-        });
-      }
-      await loadProduct();
-      setPricingSaved(true);
-      setTimeout(() => setPricingSaved(false), 2000);
-    } catch (err) {
-      setPricingError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
-    } finally {
-      setPricingSaving(false);
-    }
-  }
-
-  // Specifications
-  function addSpecRow() {
-    setSpecs((rows) => [...rows, { key: nextSpecRowId(), label: "", value: "" }]);
-  }
-  function updateSpecRow(key: number, patch: Partial<SpecRow>) {
-    setSpecs((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  }
-  function removeSpecRow(key: number) {
-    setSpecs((rows) => rows.filter((r) => r.key !== key));
-  }
-
   function updateVariantDraft(index: number, patch: Partial<VariantDraft>) {
     setVariantDrafts((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
@@ -352,7 +295,11 @@ export default function ProductDetailsTab() {
     setGenOptions((prev) =>
       prev.map((o) => {
         if (o.id !== id) return o;
-        const v = o.draft.trim();
+        // The option's name feeds the storefront's "২টি সাইজ · বাছুন"-style
+        // button label now, not just a cosmetic column header — so a value
+        // can't be added until it's named (including the pre-seeded,
+        // not-yet-named option built from this product's existing labels).
+        const v = o.name.trim() ? o.draft.trim() : "";
         if (!v || o.values.includes(v)) return { ...o, draft: "" };
         return { ...o, values: [...o.values, v], draft: "" };
       }),
@@ -447,39 +394,6 @@ export default function ProductDetailsTab() {
     setVariantDrafts((rows) => rows.map((r) => ({ ...r, stock: value.trim() })));
   }
 
-  async function handleSaveVariants() {
-    setVariantsError(null);
-    setVariantsSaving(true);
-    setVariantsSaved(false);
-    try {
-      for (const row of variantDrafts) {
-        if (!row.sku.trim() || !row.basePrice) continue;
-        const payload = {
-          sku: row.sku.trim(),
-          unitLabel: row.unitLabel.trim() || undefined,
-          basePrice: Number(row.basePrice),
-          compareAtPrice: row.compareAtPrice ? Number(row.compareAtPrice) : undefined,
-          stock: row.stock ? Number(row.stock) : 0,
-          imageUrl: row.imageUrl || undefined,
-          isDefault: row.isDefault,
-          isActive: row.isActive,
-        };
-        if (row.id) {
-          await api.patch(`/admin/products/${productId}/variants/${row.id}`, payload);
-        } else {
-          await api.post(`/admin/products/${productId}/variants`, payload);
-        }
-      }
-      await loadProduct();
-      setVariantsSaved(true);
-      setTimeout(() => setVariantsSaved(false), 2000);
-    } catch (err) {
-      setVariantsError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
-    } finally {
-      setVariantsSaving(false);
-    }
-  }
-
   async function handleImageSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -554,11 +468,80 @@ export default function ProductDetailsTab() {
     return published.filter((c) => curatedSlugs.includes(c.slug));
   }
 
-  async function handleSavePublish() {
-    setPublishError(null);
-    setPublishSaved(false);
-    setPublishSaving(true);
+  // The one page-level Save — persists everything on this page together:
+  // Details + Specifications (Origin), Pricing & Variants, and Publish.
+  // Runs each section in sequence and stops at the first failure, so a
+  // save error always means "something after this point wasn't saved"
+  // rather than a silently partial save.
+  async function handleSaveAll() {
+    if (!master || !pricing || !product) return;
+    setSaveError(null);
+    setSaving(true);
+    setSaved(false);
     try {
+      const specifications = origin.trim() ? [{ key: "Origin", value: origin.trim() }] : [];
+      // The storefront's "২টি সাইজ · বাছুন"-style button label — only
+      // updated when Step 1 clearly has exactly one (→ its name) or two-plus
+      // (→ null, generic "ভ্যারিয়েন্ট") named+valued options this session;
+      // otherwise omitted entirely so a save that never touched Step 1
+      // doesn't wipe out a label set in an earlier session.
+      const usedGenOptions = genOptions.filter((o) => o.name.trim() && o.values.length > 0);
+      const variantOptionLabel =
+        usedGenOptions.length === 1
+          ? usedGenOptions[0].name.trim()
+          : usedGenOptions.length >= 2
+            ? null
+            : undefined;
+      await api.patch(`/admin/products/${productId}`, {
+        name: master.name,
+        sku: master.baseSku.trim(),
+        slug: master.urlSlug.trim() || undefined,
+        slogan: master.slogan.trim() || undefined,
+        shortDescription: master.shortDescription.trim() || undefined,
+        description: master.description || undefined,
+        specifications,
+        unit: master.unit || undefined,
+        categoryId: master.categoryId || undefined,
+        ...(variantOptionLabel !== undefined ? { variantOptionLabel } : {}),
+      });
+
+      if (!product.hasVariants) {
+        if (!pricing.basePrice) {
+          throw new Error("Sell Price is required.");
+        }
+        await api.patch(`/admin/products/${productId}`, {
+          basePrice: Number(pricing.basePrice),
+          compareAtPrice: pricing.compareAtPrice ? Number(pricing.compareAtPrice) : null,
+        });
+        const newStock = pricing.stock ? Number(pricing.stock) : 0;
+        const delta = newStock - originalStock;
+        if (delta !== 0) {
+          await api.post(`/admin/inventory/${productId}/adjust`, {
+            delta,
+            note: "Stock set from the product's Pricing & Variants card",
+          });
+        }
+      } else {
+        for (const row of variantDrafts) {
+          if (!row.sku.trim() || !row.basePrice) continue;
+          const payload = {
+            sku: row.sku.trim(),
+            unitLabel: row.unitLabel.trim() || undefined,
+            basePrice: Number(row.basePrice),
+            compareAtPrice: row.compareAtPrice ? Number(row.compareAtPrice) : undefined,
+            stock: row.stock ? Number(row.stock) : 0,
+            imageUrl: row.imageUrl || undefined,
+            isDefault: row.isDefault,
+            isActive: row.isActive,
+          };
+          if (row.id) {
+            await api.patch(`/admin/products/${productId}/variants/${row.id}`, payload);
+          } else {
+            await api.post(`/admin/products/${productId}/variants`, payload);
+          }
+        }
+      }
+
       const current = await api.get<{ channelId: string; isPublished: boolean }[]>(
         `/admin/products/${productId}/channels`,
       );
@@ -579,12 +562,16 @@ export default function ProductDetailsTab() {
           categoryIds: Array.from(categoryIdSet),
         });
       }
-      setPublishSaved(true);
-      setTimeout(() => setPublishSaved(false), 2000);
+
+      await loadProduct();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      setPublishError(err instanceof ApiError ? err.message : "Failed to save publish changes");
+      setSaveError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Something went wrong. Try again.",
+      );
     } finally {
-      setPublishSaving(false);
+      setSaving(false);
     }
   }
 
@@ -620,7 +607,7 @@ export default function ProductDetailsTab() {
       <div className="space-y-6 lg:col-span-2">
         <Card>
           <h2 className="mb-4 text-lg font-bold text-primary">Details</h2>
-          <form onSubmit={handleMasterSubmit} className="space-y-4">
+          <div className="space-y-4">
             <div>
               <Label className="!text-base !font-bold">Product Name</Label>
               <Input
@@ -716,72 +703,26 @@ export default function ProductDetailsTab() {
                 onChange={(html) => setMaster((m) => (m ? { ...m, description: html } : m))}
               />
             </div>
-
-            <label className="flex items-center gap-2 text-base text-foreground">
-              <input
-                type="checkbox"
-                checked={master.isActive}
-                onChange={(e) =>
-                  setMaster((m) => (m ? { ...m, isActive: e.target.checked } : m))
-                }
-              />
-              Active (sellable — uncheck to hide from ordering everywhere, including storefronts)
-            </label>
-
-            {masterError && (
-              <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
-                {masterError}
-              </p>
-            )}
-
-            <div className="flex items-center justify-end gap-3">
-              <Button type="submit" disabled={masterSaving}>
-                {masterSaving ? "Saving…" : "Save Changes"}
-              </Button>
-              {masterSaved && <span className="text-base text-status-delivered">Saved</span>}
-            </div>
-          </form>
+          </div>
         </Card>
 
         <Card>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-primary">Specifications / Key Features</h2>
-            <Button type="button" variant="secondary" onClick={addSpecRow} className="!text-sm">
-              + Add row
-            </Button>
+          <h2 className="mb-3 text-lg font-bold text-primary">Specifications / Key Features</h2>
+          <div>
+            <Label className="!text-base">Origin</Label>
+            <Input
+              list="origin-countries"
+              className="w-full !text-base"
+              value={origin}
+              onChange={(e) => setOrigin(e.target.value)}
+              placeholder="Select or type a country"
+            />
+            <datalist id="origin-countries">
+              {ORIGIN_COUNTRIES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
           </div>
-          <div className="space-y-2">
-            {specs.length === 0 && (
-              <p className="text-sm text-foreground/50">No specifications yet.</p>
-            )}
-            {specs.map((row) => (
-              <div key={row.key} className="grid grid-cols-[1fr_2fr_auto] items-center gap-3">
-                <Input
-                  className="w-full !text-base"
-                  value={row.label}
-                  onChange={(e) => updateSpecRow(row.key, { label: e.target.value })}
-                  placeholder="e.g. Origin"
-                />
-                <Input
-                  className="w-full !text-base"
-                  value={row.value}
-                  onChange={(e) => updateSpecRow(row.key, { value: e.target.value })}
-                  placeholder="e.g. Cox's Bazar"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeSpecRow(row.key)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-status-cancelled hover:bg-status-cancelled/10"
-                  aria-label="Remove row"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-foreground/40">
-            Saved together with the Details form above.
-          </p>
         </Card>
 
         <Card>
@@ -808,57 +749,44 @@ export default function ProductDetailsTab() {
           </div>
 
           {!product.hasVariants && pricing && (
-            <form onSubmit={handlePricingSubmit} className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <Label className="!text-base">Sell Price</Label>
-                  <Input
-                    required
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="w-full !text-base"
-                    value={pricing.basePrice}
-                    onChange={(e) => setPricing((p) => (p ? { ...p, basePrice: e.target.value } : p))}
-                  />
-                </div>
-                <div>
-                  <Label className="!text-base">Regular Price</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="w-full !text-base"
-                    value={pricing.compareAtPrice}
-                    onChange={(e) =>
-                      setPricing((p) => (p ? { ...p, compareAtPrice: e.target.value } : p))
-                    }
-                    placeholder="Optional"
-                  />
-                </div>
-                <div>
-                  <Label className="!text-base">Stock</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    className="w-full !text-base"
-                    value={pricing.stock}
-                    onChange={(e) => setPricing((p) => (p ? { ...p, stock: e.target.value } : p))}
-                  />
-                </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="!text-base">Sell Price</Label>
+                <Input
+                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full !text-base"
+                  value={pricing.basePrice}
+                  onChange={(e) => setPricing((p) => (p ? { ...p, basePrice: e.target.value } : p))}
+                />
               </div>
-              {pricingError && (
-                <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-                  {pricingError}
-                </p>
-              )}
-              <div className="flex items-center justify-end gap-3">
-                <Button type="submit" disabled={pricingSaving} className="!text-sm">
-                  {pricingSaving ? "Saving…" : "Save"}
-                </Button>
-                {pricingSaved && <span className="text-sm text-status-delivered">Saved</span>}
+              <div>
+                <Label className="!text-base">Regular Price</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full !text-base"
+                  value={pricing.compareAtPrice}
+                  onChange={(e) =>
+                    setPricing((p) => (p ? { ...p, compareAtPrice: e.target.value } : p))
+                  }
+                  placeholder="Optional"
+                />
               </div>
-            </form>
+              <div>
+                <Label className="!text-base">Stock</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  className="w-full !text-base"
+                  value={pricing.stock}
+                  onChange={(e) => setPricing((p) => (p ? { ...p, stock: e.target.value } : p))}
+                />
+              </div>
+            </div>
           )}
 
           {product.hasVariants && (
@@ -881,7 +809,11 @@ export default function ProductDetailsTab() {
                         onChange={(e) => updateGenOptionName(option.id, e.target.value)}
                         placeholder="e.g. Weight"
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2 py-1.5">
+                      <div
+                        className={`flex flex-wrap items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2 py-1.5 ${
+                          option.name.trim() ? "" : "opacity-50"
+                        }`}
+                      >
                         {option.values.map((v) => (
                           <span
                             key={v}
@@ -898,7 +830,7 @@ export default function ProductDetailsTab() {
                           </span>
                         ))}
                         <input
-                          className="min-w-[80px] flex-1 border-none text-sm outline-none"
+                          className="min-w-[80px] flex-1 border-none text-sm outline-none disabled:cursor-not-allowed"
                           value={option.draft}
                           onChange={(e) => updateGenOptionDraft(option.id, e.target.value)}
                           onKeyDown={(e) => {
@@ -908,7 +840,8 @@ export default function ProductDetailsTab() {
                             }
                           }}
                           onBlur={() => addGenOptionValue(option.id)}
-                          placeholder="value, Enter…"
+                          disabled={!option.name.trim()}
+                          placeholder={option.name.trim() ? "value, Enter…" : "Name this option first…"}
                         />
                       </div>
                       <button
@@ -1073,16 +1006,10 @@ export default function ProductDetailsTab() {
                 </table>
               </div>
 
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-3">
                 <Button type="button" variant="secondary" onClick={addVariantDraftRow} className="!text-sm">
                   + Add row
                 </Button>
-                <div className="flex items-center gap-3">
-                  {variantsSaved && <span className="text-sm text-status-delivered">Saved</span>}
-                  <Button type="button" disabled={variantsSaving} onClick={handleSaveVariants} className="!text-sm">
-                    {variantsSaving ? "Saving…" : "Save"}
-                  </Button>
-                </div>
               </div>
               {variantsError && (
                 <p className="mt-2 text-sm text-status-cancelled">{variantsError}</p>
@@ -1231,19 +1158,26 @@ export default function ProductDetailsTab() {
               );
             })}
           </div>
-          {publishError && (
-            <p className="mt-3 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-              {publishError}
-            </p>
-          )}
-          <div className="mt-3 flex items-center justify-end gap-3">
-            <Button type="button" disabled={publishSaving} onClick={handleSavePublish} className="!text-sm">
-              {publishSaving ? "Saving…" : "Save"}
-            </Button>
-            {publishSaved && <span className="text-sm text-status-delivered">Saved</span>}
-          </div>
         </Card>
       </div>
+
+      {/* One page-level Save, portaled straight to <body> so it's truly
+          fixed to the viewport (nested inside the page, "fixed" gets
+          clipped/dragged by the dashboard layout's own scrolling <main>) —
+          same pattern as the Channel Settings page's Save bar. Persists
+          Details, Specifications, Pricing & Variants, and Publish together;
+          document.body only exists once mounted on the client. */}
+      {mounted &&
+        createPortal(
+          <div className="fixed bottom-6 right-6 z-20 flex items-center gap-3 rounded-card border border-black/5 bg-card p-3 shadow-card">
+            {saveError && <span className="max-w-xs text-sm text-status-cancelled">{saveError}</span>}
+            {saved && <span className="text-sm text-status-delivered">Saved</span>}
+            <Button onClick={handleSaveAll} disabled={saving}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

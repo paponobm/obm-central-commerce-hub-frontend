@@ -181,6 +181,11 @@ export interface Product {
   categoryId: string | null;
   brandId: string | null;
   hasVariants: boolean;
+  // The attribute name behind this product's variants (e.g. "সাইজ") — set
+  // from Pricing & Variants' "Step 1 — Options" generator when exactly one
+  // attribute was used. Null means no variants, variants added without
+  // that generator, or more than one attribute combined.
+  variantOptionLabel: string | null;
   // The single image shown wherever a small product icon is needed (order
   // lines, inventory, product lists) — distinct from `images`, the
   // storefront's full gallery. Falls back to images[0] on the backend
