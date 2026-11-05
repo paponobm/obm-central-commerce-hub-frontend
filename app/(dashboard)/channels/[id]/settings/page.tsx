@@ -23,6 +23,24 @@ interface SlideForm {
   couponCode: string;
 }
 
+interface ReviewForm {
+  customerName: string;
+  location: string;
+  rating: number;
+  text: string;
+  productId: string;
+  enabled: boolean;
+}
+
+const EMPTY_REVIEW: ReviewForm = {
+  customerName: "",
+  location: "",
+  rating: 5,
+  text: "",
+  productId: "",
+  enabled: true,
+};
+
 // Matches the storefront's own fallback text+icon (components/trust-strip.tsx)
 // — shown pre-filled here so the admin sees what's currently live and edits
 // from there.
@@ -84,6 +102,7 @@ const TABS = [
   { key: "badges", label: "Badge & Category" },
   { key: "combo", label: "Home Page Combo" },
   { key: "flashSale", label: "Flash Sale" },
+  { key: "reviews", label: "Review" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -141,6 +160,9 @@ export default function ChannelSettingsPage() {
   const [flashSaleProductIds, setFlashSaleProductIds] = useState<string[]>([]);
   const [allProducts, setAllProducts] = useState<Product[] | null>(null);
   const [productToAdd, setProductToAdd] = useState("");
+  // Review — admin-entered testimonials, each optionally linked to a real
+  // product on this storefront (same channelProducts list as Flash Sale).
+  const [reviews, setReviews] = useState<ReviewForm[]>([]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -180,6 +202,16 @@ export default function ChannelSettingsPage() {
     setFlashSaleEnabled(flashSale?.enabled ?? false);
     setFlashSaleEndsAt(isoToLocalInput(flashSale?.endsAt));
     setFlashSaleProductIds(flashSale?.productIds ?? []);
+    setReviews(
+      (channel.themeConfig?.reviews ?? []).map((r) => ({
+        customerName: r.customerName,
+        location: r.location ?? "",
+        rating: r.rating,
+        text: r.text,
+        productId: r.productId ?? "",
+        enabled: r.enabled ?? true,
+      })),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 
@@ -219,6 +251,16 @@ export default function ChannelSettingsPage() {
 
   function removeFlashProduct(productId: string) {
     setFlashSaleProductIds((prev) => prev.filter((pid) => pid !== productId));
+  }
+
+  function addReview() {
+    setReviews((prev) => [...prev, { ...EMPTY_REVIEW }]);
+  }
+  function removeReview(index: number) {
+    setReviews((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updateReview(index: number, patch: Partial<ReviewForm>) {
+    setReviews((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
 
   // The working "is this category included on this storefront" list —
@@ -446,6 +488,18 @@ export default function ChannelSettingsPage() {
         endsAt: localInputToIso(flashSaleEndsAt),
         productIds: flashSaleProductIds,
       };
+      // Blank reviews (never given a name or text) are dropped, same as
+      // blank combos/tiers elsewhere on this page.
+      themeConfig.reviews = reviews
+        .filter((r) => r.customerName.trim() && r.text.trim())
+        .map((r) => ({
+          customerName: r.customerName.trim(),
+          location: r.location.trim() || undefined,
+          rating: r.rating,
+          text: r.text.trim(),
+          productId: r.productId || undefined,
+          enabled: r.enabled,
+        }));
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -1112,6 +1166,114 @@ export default function ChannelSettingsPage() {
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {tab === "reviews" && (
+              <div className="space-y-4">
+                <p className="text-xs text-foreground/50">
+                  Customer testimonials shown in the homepage&rsquo;s &ldquo;কাস্টমারদের অভিজ্ঞতা&rdquo; section —
+                  type in reviews you&rsquo;ve actually collected (e.g. over WhatsApp/phone). Not a public
+                  submission form; nothing shows here until you add it. Linking a product is optional.
+                </p>
+                {reviews.length === 0 && (
+                  <p className="text-xs text-foreground/50">No reviews added yet.</p>
+                )}
+                {reviews.map((review, index) => (
+                  <div
+                    key={index}
+                    className={`rounded-lg border border-black/10 p-3 ${review.enabled ? "" : "opacity-50"}`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span title={review.enabled ? "On — shown on storefront" : "Off — hidden from storefront"}>
+                          <Switch
+                            checked={review.enabled}
+                            onChange={() => updateReview(index, { enabled: !review.enabled })}
+                          />
+                        </span>
+                        <Label className="!mb-0">Review {index + 1}</Label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeReview(index)}
+                        className="rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="!text-sm">Customer name</Label>
+                        <Input
+                          value={review.customerName}
+                          onChange={(e) => updateReview(index, { customerName: e.target.value })}
+                          placeholder="সাবরিনা"
+                          className="w-full text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="!text-sm">Location (optional)</Label>
+                        <Input
+                          value={review.location}
+                          onChange={(e) => updateReview(index, { location: e.target.value })}
+                          placeholder="মিরপুর, ঢাকা"
+                          className="w-full text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="!text-sm">Rating</Label>
+                        <Select
+                          value={String(review.rating)}
+                          onChange={(e) => updateReview(index, { rating: Number(e.target.value) })}
+                          className="w-full text-sm"
+                        >
+                          {[5, 4, 3, 2, 1].map((n) => (
+                            <option key={n} value={n}>
+                              {"★".repeat(n)}
+                              {"☆".repeat(5 - n)} ({n})
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="!text-sm">Linked product (optional)</Label>
+                        <Select
+                          value={review.productId}
+                          onChange={(e) => updateReview(index, { productId: e.target.value })}
+                          className="w-full text-sm"
+                        >
+                          <option value="">None</option>
+                          {channelProducts.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.sku})
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <Label className="!text-sm">Review text</Label>
+                      <Textarea
+                        value={review.text}
+                        onChange={(e) => updateReview(index, { text: e.target.value })}
+                        rows={2}
+                        maxLength={500}
+                        className="w-full text-sm"
+                        placeholder="দাদের জন্য অনেক কিছু ট্রাই করেছি। এই ক্রিম এক সপ্তাহ নিয়মিত লাগানোর পর চুলকানি অনেক কমেছে।"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addReview}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                >
+                  + Add review
+                </button>
               </div>
             )}
           </div>

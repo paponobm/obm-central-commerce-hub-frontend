@@ -86,6 +86,17 @@ export interface ChannelFlashSale {
   productIds: string[];
 }
 
+export interface ChannelReview {
+  customerName: string;
+  location?: string;
+  rating: number;
+  text: string;
+  // A real product's id on this channel — resolved to name/slug live by
+  // the storefront, so this never points at a stale/dead product.
+  productId?: string;
+  enabled?: boolean;
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
@@ -93,6 +104,7 @@ export interface ChannelThemeConfig {
   categorySlugs?: string[];
   comboBanners?: ChannelComboBanner[];
   flashSale?: ChannelFlashSale;
+  reviews?: ChannelReview[];
 }
 
 export interface Channel {
