@@ -41,6 +41,20 @@ const EMPTY_REVIEW: ReviewForm = {
   enabled: true,
 };
 
+interface HealthTipForm {
+  title: string;
+  categoryId: string;
+  readMinutes: string;
+  enabled: boolean;
+}
+
+const EMPTY_HEALTH_TIP: HealthTipForm = {
+  title: "",
+  categoryId: "",
+  readMinutes: "3",
+  enabled: true,
+};
+
 // Matches the storefront's own fallback text+icon (components/trust-strip.tsx)
 // — shown pre-filled here so the admin sees what's currently live and edits
 // from there.
@@ -103,6 +117,7 @@ const TABS = [
   { key: "combo", label: "Home Page Combo" },
   { key: "flashSale", label: "Flash Sale" },
   { key: "reviews", label: "Review" },
+  { key: "healthTips", label: "Health Tips" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -163,6 +178,9 @@ export default function ChannelSettingsPage() {
   // Review — admin-entered testimonials, each optionally linked to a real
   // product on this storefront (same channelProducts list as Flash Sale).
   const [reviews, setReviews] = useState<ReviewForm[]>([]);
+  // Health Tips — admin-entered article teasers, each optionally linked to
+  // a real shared category (same list the Categories/Badge tab uses).
+  const [healthTips, setHealthTips] = useState<HealthTipForm[]>([]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -210,6 +228,14 @@ export default function ChannelSettingsPage() {
         text: r.text,
         productId: r.productId ?? "",
         enabled: r.enabled ?? true,
+      })),
+    );
+    setHealthTips(
+      (channel.themeConfig?.healthTips ?? []).map((t) => ({
+        title: t.title,
+        categoryId: t.categoryId ?? "",
+        readMinutes: t.readMinutes !== undefined ? String(t.readMinutes) : "",
+        enabled: t.enabled ?? true,
       })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -261,6 +287,16 @@ export default function ChannelSettingsPage() {
   }
   function updateReview(index: number, patch: Partial<ReviewForm>) {
     setReviews((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  }
+
+  function addHealthTip() {
+    setHealthTips((prev) => [...prev, { ...EMPTY_HEALTH_TIP }]);
+  }
+  function removeHealthTip(index: number) {
+    setHealthTips((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updateHealthTip(index: number, patch: Partial<HealthTipForm>) {
+    setHealthTips((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
   }
 
   // The working "is this category included on this storefront" list —
@@ -499,6 +535,15 @@ export default function ChannelSettingsPage() {
           text: r.text.trim(),
           productId: r.productId || undefined,
           enabled: r.enabled,
+        }));
+      // Blank tips (never given a title) are dropped, same as blank reviews.
+      themeConfig.healthTips = healthTips
+        .filter((t) => t.title.trim())
+        .map((t) => ({
+          title: t.title.trim(),
+          categoryId: t.categoryId || undefined,
+          readMinutes: t.readMinutes ? Number(t.readMinutes) : undefined,
+          enabled: t.enabled,
         }));
 
       await api.patch(`/admin/channels/${id}`, {
@@ -1273,6 +1318,89 @@ export default function ChannelSettingsPage() {
                   className="inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
                 >
                   + Add review
+                </button>
+              </div>
+            )}
+
+            {tab === "healthTips" && (
+              <div className="space-y-4">
+                <p className="text-xs text-foreground/50">
+                  Article teaser cards shown in the homepage&rsquo;s &ldquo;স্বাস্থ্য টিপস&rdquo; section — just a
+                  title, an optional category (colors the card the same as that category elsewhere on the site),
+                  and a read time. No article page exists yet, just the teaser.
+                </p>
+                {healthTips.length === 0 && (
+                  <p className="text-xs text-foreground/50">No health tips added yet.</p>
+                )}
+                {healthTips.map((tip, index) => (
+                  <div
+                    key={index}
+                    className={`rounded-lg border border-black/10 p-3 ${tip.enabled ? "" : "opacity-50"}`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span title={tip.enabled ? "On — shown on storefront" : "Off — hidden from storefront"}>
+                          <Switch
+                            checked={tip.enabled}
+                            onChange={() => updateHealthTip(index, { enabled: !tip.enabled })}
+                          />
+                        </span>
+                        <Label className="!mb-0">Tip {index + 1}</Label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeHealthTip(index)}
+                        className="rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div>
+                      <Label className="!text-sm">Title</Label>
+                      <Input
+                        value={tip.title}
+                        onChange={(e) => updateHealthTip(index, { title: e.target.value })}
+                        placeholder="শীতে পা ফাটা রোধের ৫টি সহজ উপায়"
+                        maxLength={120}
+                        className="w-full text-sm"
+                      />
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="!text-sm">Category (optional)</Label>
+                        <Select
+                          value={tip.categoryId}
+                          onChange={(e) => updateHealthTip(index, { categoryId: e.target.value })}
+                          className="w-full text-sm"
+                        >
+                          <option value="">None</option>
+                          {(allCategories ?? []).map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="!text-sm">Read time (minutes)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={60}
+                          value={tip.readMinutes}
+                          onChange={(e) => updateHealthTip(index, { readMinutes: e.target.value })}
+                          className="w-full text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addHealthTip}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                >
+                  + Add health tip
                 </button>
               </div>
             )}

@@ -97,6 +97,15 @@ export interface ChannelReview {
   enabled?: boolean;
 }
 
+export interface ChannelHealthTip {
+  title: string;
+  // A real, shared Category's id — resolved to a name/color live by the
+  // storefront, so this never points at a stale/dead category.
+  categoryId?: string;
+  readMinutes?: number;
+  enabled?: boolean;
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
@@ -104,6 +113,7 @@ export interface ChannelThemeConfig {
   categorySlugs?: string[];
   comboBanners?: ChannelComboBanner[];
   flashSale?: ChannelFlashSale;
+  healthTips?: ChannelHealthTip[];
   reviews?: ChannelReview[];
 }
 
