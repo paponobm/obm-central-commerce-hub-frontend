@@ -12,7 +12,16 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/layout/page-header";
-import type { Category, ChannelComboBanner, ChannelComboTier, ChannelHeroSlide, ChannelTrustBadge, Product } from "@/lib/types";
+import type {
+  Category,
+  ChannelComboBanner,
+  ChannelComboTier,
+  ChannelHeroSlide,
+  ChannelSocialLink,
+  ChannelSocialPlatform,
+  ChannelTrustBadge,
+  Product,
+} from "@/lib/types";
 
 interface SlideForm {
   image: string;
@@ -118,8 +127,21 @@ const TABS = [
   { key: "flashSale", label: "Flash Sale" },
   { key: "reviews", label: "Review" },
   { key: "healthTips", label: "Health Tips" },
+  { key: "social", label: "Social & Contact" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
+
+// Must match SOCIAL_LINK_PLATFORMS in the backend's social-link.dto.ts, and
+// the PLATFORM_ICONS map in the storefront's side-menu component.
+const SOCIAL_PLATFORM_OPTIONS: { value: ChannelSocialPlatform; label: string }[] = [
+  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "youtube", label: "YouTube" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "website", label: "Website" },
+];
+const MAX_SOCIAL_LINKS = 8;
 
 // <input type="datetime-local"> wants/returns "YYYY-MM-DDTHH:mm" in the
 // browser's local time, with no timezone — these two convert that to/from
@@ -181,6 +203,10 @@ export default function ChannelSettingsPage() {
   // Health Tips — admin-entered article teasers, each optionally linked to
   // a real shared category (same list the Categories/Badge tab uses).
   const [healthTips, setHealthTips] = useState<HealthTipForm[]>([]);
+  // Social & Contact — the storefront side menu's "কাস্টমার কেয়ার" phone
+  // number and "আমাদের ফলো করুন" social links.
+  const [customerCarePhone, setCustomerCarePhone] = useState("");
+  const [socialLinks, setSocialLinks] = useState<ChannelSocialLink[]>([]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -238,6 +264,8 @@ export default function ChannelSettingsPage() {
         enabled: t.enabled ?? true,
       })),
     );
+    setCustomerCarePhone(channel.themeConfig?.customerCarePhone ?? "");
+    setSocialLinks(channel.themeConfig?.socialLinks ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 
@@ -297,6 +325,18 @@ export default function ChannelSettingsPage() {
   }
   function updateHealthTip(index: number, patch: Partial<HealthTipForm>) {
     setHealthTips((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+  }
+
+  function addSocialLink() {
+    setSocialLinks((prev) =>
+      prev.length >= MAX_SOCIAL_LINKS ? prev : [...prev, { platform: "facebook", url: "" }],
+    );
+  }
+  function removeSocialLink(index: number) {
+    setSocialLinks((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updateSocialLink(index: number, patch: Partial<ChannelSocialLink>) {
+    setSocialLinks((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }
 
   // The working "is this category included on this storefront" list —
@@ -545,6 +585,11 @@ export default function ChannelSettingsPage() {
           readMinutes: t.readMinutes ? Number(t.readMinutes) : undefined,
           enabled: t.enabled,
         }));
+      themeConfig.customerCarePhone = customerCarePhone.trim() || undefined;
+      // Blank URLs (row added but never filled in) are dropped.
+      themeConfig.socialLinks = socialLinks
+        .filter((s) => s.url.trim())
+        .map((s) => ({ platform: s.platform, url: s.url.trim() }));
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -1402,6 +1447,74 @@ export default function ChannelSettingsPage() {
                 >
                   + Add health tip
                 </button>
+              </div>
+            )}
+
+            {tab === "social" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Customer care number</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    Shown (and WhatsApp-linked/copyable) in the storefront&rsquo;s side menu. Leave blank to hide
+                    that box.
+                  </p>
+                  <Input
+                    value={customerCarePhone}
+                    onChange={(e) => setCustomerCarePhone(e.target.value)}
+                    placeholder="e.g. 01712345678"
+                    className="w-full text-sm"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Social links</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    Shown as &ldquo;আমাদের ফলো করুন&rdquo; in the storefront&rsquo;s side menu. Empty means that
+                    section doesn&rsquo;t render.
+                  </p>
+                  <div className="space-y-2">
+                    {socialLinks.map((link, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <select
+                          value={link.platform}
+                          onChange={(e) =>
+                            updateSocialLink(i, { platform: e.target.value as ChannelSocialPlatform })
+                          }
+                          className="rounded-lg border border-black/10 bg-white px-2 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                        >
+                          {SOCIAL_PLATFORM_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <Input
+                          value={link.url}
+                          onChange={(e) => updateSocialLink(i, { url: e.target.value })}
+                          placeholder="https://..."
+                          className="w-full text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeSocialLink(i)}
+                          className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {socialLinks.length < MAX_SOCIAL_LINKS && (
+                    <button
+                      type="button"
+                      onClick={addSocialLink}
+                      className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                    >
+                      + Add social link
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

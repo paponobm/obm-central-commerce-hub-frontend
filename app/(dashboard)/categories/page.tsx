@@ -103,6 +103,7 @@ interface FormState {
   slug: string;
   slugTouched: boolean;
   imageUrl: string;
+  slogan: string;
   parentId: string;
   // Active channels this category should be published to — exhaustive, sent
   // to PUT /admin/categories/:id/channels on save. Whether any are checked
@@ -118,6 +119,7 @@ const EMPTY_FORM: FormState = {
   slug: "",
   slugTouched: false,
   imageUrl: "",
+  slogan: "",
   parentId: "",
   channelIds: [],
 };
@@ -211,6 +213,7 @@ export default function CategoriesPage() {
       slug: category.slug,
       slugTouched: true, // editing an existing slug shouldn't auto-regenerate under the admin
       imageUrl: category.imageUrl ?? "",
+      slogan: category.slogan ?? "",
       parentId: category.parentId ?? "",
       channelIds: channels.filter((ch) => isCategoryOnChannel(category, ch)).map((ch) => ch.id),
     });
@@ -271,6 +274,7 @@ export default function CategoriesPage() {
       name: form.name,
       slug: form.slug,
       imageUrl: form.imageUrl.trim() || undefined,
+      slogan: form.slogan.trim() || undefined,
       parentId: form.parentId || undefined,
       // No separate Published switch — a category with no storefront
       // checked below is, by definition, published nowhere.
@@ -568,6 +572,18 @@ export default function CategoriesPage() {
               {uploadError && (
                 <p className="mt-2 text-base text-status-cancelled">{uploadError}</p>
               )}
+            </div>
+
+            <div>
+              <Label className="!text-base !font-bold">Slogan</Label>
+              <Input
+                className="w-full !text-base"
+                value={form.slogan}
+                onChange={(e) =>
+                  setForm((prev) => (prev ? { ...prev, slogan: e.target.value } : prev))
+                }
+                placeholder="e.g. দাদ, চুলকানি, র‍্যাশ"
+              />
             </div>
 
             <div>

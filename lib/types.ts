@@ -106,6 +106,15 @@ export interface ChannelHealthTip {
   enabled?: boolean;
 }
 
+// Fixed platform palette — keep in sync with the backend's
+// SOCIAL_LINK_PLATFORMS (social-link.dto.ts).
+export type ChannelSocialPlatform = "facebook" | "instagram" | "youtube" | "tiktok" | "whatsapp" | "website";
+
+export interface ChannelSocialLink {
+  platform: ChannelSocialPlatform;
+  url: string;
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
@@ -115,6 +124,8 @@ export interface ChannelThemeConfig {
   flashSale?: ChannelFlashSale;
   healthTips?: ChannelHealthTip[];
   reviews?: ChannelReview[];
+  customerCarePhone?: string;
+  socialLinks?: ChannelSocialLink[];
 }
 
 export interface Channel {
@@ -140,6 +151,7 @@ export interface Category {
   name: string;
   slug: string;
   imageUrl: string | null;
+  slogan: string | null;
   parentId: string | null;
   isPublished: boolean;
 }
