@@ -125,6 +125,7 @@ export interface ChannelSpendingReward {
   amount: number;
   description: string;
   discountPercent?: number;
+  freeDelivery?: boolean;
 }
 
 // One tier in the product page's buy-box quantity tiles — e.g.
@@ -152,6 +153,7 @@ export interface ChannelThemeConfig {
   minimumOrderAmount?: number;
   spendingRewards?: ChannelSpendingReward[];
   quantityDiscounts?: ChannelQuantityDiscount[];
+  deliveryCharge?: number;
 }
 
 export interface Channel {

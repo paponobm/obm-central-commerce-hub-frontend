@@ -27,6 +27,7 @@ interface SpendingRewardForm {
   amount: string;
   description: string;
   discountPercent: string;
+  freeDelivery: boolean;
 }
 
 interface QuantityDiscountForm {
@@ -230,6 +231,9 @@ export default function ChannelSettingsPage() {
   // Other Settings — the product page's buy-box quantity tiers (e.g. 2 →
   // 5% off, 3 → 10% off). Real — applied per line item at checkout.
   const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscountForm[]>([]);
+  // Other Settings — the flat delivery charge (taka) added at checkout,
+  // waived whenever a spend-more reward with "Free delivery" ticked is met.
+  const [deliveryCharge, setDeliveryCharge] = useState("");
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -297,6 +301,7 @@ export default function ChannelSettingsPage() {
         amount: String(r.amount),
         description: r.description,
         discountPercent: r.discountPercent ? String(r.discountPercent) : "",
+        freeDelivery: r.freeDelivery ?? false,
       })),
     );
     setQuantityDiscounts(
@@ -305,6 +310,9 @@ export default function ChannelSettingsPage() {
         discountPercent: String(q.discountPercent),
         description: q.description ?? "",
       })),
+    );
+    setDeliveryCharge(
+      channel.themeConfig?.deliveryCharge ? String(channel.themeConfig.deliveryCharge) : "",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
@@ -380,7 +388,10 @@ export default function ChannelSettingsPage() {
   }
 
   function addSpendingReward() {
-    setSpendingRewards((prev) => [...prev, { amount: "", description: "", discountPercent: "" }]);
+    setSpendingRewards((prev) => [
+      ...prev,
+      { amount: "", description: "", discountPercent: "", freeDelivery: false },
+    ]);
   }
   function removeSpendingReward(index: number) {
     setSpendingRewards((prev) => prev.filter((_, i) => i !== index));
@@ -662,6 +673,7 @@ export default function ChannelSettingsPage() {
           ...(r.discountPercent.trim() && Number(r.discountPercent) > 0
             ? { discountPercent: Number(r.discountPercent) }
             : {}),
+          ...(r.freeDelivery ? { freeDelivery: true } : {}),
         }));
       // A row needs a quantity and a discount % to mean anything — the
       // description is optional (blank falls back to the storefront's own
@@ -673,6 +685,8 @@ export default function ChannelSettingsPage() {
           discountPercent: Number(q.discountPercent),
           ...(q.description.trim() ? { description: q.description.trim() } : {}),
         }));
+      const delivery = Number(deliveryCharge);
+      themeConfig.deliveryCharge = deliveryCharge.trim() && delivery > 0 ? delivery : undefined;
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -1626,10 +1640,10 @@ export default function ChannelSettingsPage() {
                     A single stacked &ldquo;আর ৳X নিলে …&rdquo; progress nudge in the cart drawer, shown once the
                     minimum order (above) is met — each row is its own milestone, e.g. ৳1,300 → &ldquo;ফ্রি
                     ডেলিভারি&rdquo;, ৳2,000 → &ldquo;১০% ছাড়&rdquo;. The description is just text — it alone
-                    applies nothing. Discount % is the one real part: when set, the order actually created at
-                    checkout has that percent taken off (the highest-amount tier the order qualifies for wins,
-                    not stacked). Leave Discount % blank for a purely informational row, e.g. a free-delivery
-                    milestone. Shown lowest amount first regardless of row order below.
+                    applies nothing. Discount % and Free delivery are the real parts: when set, the order
+                    actually created at checkout has that percent taken off (the highest-amount tier the order
+                    qualifies for wins, not stacked) and/or the delivery charge below waived. Leave both unset
+                    for a purely informational row. Shown lowest amount first regardless of row order below.
                   </p>
                   <div className="space-y-2">
                     {spendingRewards.map((reward, i) => (
@@ -1658,6 +1672,14 @@ export default function ChannelSettingsPage() {
                           title="Discount % — leave blank for an informational-only row"
                           className="w-28 shrink-0 text-sm"
                         />
+                        <label className="flex shrink-0 items-center gap-1.5 text-xs text-foreground/70">
+                          <input
+                            type="checkbox"
+                            checked={reward.freeDelivery}
+                            onChange={(e) => updateSpendingReward(i, { freeDelivery: e.target.checked })}
+                          />
+                          Free delivery
+                        </label>
                         <button
                           type="button"
                           onClick={() => removeSpendingReward(i)}
@@ -1731,6 +1753,24 @@ export default function ChannelSettingsPage() {
                   >
                     + Add tier
                   </button>
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Delivery charge (৳)</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    Added to every order at checkout, shown as its own &ldquo;ডেলিভারি চার্জ&rdquo; line in the
+                    cart drawer — unless the order already qualifies for a spend-more reward (above) with
+                    &ldquo;Free delivery&rdquo; ticked, in which case it&rsquo;s shown and charged as ৳0. Leave
+                    blank for no delivery charge at all.
+                  </p>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={deliveryCharge}
+                    onChange={(e) => setDeliveryCharge(e.target.value)}
+                    placeholder="e.g. 60"
+                    className="w-full max-w-xs text-sm"
+                  />
                 </div>
               </div>
             )}
