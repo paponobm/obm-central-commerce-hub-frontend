@@ -23,6 +23,18 @@ import type {
   Product,
 } from "@/lib/types";
 
+interface SpendingRewardForm {
+  amount: string;
+  description: string;
+  discountPercent: string;
+}
+
+interface QuantityDiscountForm {
+  quantity: string;
+  discountPercent: string;
+  description: string;
+}
+
 interface SlideForm {
   image: string;
   title: string;
@@ -128,6 +140,7 @@ const TABS = [
   { key: "reviews", label: "Review" },
   { key: "healthTips", label: "Health Tips" },
   { key: "social", label: "Social & Contact" },
+  { key: "other", label: "Other Settings" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -207,6 +220,16 @@ export default function ChannelSettingsPage() {
   // number and "আমাদের ফলো করুন" social links.
   const [customerCarePhone, setCustomerCarePhone] = useState("");
   const [socialLinks, setSocialLinks] = useState<ChannelSocialLink[]>([]);
+  // Other Settings — the storefront cart's minimum order gate (taka). Kept
+  // as a string while editing; blank/zero means no minimum.
+  const [minimumOrderAmount, setMinimumOrderAmount] = useState("");
+  // Other Settings — the cart drawer's stacked spend-more nudges (e.g.
+  // ৳1,300 → "ফ্রি ডেলিভারি", ৳2,000 → "১০% ছাড়"). Discount % (when set) is
+  // real, applied to the order at checkout; the rest is just display text.
+  const [spendingRewards, setSpendingRewards] = useState<SpendingRewardForm[]>([]);
+  // Other Settings — the product page's buy-box quantity tiers (e.g. 2 →
+  // 5% off, 3 → 10% off). Real — applied per line item at checkout.
+  const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscountForm[]>([]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -266,6 +289,23 @@ export default function ChannelSettingsPage() {
     );
     setCustomerCarePhone(channel.themeConfig?.customerCarePhone ?? "");
     setSocialLinks(channel.themeConfig?.socialLinks ?? []);
+    setMinimumOrderAmount(
+      channel.themeConfig?.minimumOrderAmount ? String(channel.themeConfig.minimumOrderAmount) : "",
+    );
+    setSpendingRewards(
+      (channel.themeConfig?.spendingRewards ?? []).map((r) => ({
+        amount: String(r.amount),
+        description: r.description,
+        discountPercent: r.discountPercent ? String(r.discountPercent) : "",
+      })),
+    );
+    setQuantityDiscounts(
+      (channel.themeConfig?.quantityDiscounts ?? []).map((q) => ({
+        quantity: String(q.quantity),
+        discountPercent: String(q.discountPercent),
+        description: q.description ?? "",
+      })),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 
@@ -337,6 +377,26 @@ export default function ChannelSettingsPage() {
   }
   function updateSocialLink(index: number, patch: Partial<ChannelSocialLink>) {
     setSocialLinks((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  }
+
+  function addSpendingReward() {
+    setSpendingRewards((prev) => [...prev, { amount: "", description: "", discountPercent: "" }]);
+  }
+  function removeSpendingReward(index: number) {
+    setSpendingRewards((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updateSpendingReward(index: number, patch: Partial<SpendingRewardForm>) {
+    setSpendingRewards((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  }
+
+  function addQuantityDiscount() {
+    setQuantityDiscounts((prev) => [...prev, { quantity: "", discountPercent: "", description: "" }]);
+  }
+  function removeQuantityDiscount(index: number) {
+    setQuantityDiscounts((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updateQuantityDiscount(index: number, patch: Partial<QuantityDiscountForm>) {
+    setQuantityDiscounts((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)));
   }
 
   // The working "is this category included on this storefront" list —
@@ -590,6 +650,29 @@ export default function ChannelSettingsPage() {
       themeConfig.socialLinks = socialLinks
         .filter((s) => s.url.trim())
         .map((s) => ({ platform: s.platform, url: s.url.trim() }));
+      const minOrder = Number(minimumOrderAmount);
+      themeConfig.minimumOrderAmount = minimumOrderAmount.trim() && minOrder > 0 ? minOrder : undefined;
+      // Blank rows (no description, or no amount entered) are dropped, same
+      // as blank combos/tiers/reviews elsewhere on this page.
+      themeConfig.spendingRewards = spendingRewards
+        .filter((r) => r.description.trim() && Number(r.amount) > 0)
+        .map((r) => ({
+          amount: Number(r.amount),
+          description: r.description.trim(),
+          ...(r.discountPercent.trim() && Number(r.discountPercent) > 0
+            ? { discountPercent: Number(r.discountPercent) }
+            : {}),
+        }));
+      // A row needs a quantity and a discount % to mean anything — the
+      // description is optional (blank falls back to the storefront's own
+      // "X% বাড়তি ছাড়" text).
+      themeConfig.quantityDiscounts = quantityDiscounts
+        .filter((q) => Number(q.quantity) >= 2 && Number(q.discountPercent) > 0)
+        .map((q) => ({
+          quantity: Number(q.quantity),
+          discountPercent: Number(q.discountPercent),
+          ...(q.description.trim() ? { description: q.description.trim() } : {}),
+        }));
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -1514,6 +1597,140 @@ export default function ChannelSettingsPage() {
                       + Add social link
                     </button>
                   )}
+                </div>
+              </div>
+            )}
+
+            {tab === "other" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Minimum order amount (৳)</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    The storefront cart nudges the customer toward this amount and the checkout button is
+                    disabled until it&rsquo;s reached. Orders placed below it are rejected server-side too, even
+                    if the storefront is bypassed. Leave blank for no minimum.
+                  </p>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={minimumOrderAmount}
+                    onChange={(e) => setMinimumOrderAmount(e.target.value)}
+                    placeholder="e.g. 300"
+                    className="w-full max-w-xs text-sm"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Spend-more rewards</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    A single stacked &ldquo;আর ৳X নিলে …&rdquo; progress nudge in the cart drawer, shown once the
+                    minimum order (above) is met — each row is its own milestone, e.g. ৳1,300 → &ldquo;ফ্রি
+                    ডেলিভারি&rdquo;, ৳2,000 → &ldquo;১০% ছাড়&rdquo;. The description is just text — it alone
+                    applies nothing. Discount % is the one real part: when set, the order actually created at
+                    checkout has that percent taken off (the highest-amount tier the order qualifies for wins,
+                    not stacked). Leave Discount % blank for a purely informational row, e.g. a free-delivery
+                    milestone. Shown lowest amount first regardless of row order below.
+                  </p>
+                  <div className="space-y-2">
+                    {spendingRewards.map((reward, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={reward.amount}
+                          onChange={(e) => updateSpendingReward(i, { amount: e.target.value })}
+                          placeholder="e.g. 1300"
+                          className="w-28 shrink-0 text-sm"
+                        />
+                        <Input
+                          value={reward.description}
+                          onChange={(e) => updateSpendingReward(i, { description: e.target.value })}
+                          placeholder="e.g. ফ্রি ডেলিভারি"
+                          className="w-full text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={reward.discountPercent}
+                          onChange={(e) => updateSpendingReward(i, { discountPercent: e.target.value })}
+                          placeholder="Discount %"
+                          title="Discount % — leave blank for an informational-only row"
+                          className="w-28 shrink-0 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeSpendingReward(i)}
+                          className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addSpendingReward}
+                    className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                  >
+                    + Add reward
+                  </button>
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Quantity discounts</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    The product page&rsquo;s buy-box quantity tiles — e.g. 2 → 5% off, 3 → 10% off. Quantity 1 is
+                    always the free baseline tile and isn&rsquo;t configured here. Real: applied per line item
+                    when the order is actually created, same as a spend-more reward&rsquo;s Discount %
+                    (highest-quantity tier a line reaches wins, not stacked). Description optionally overrides
+                    the tile&rsquo;s auto-generated &ldquo;X% বাড়তি ছাড়&rdquo; badge text.
+                  </p>
+                  <div className="space-y-2">
+                    {quantityDiscounts.map((q, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={2}
+                          value={q.quantity}
+                          onChange={(e) => updateQuantityDiscount(i, { quantity: e.target.value })}
+                          placeholder="Qty, e.g. 2"
+                          className="w-28 shrink-0 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={q.discountPercent}
+                          onChange={(e) => updateQuantityDiscount(i, { discountPercent: e.target.value })}
+                          placeholder="Discount %"
+                          className="w-28 shrink-0 text-sm"
+                        />
+                        <Input
+                          value={q.description}
+                          onChange={(e) => updateQuantityDiscount(i, { description: e.target.value })}
+                          placeholder="e.g. ৫% বাড়তি ছাড় (optional)"
+                          className="w-full text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeQuantityDiscount(i)}
+                          className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addQuantityDiscount}
+                    className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                  >
+                    + Add tier
+                  </button>
                 </div>
               </div>
             )}

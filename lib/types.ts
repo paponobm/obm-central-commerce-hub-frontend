@@ -115,6 +115,29 @@ export interface ChannelSocialLink {
   url: string;
 }
 
+// One milestone row in the cart drawer's stacked "আর ৳X নিলে …" nudges —
+// e.g. { amount: 1300, description: "ফ্রি ডেলিভারি" } or
+// { amount: 2000, description: "১০% ছাড়", discountPercent: 10 }.
+// `description` is plain admin-written text. `discountPercent` is the one
+// field that's real: the storefront's order creation applies it (the
+// highest-amount qualifying tier wins) to the order it creates.
+export interface ChannelSpendingReward {
+  amount: number;
+  description: string;
+  discountPercent?: number;
+}
+
+// One tier in the product page's buy-box quantity tiles — e.g.
+// { quantity: 2, discountPercent: 5 }, { quantity: 3, discountPercent: 10 }.
+// `discountPercent` is real: applied per line item when the order is
+// actually created. `description` optionally overrides the tile's
+// auto-generated "X% বাড়তি ছাড়" badge text.
+export interface ChannelQuantityDiscount {
+  quantity: number;
+  discountPercent: number;
+  description?: string;
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
@@ -126,6 +149,9 @@ export interface ChannelThemeConfig {
   reviews?: ChannelReview[];
   customerCarePhone?: string;
   socialLinks?: ChannelSocialLink[];
+  minimumOrderAmount?: number;
+  spendingRewards?: ChannelSpendingReward[];
+  quantityDiscounts?: ChannelQuantityDiscount[];
 }
 
 export interface Channel {
