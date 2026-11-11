@@ -43,7 +43,16 @@ interface SlideForm {
   couponEnabled: boolean;
   couponLabel: string;
   couponCode: string;
+  couponDiscountPercent: string;
 }
+
+interface CouponForm {
+  code: string;
+  discountPercent: string;
+  description: string;
+}
+
+const EMPTY_COUPON: CouponForm = { code: "", discountPercent: "", description: "" };
 
 interface ReviewForm {
   customerName: string;
@@ -181,6 +190,7 @@ function toSlideForm(s: ChannelHeroSlide): SlideForm {
     couponEnabled: s.coupon?.enabled ?? false,
     couponLabel: s.coupon?.label ?? "",
     couponCode: s.coupon?.code ?? "",
+    couponDiscountPercent: s.coupon?.discountPercent ? String(s.coupon.discountPercent) : "",
   };
 }
 
@@ -234,6 +244,11 @@ export default function ChannelSettingsPage() {
   // Other Settings — the flat delivery charge (taka) added at checkout,
   // waived whenever a spend-more reward with "Free delivery" ticked is met.
   const [deliveryCharge, setDeliveryCharge] = useState("");
+  // Other Settings — admin-defined, code-redeemable coupons (independent of
+  // the hero banner's own coupon code above, but checked together at
+  // checkout — see CouponDto). Real: the best of this and the spend-more
+  // reward discount is applied, whichever is higher, not both.
+  const [coupons, setCoupons] = useState<CouponForm[]>([]);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -313,6 +328,13 @@ export default function ChannelSettingsPage() {
     );
     setDeliveryCharge(
       channel.themeConfig?.deliveryCharge ? String(channel.themeConfig.deliveryCharge) : "",
+    );
+    setCoupons(
+      (channel.themeConfig?.coupons ?? []).map((c) => ({
+        code: c.code,
+        discountPercent: String(c.discountPercent),
+        description: c.description ?? "",
+      })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
@@ -410,6 +432,16 @@ export default function ChannelSettingsPage() {
     setQuantityDiscounts((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)));
   }
 
+  function addCoupon() {
+    setCoupons((prev) => [...prev, { ...EMPTY_COUPON }]);
+  }
+  function removeCoupon(index: number) {
+    setCoupons((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updateCoupon(index: number, patch: Partial<CouponForm>) {
+    setCoupons((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  }
+
   // The working "is this category included on this storefront" list —
   // categorySlugs===null means every category currently counts as on.
   const activeCategorySlugs = categorySlugs ?? (allCategories ?? []).map((c) => c.slug);
@@ -455,7 +487,15 @@ export default function ChannelSettingsPage() {
       const uploaded: SlideForm[] = [];
       for (const file of files) {
         const { url } = await api.upload<{ url: string }>("/admin/uploads/image", file);
-        uploaded.push({ image: url, title: "", description: "", couponEnabled: false, couponLabel: "", couponCode: "" });
+        uploaded.push({
+          image: url,
+          title: "",
+          description: "",
+          couponEnabled: false,
+          couponLabel: "",
+          couponCode: "",
+          couponDiscountPercent: "",
+        });
       }
       setHeroSlides((prev) => [...prev, ...uploaded].slice(0, 8));
     } catch (err) {
@@ -604,6 +644,9 @@ export default function ChannelSettingsPage() {
                 enabled: s.couponEnabled,
                 label: s.couponLabel.trim(),
                 code: s.couponCode.trim().toUpperCase(),
+                ...(s.couponDiscountPercent.trim() && Number(s.couponDiscountPercent) > 0
+                  ? { discountPercent: Number(s.couponDiscountPercent) }
+                  : {}),
               },
             }
           : {}),
@@ -627,7 +670,13 @@ export default function ChannelSettingsPage() {
           description: c.description.trim(),
           tiers: c.tiers
             .filter((t) => t.title.trim())
-            .map((t) => ({ title: t.title.trim(), description: t.description.trim(), enabled: t.enabled })),
+            .map((t) => ({
+              title: t.title.trim(),
+              description: t.description.trim(),
+              enabled: t.enabled,
+              ...(t.discountPercent ? { discountPercent: t.discountPercent } : {}),
+              ...(t.freeDelivery ? { freeDelivery: true } : {}),
+            })),
           enabled: c.enabled,
         }));
       themeConfig.flashSale = {
@@ -687,6 +736,15 @@ export default function ChannelSettingsPage() {
         }));
       const delivery = Number(deliveryCharge);
       themeConfig.deliveryCharge = deliveryCharge.trim() && delivery > 0 ? delivery : undefined;
+      // A row needs a code and a discount % to mean anything, same rule as
+      // quantityDiscounts above.
+      themeConfig.coupons = coupons
+        .filter((c) => c.code.trim() && Number(c.discountPercent) > 0)
+        .map((c) => ({
+          code: c.code.trim().toUpperCase(),
+          discountPercent: Number(c.discountPercent),
+          ...(c.description.trim() ? { description: c.description.trim() } : {}),
+        }));
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -896,6 +954,16 @@ export default function ChannelSettingsPage() {
                                 required={slide.couponEnabled}
                                 pattern="[A-Za-z0-9]+"
                                 className="w-28 text-xs uppercase"
+                              />
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={slide.couponDiscountPercent}
+                                onChange={(e) => updateSlide(i, { couponDiscountPercent: e.target.value })}
+                                placeholder="Rate %"
+                                title="Discount % this code applies at checkout — leave blank to keep it cosmetic only"
+                                className="w-20 shrink-0 text-xs"
                               />
                             </div>
                           </div>
@@ -1165,7 +1233,11 @@ export default function ChannelSettingsPage() {
                       <Label>Pricing tier cards</Label>
                       <p className="mb-2 text-xs text-foreground/50">
                         The cards inside this banner (e.g. &ldquo;৳১,২০০+ / ফ্রি ডেলিভারি&rdquo;) — add, remove, and
-                        toggle each on/off. Off cards stay here but won&rsquo;t show on the storefront.
+                        toggle each on/off. Off cards stay here but won&rsquo;t show on the storefront. Rate % and
+                        Free delivery are the real parts: when a customer&rsquo;s combo reaches this card&rsquo;s
+                        amount, that percent is actually taken off the combo&rsquo;s items at checkout
+                        (highest-amount tier reached wins, not stacked with other tiers), and/or the delivery charge
+                        is waived for the whole order. Leave both unset for a purely informational card.
                       </p>
                       <div className="space-y-2">
                         {combo.tiers.map((tier, ti) => (
@@ -1193,6 +1265,28 @@ export default function ChannelSettingsPage() {
                               rows={2}
                               className="w-full resize-y"
                             />
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={tier.discountPercent !== undefined ? String(tier.discountPercent) : ""}
+                              onChange={(e) =>
+                                updateComboTier(ci, ti, {
+                                  discountPercent: e.target.value ? Number(e.target.value) : undefined,
+                                })
+                              }
+                              placeholder="Rate %"
+                              title="Discount % this tier applies to the combo's own subtotal — leave blank for an informational-only card"
+                              className="w-20 shrink-0 text-sm"
+                            />
+                            <label className="flex shrink-0 items-center gap-1.5 pt-2 text-xs text-foreground/70">
+                              <input
+                                type="checkbox"
+                                checked={tier.freeDelivery ?? false}
+                                onChange={(e) => updateComboTier(ci, ti, { freeDelivery: e.target.checked })}
+                              />
+                              Free delivery
+                            </label>
                             <button
                               type="button"
                               onClick={() => removeComboTier(ci, ti)}
@@ -1771,6 +1865,60 @@ export default function ChannelSettingsPage() {
                     placeholder="e.g. 60"
                     className="w-full max-w-xs text-sm"
                   />
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Coupons</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    Every coupon code the storefront&rsquo;s checkout field actually matches — typing one of
+                    these codes applies its Discount % to the order. Independent of the Logo &amp; Banner
+                    tab&rsquo;s own hero coupon code (which also works at checkout once it has a Rate %), but
+                    checked together: if a customer somehow qualifies for both a spend-more reward and a coupon,
+                    the better percent wins — they&rsquo;re never stacked together.
+                  </p>
+                  <div className="space-y-2">
+                    {coupons.map((c, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Input
+                          value={c.code}
+                          onChange={(e) => updateCoupon(i, { code: e.target.value.toUpperCase() })}
+                          placeholder="CODE"
+                          pattern="[A-Za-z0-9]+"
+                          className="w-28 shrink-0 text-sm uppercase"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={c.discountPercent}
+                          onChange={(e) => updateCoupon(i, { discountPercent: e.target.value })}
+                          placeholder="Discount %"
+                          className="w-28 shrink-0 text-sm"
+                        />
+                        <Input
+                          value={c.description}
+                          onChange={(e) => updateCoupon(i, { description: e.target.value })}
+                          placeholder="e.g. নতুন গ্রাহক (optional note)"
+                          className="w-full text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeCoupon(i)}
+                          className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addCoupon}
+                    className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                  >
+                    + Add coupon
+                  </button>
                 </div>
               </div>
             )}

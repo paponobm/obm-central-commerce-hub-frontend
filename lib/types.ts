@@ -50,6 +50,7 @@ export interface ChannelHeroCoupon {
   enabled: boolean;
   label: string;
   code: string;
+  discountPercent?: number;
 }
 
 export interface ChannelHeroSlide {
@@ -69,6 +70,16 @@ export interface ChannelComboTier {
   title: string;
   description: string;
   enabled: boolean;
+  // The real discount this tier applies — e.g. 6 for "+ ৬% ছাড়". Applied to
+  // the combo's own group subtotal when the order is actually created (the
+  // only thing that discounts a combo line — its own quantity-tier discount
+  // never also applies once it's in a combo). Optional/0 keeps the card
+  // purely informational, same as before this field existed.
+  discountPercent?: number;
+  // Waives Settings → Other Settings → Delivery charge for the whole order
+  // once this combo group's own subtotal reaches this tier — same real
+  // waiver as a spend-more reward's own freeDelivery.
+  freeDelivery?: boolean;
 }
 
 export interface ChannelComboBanner {
@@ -139,6 +150,15 @@ export interface ChannelQuantityDiscount {
   description?: string;
 }
 
+// One admin-defined, code-redeemable coupon (Settings → Other Settings →
+// Coupons) — e.g. { code: "SAVE10", discountPercent: 10 }. Checked together
+// with the hero banner's own coupon code at checkout.
+export interface ChannelCoupon {
+  code: string;
+  discountPercent: number;
+  description?: string;
+}
+
 export interface ChannelThemeConfig {
   heroCoupon?: ChannelHeroCoupon;
   heroSlides?: ChannelHeroSlide[];
@@ -154,6 +174,7 @@ export interface ChannelThemeConfig {
   spendingRewards?: ChannelSpendingReward[];
   quantityDiscounts?: ChannelQuantityDiscount[];
   deliveryCharge?: number;
+  coupons?: ChannelCoupon[];
 }
 
 export interface Channel {
