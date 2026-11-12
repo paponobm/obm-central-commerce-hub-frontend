@@ -17,6 +17,8 @@ import type {
   ChannelComboBanner,
   ChannelComboTier,
   ChannelHeroSlide,
+  ChannelQuizProblem,
+  ChannelQuizSub,
   ChannelSocialLink,
   ChannelSocialPlatform,
   ChannelTrustBadge,
@@ -126,6 +128,8 @@ const DEFAULT_COMBO_BANNER: ChannelComboBanner = {
 };
 const MAX_COMBO_TIERS = 10;
 const MAX_COMBO_BANNERS = 2;
+const MAX_QUIZ_PROBLEMS = 20;
+const MAX_QUIZ_SUBS = 12;
 
 // Older saves stored trustBadges as plain strings (fixed 4 slots, no icon)
 // or objects without the on/off toggle yet — normalized here so an older
@@ -147,6 +151,7 @@ const TABS = [
   { key: "badges", label: "Badge & Category" },
   { key: "combo", label: "Home Page Combo" },
   { key: "flashSale", label: "Flash Sale" },
+  { key: "problem", label: "Problem" },
   { key: "reviews", label: "Review" },
   { key: "healthTips", label: "Health Tips" },
   { key: "social", label: "Social & Contact" },
@@ -217,6 +222,15 @@ export default function ChannelSettingsPage() {
   // Flash Sale but no enabled flag/countdown (see cartSuggestions.dto.ts).
   const [cartSuggestionProductIds, setCartSuggestionProductIds] = useState<string[]>([]);
   const [cartSuggestionSearch, setCartSuggestionSearch] = useState("");
+  // Problem — the storefront's "কোনটা নেবেন বুঝছেন না?" quiz: admin-curated
+  // categories (e.g. "ব্যথা"), each with its own sub-categories (e.g.
+  // "মাথাব্যথা বা মাইগ্রেন") and real product assignments. Replaces the old
+  // hardcoded lib/quiz-data.ts list on the storefront. quizSubSearch is
+  // keyed "<problemIndex>:<subIndex>" since many sub-category search boxes
+  // can exist on screen at once (unlike Flash Sale/Cart Suggestions' single
+  // search/select).
+  const [quizProblems, setQuizProblems] = useState<ChannelQuizProblem[]>([]);
+  const [quizSubSearch, setQuizSubSearch] = useState<Record<string, string>>({});
   // Up to MAX_COMBO_BANNERS separate combo promos — shown side by side on
   // larger screens once there are 2 (see the storefront's ComboBanner).
   const [comboBanners, setComboBanners] = useState<ChannelComboBanner[]>([DEFAULT_COMBO_BANNER]);
@@ -285,6 +299,7 @@ export default function ChannelSettingsPage() {
     setTrustBadges(normalizeTrustBadges(channel.themeConfig?.trustBadges));
     setCategorySlugs(channel.themeConfig?.categorySlugs ?? null);
     setCartSuggestionProductIds(channel.themeConfig?.cartSuggestions?.productIds ?? []);
+    setQuizProblems(channel.themeConfig?.quizProblems ?? []);
     const savedCombos = channel.themeConfig?.comboBanners;
     // Missing `enabled` (saved before the toggle existed) defaults to on.
     setComboBanners(
@@ -416,6 +431,69 @@ export default function ChannelSettingsPage() {
 
   function removeCartSuggestion(productId: string) {
     setCartSuggestionProductIds((prev) => prev.filter((pid) => pid !== productId));
+  }
+
+  function addQuizProblem() {
+    setQuizProblems((prev) =>
+      prev.length >= MAX_QUIZ_PROBLEMS ? prev : [...prev, { label: "", description: "", subs: [] }],
+    );
+  }
+
+  function removeQuizProblem(pi: number) {
+    setQuizProblems((prev) => prev.filter((_, i) => i !== pi));
+  }
+
+  function updateQuizProblem(pi: number, patch: Partial<ChannelQuizProblem>) {
+    setQuizProblems((prev) => prev.map((p, i) => (i === pi ? { ...p, ...patch } : p)));
+  }
+
+  function addQuizSub(pi: number) {
+    setQuizProblems((prev) =>
+      prev.map((p, i) =>
+        i === pi && p.subs.length < MAX_QUIZ_SUBS
+          ? { ...p, subs: [...p.subs, { label: "", description: "", productIds: [] }] }
+          : p,
+      ),
+    );
+  }
+
+  function removeQuizSub(pi: number, si: number) {
+    setQuizProblems((prev) => prev.map((p, i) => (i === pi ? { ...p, subs: p.subs.filter((_, j) => j !== si) } : p)));
+  }
+
+  function updateQuizSub(pi: number, si: number, patch: Partial<ChannelQuizSub>) {
+    setQuizProblems((prev) =>
+      prev.map((p, i) =>
+        i === pi ? { ...p, subs: p.subs.map((s, j) => (j === si ? { ...s, ...patch } : s)) } : p,
+      ),
+    );
+  }
+
+  function addQuizSubProduct(pi: number, si: number, productId: string) {
+    setQuizProblems((prev) =>
+      prev.map((p, i) =>
+        i === pi
+          ? {
+              ...p,
+              subs: p.subs.map((s, j) =>
+                j === si
+                  ? { ...s, productIds: s.productIds.includes(productId) ? s.productIds : [...s.productIds, productId] }
+                  : s,
+              ),
+            }
+          : p,
+      ),
+    );
+  }
+
+  function removeQuizSubProduct(pi: number, si: number, productId: string) {
+    setQuizProblems((prev) =>
+      prev.map((p, i) =>
+        i === pi
+          ? { ...p, subs: p.subs.map((s, j) => (j === si ? { ...s, productIds: s.productIds.filter((id) => id !== productId) } : s)) }
+          : p,
+      ),
+    );
   }
 
   function addReview() {
@@ -703,6 +781,19 @@ export default function ChannelSettingsPage() {
       // list, same reasoning as heroSlides/trustBadges above.
       themeConfig.categorySlugs = activeCategorySlugs;
       themeConfig.cartSuggestions = { productIds: cartSuggestionProductIds };
+      themeConfig.quizProblems = quizProblems
+        .filter((p) => p.label.trim())
+        .map((p) => ({
+          label: p.label.trim(),
+          description: p.description?.trim() || undefined,
+          subs: p.subs
+            .filter((s) => s.label.trim())
+            .map((s) => ({
+              label: s.label.trim(),
+              description: s.description?.trim() || undefined,
+              productIds: s.productIds,
+            })),
+        }));
       // Blank combos (never given a title) are dropped, same as blank tiers.
       themeConfig.comboBanners = comboBanners
         .filter((c) => c.title.trim())
@@ -1601,6 +1692,194 @@ export default function ChannelSettingsPage() {
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {tab === "problem" && (
+              <div className="space-y-4">
+                <p className="text-xs text-foreground/50">
+                  The storefront&rsquo;s &ldquo;কোনটা নেবেন বুঝছেন না?&rdquo; symptom-finder quiz — each category
+                  (e.g. &ldquo;ব্যথা&rdquo;) holds its own sub-categories (e.g. &ldquo;মাথাব্যথা বা
+                  মাইগ্রেন&rdquo;), each with real products customers get recommended. Only products already
+                  published to this storefront can be added.
+                </p>
+
+                {quizProblems.map((problem, pi) => (
+                  <div key={pi} className="rounded-lg border border-black/10 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <Label className="!mb-0">Problem {pi + 1}</Label>
+                      <button
+                        type="button"
+                        onClick={() => removeQuizProblem(pi)}
+                        className="rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <Label>Category name</Label>
+                        <Input
+                          value={problem.label}
+                          onChange={(e) => updateQuizProblem(pi, { label: e.target.value })}
+                          placeholder="e.g. ব্যথা"
+                          maxLength={80}
+                        />
+                      </div>
+                      <div>
+                        <Label>Description</Label>
+                        <Input
+                          value={problem.description ?? ""}
+                          onChange={(e) => updateQuizProblem(pi, { description: e.target.value })}
+                          placeholder="e.g. মাথা, ঘাড়, কোমর, জয়েন্ট"
+                          maxLength={160}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 border-t border-black/5 pt-3">
+                      <Label>Sub-categories</Label>
+                      <div className="space-y-3">
+                        {problem.subs.map((sub, si) => {
+                          const key = `${pi}:${si}`;
+                          const search = quizSubSearch[key] ?? "";
+                          const matches = search.trim()
+                            ? channelProducts
+                                .filter(
+                                  (p) =>
+                                    !sub.productIds.includes(p.id) &&
+                                    p.name.toLowerCase().includes(search.trim().toLowerCase()),
+                                )
+                                .slice(0, 8)
+                            : [];
+                          const assigned = sub.productIds
+                            .map((id) => channelProducts.find((p) => p.id === id))
+                            .filter((p): p is Product => !!p);
+                          return (
+                            <div key={si} className="rounded-lg border border-black/10 p-3">
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-foreground/50">Sub-category {si + 1}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeQuizSub(pi, si)}
+                                  className="rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                <Input
+                                  value={sub.label}
+                                  onChange={(e) => updateQuizSub(pi, si, { label: e.target.value })}
+                                  placeholder="Sub-category title, e.g. মাথাব্যথা বা মাইগ্রেন"
+                                  maxLength={80}
+                                />
+                                <Input
+                                  value={sub.description ?? ""}
+                                  onChange={(e) => updateQuizSub(pi, si, { description: e.target.value })}
+                                  placeholder="Description (optional)"
+                                  maxLength={160}
+                                />
+                              </div>
+
+                              <div className="mt-2">
+                                <Label>Products</Label>
+                                {assigned.length === 0 ? (
+                                  <p className="text-xs text-foreground/50">No products selected yet.</p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {assigned.map((p) => (
+                                      <div
+                                        key={p.id}
+                                        className="flex items-center gap-2 rounded-lg border border-black/10 px-2.5 py-1.5"
+                                      >
+                                        <span className="flex-1 text-sm">
+                                          {p.name} <span className="text-xs text-foreground/40">({p.sku})</span>
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeQuizSubProduct(pi, si, p.id)}
+                                          className="shrink-0 rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                                          title="Remove"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {channelProducts.length > 0 && (
+                                  <div className="mt-2">
+                                    <Input
+                                      value={search}
+                                      onChange={(e) =>
+                                        setQuizSubSearch((prev) => ({ ...prev, [key]: e.target.value }))
+                                      }
+                                      placeholder="Search this storefront's products by name…"
+                                      className="w-full text-sm"
+                                    />
+                                    {search.trim() &&
+                                      (matches.length > 0 ? (
+                                        <div className="mt-2 space-y-1.5">
+                                          {matches.map((p) => (
+                                            <div
+                                              key={p.id}
+                                              className="flex items-center gap-2 rounded-lg border border-black/10 px-2.5 py-1.5"
+                                            >
+                                              <span className="flex-1 text-sm">
+                                                {p.name} <span className="text-xs text-foreground/40">({p.sku})</span>
+                                              </span>
+                                              <Button
+                                                type="button"
+                                                variant="secondary"
+                                                onClick={() => {
+                                                  addQuizSubProduct(pi, si, p.id);
+                                                  setQuizSubSearch((prev) => ({ ...prev, [key]: "" }));
+                                                }}
+                                              >
+                                                + Add
+                                              </Button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="mt-2 text-xs text-foreground/50">No matching products.</p>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {problem.subs.length < MAX_QUIZ_SUBS && (
+                        <button
+                          type="button"
+                          onClick={() => addQuizSub(pi)}
+                          className="mt-3 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                        >
+                          + Add sub-category
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {quizProblems.length < MAX_QUIZ_PROBLEMS && (
+                  <button
+                    type="button"
+                    onClick={addQuizProblem}
+                    className="inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                  >
+                    + Add problem category
+                  </button>
+                )}
+                {allProducts && channelProducts.length === 0 && (
+                  <p className="text-xs text-foreground/50">
+                    No products are published to this storefront yet — publish one from a product&rsquo;s Details
+                    page first.
+                  </p>
+                )}
               </div>
             )}
 

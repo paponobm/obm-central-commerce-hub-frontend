@@ -102,6 +102,18 @@ export interface ChannelCartSuggestions {
   productIds: string[];
 }
 
+export interface ChannelQuizSub {
+  label: string;
+  description?: string;
+  productIds: string[];
+}
+
+export interface ChannelQuizProblem {
+  label: string;
+  description?: string;
+  subs: ChannelQuizSub[];
+}
+
 export interface ChannelReview {
   customerName: string;
   location?: string;
@@ -172,6 +184,7 @@ export interface ChannelThemeConfig {
   comboBanners?: ChannelComboBanner[];
   flashSale?: ChannelFlashSale;
   cartSuggestions?: ChannelCartSuggestions;
+  quizProblems?: ChannelQuizProblem[];
   healthTips?: ChannelHealthTip[];
   reviews?: ChannelReview[];
   customerCarePhone?: string;
