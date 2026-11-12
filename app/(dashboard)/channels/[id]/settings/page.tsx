@@ -212,6 +212,11 @@ export default function ChannelSettingsPage() {
   // null = "no restriction saved yet" — every category counts as included,
   // same as the storefront's own fallback when categorySlugs is unset.
   const [categorySlugs, setCategorySlugs] = useState<string[] | null>(null);
+  // Cart Suggestions — the storefront cart drawer's "Suggested Products for
+  // you" row: selected products (order = display order), same shape as
+  // Flash Sale but no enabled flag/countdown (see cartSuggestions.dto.ts).
+  const [cartSuggestionProductIds, setCartSuggestionProductIds] = useState<string[]>([]);
+  const [cartSuggestionSearch, setCartSuggestionSearch] = useState("");
   // Up to MAX_COMBO_BANNERS separate combo promos — shown side by side on
   // larger screens once there are 2 (see the storefront's ComboBanner).
   const [comboBanners, setComboBanners] = useState<ChannelComboBanner[]>([DEFAULT_COMBO_BANNER]);
@@ -279,6 +284,7 @@ export default function ChannelSettingsPage() {
     setHeroSlides((channel.themeConfig?.heroSlides ?? []).map(toSlideForm));
     setTrustBadges(normalizeTrustBadges(channel.themeConfig?.trustBadges));
     setCategorySlugs(channel.themeConfig?.categorySlugs ?? null);
+    setCartSuggestionProductIds(channel.themeConfig?.cartSuggestions?.productIds ?? []);
     const savedCombos = channel.themeConfig?.comboBanners;
     // Missing `enabled` (saved before the toggle existed) defaults to on.
     setComboBanners(
@@ -375,6 +381,41 @@ export default function ChannelSettingsPage() {
 
   function removeFlashProduct(productId: string) {
     setFlashSaleProductIds((prev) => prev.filter((pid) => pid !== productId));
+  }
+
+  // Cart Suggestions — same channelProducts list as Flash Sale (only
+  // products already published to this storefront), but added via a typed
+  // name search instead of a dropdown.
+  const orderedCartSuggestionProducts = cartSuggestionProductIds
+    .map((pid) => channelProducts.find((p) => p.id === pid))
+    .filter((p): p is Product => !!p);
+  const cartSuggestionMatches = cartSuggestionSearch.trim()
+    ? channelProducts
+        .filter(
+          (p) =>
+            !cartSuggestionProductIds.includes(p.id) &&
+            p.name.toLowerCase().includes(cartSuggestionSearch.trim().toLowerCase()),
+        )
+        .slice(0, 8)
+    : [];
+
+  function moveCartSuggestion(productId: string, dir: -1 | 1) {
+    setCartSuggestionProductIds((prev) => {
+      const index = prev.indexOf(productId);
+      const target = index + dir;
+      if (index < 0 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function addCartSuggestion(productId: string) {
+    setCartSuggestionProductIds((prev) => (prev.includes(productId) ? prev : [...prev, productId]));
+  }
+
+  function removeCartSuggestion(productId: string) {
+    setCartSuggestionProductIds((prev) => prev.filter((pid) => pid !== productId));
   }
 
   function addReview() {
@@ -661,6 +702,7 @@ export default function ChannelSettingsPage() {
       // Flattens the "no restriction yet" default into an explicit saved
       // list, same reasoning as heroSlides/trustBadges above.
       themeConfig.categorySlugs = activeCategorySlugs;
+      themeConfig.cartSuggestions = { productIds: cartSuggestionProductIds };
       // Blank combos (never given a title) are dropped, same as blank tiers.
       themeConfig.comboBanners = comboBanners
         .filter((c) => c.title.trim())
@@ -1169,6 +1211,118 @@ export default function ChannelSettingsPage() {
                         + Add to storefront
                       </Button>
                     </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Cart Suggestions</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    The &ldquo;Suggested Products for you&rdquo; row shown in the storefront&rsquo;s cart drawer —
+                    pick which products show, in what order. Only products already published to this storefront can
+                    be added here.
+                  </p>
+                  {!allProducts ? (
+                    <p className="text-xs text-foreground/50">Loading products…</p>
+                  ) : orderedCartSuggestionProducts.length === 0 ? (
+                    <p className="text-xs text-foreground/50">No products selected yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {orderedCartSuggestionProducts.map((product, index) => (
+                        <div key={product.id} className="flex items-center gap-2">
+                          <span className="flex shrink-0 items-center gap-0.5">
+                            <span className="num grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                              {index + 1}
+                            </span>
+                            <span className="flex flex-col">
+                              <button
+                                type="button"
+                                onClick={() => moveCartSuggestion(product.id, -1)}
+                                disabled={index === 0}
+                                title="Move up"
+                                className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveCartSuggestion(product.id, 1)}
+                                disabled={index === orderedCartSuggestionProducts.length - 1}
+                                title="Move down"
+                                className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                              >
+                                ▼
+                              </button>
+                            </span>
+                          </span>
+                          {product.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded, not part of the Next.js image pipeline
+                            <img
+                              src={product.thumbnailUrl}
+                              alt={product.name}
+                              className="h-9 w-9 shrink-0 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/40">
+                              {product.name.charAt(0)}
+                            </span>
+                          )}
+                          <span className="flex-1">
+                            <span className="block text-sm font-medium">{product.name}</span>
+                            <span className="block text-xs text-foreground/40">{product.sku}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeCartSuggestion(product.id)}
+                            className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {channelProducts.length > 0 && (
+                    <div className="mt-3">
+                      <Input
+                        value={cartSuggestionSearch}
+                        onChange={(e) => setCartSuggestionSearch(e.target.value)}
+                        placeholder="Search this storefront's products by name…"
+                        className="w-full text-sm"
+                      />
+                      {cartSuggestionSearch.trim() &&
+                        (cartSuggestionMatches.length > 0 ? (
+                          <div className="mt-2 space-y-1.5">
+                            {cartSuggestionMatches.map((p) => (
+                              <div
+                                key={p.id}
+                                className="flex items-center gap-2 rounded-lg border border-black/10 px-2.5 py-1.5"
+                              >
+                                <span className="flex-1 text-sm">
+                                  {p.name} <span className="text-xs text-foreground/40">({p.sku})</span>
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    addCartSuggestion(p.id);
+                                    setCartSuggestionSearch("");
+                                  }}
+                                >
+                                  + Add
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-foreground/50">No matching products.</p>
+                        ))}
+                    </div>
+                  )}
+                  {allProducts && channelProducts.length === 0 && (
+                    <p className="mt-2 text-xs text-foreground/50">
+                      No products are published to this storefront yet — publish one from a product&rsquo;s Details
+                      page first.
+                    </p>
                   )}
                 </div>
               </div>

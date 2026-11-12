@@ -97,6 +97,11 @@ export interface ChannelFlashSale {
   productIds: string[];
 }
 
+export interface ChannelCartSuggestions {
+  // Order here IS display order.
+  productIds: string[];
+}
+
 export interface ChannelReview {
   customerName: string;
   location?: string;
@@ -166,6 +171,7 @@ export interface ChannelThemeConfig {
   categorySlugs?: string[];
   comboBanners?: ChannelComboBanner[];
   flashSale?: ChannelFlashSale;
+  cartSuggestions?: ChannelCartSuggestions;
   healthTips?: ChannelHealthTip[];
   reviews?: ChannelReview[];
   customerCarePhone?: string;
