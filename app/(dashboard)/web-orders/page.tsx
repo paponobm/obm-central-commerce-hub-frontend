@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
+import { useChannelScope } from "@/lib/channel-scope-context";
 import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
 import { telHref } from "@/lib/phone";
 import { formatAmount, formatRelativeTime } from "@/lib/format";
@@ -158,6 +159,10 @@ const TABS: { key: TabKey; label: string }[] = [
 export default function WebOrdersPage() {
   const router = useRouter();
   const pathname = usePathname();
+  // Follows the topbar's globally-selected store, same as /orders — without
+  // this, both requests below went unfiltered by channel and every store's
+  // web orders/leads showed up mixed together.
+  const { activeChannelId } = useChannelScope();
   const [orders, setOrders] = useState<WebRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("processing");
@@ -223,9 +228,10 @@ export default function WebOrdersPage() {
 
     let cancelled = false;
     function load() {
+      const channelQs = activeChannelId ? `&channelId=${activeChannelId}` : "";
       Promise.all([
-        api.get<OrderListItem[]>("/admin/orders?source=WEBSITE&includeWebUnapproved=true"),
-        api.get<CheckoutLead[]>("/admin/orders/checkout-leads"),
+        api.get<OrderListItem[]>(`/admin/orders?source=WEBSITE&includeWebUnapproved=true${channelQs}`),
+        api.get<CheckoutLead[]>(`/admin/orders/checkout-leads${activeChannelId ? `?channelId=${activeChannelId}` : ""}`),
       ])
         .then(([orderRows, leads]) => {
           if (!cancelled) setOrders([...orderRows, ...leads.map(leadToRow)]);
@@ -258,7 +264,7 @@ export default function WebOrdersPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [user]);
+  }, [user, activeChannelId]);
 
   const counts = useMemo(() => {
     const result = {} as Record<TabKey, number>;

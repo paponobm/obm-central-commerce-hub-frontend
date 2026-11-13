@@ -78,6 +78,9 @@ interface HealthTipForm {
   title: string;
   categoryId: string;
   readMinutes: string;
+  description: string;
+  points: string[];
+  productIds: string[];
   enabled: boolean;
 }
 
@@ -85,8 +88,12 @@ const EMPTY_HEALTH_TIP: HealthTipForm = {
   title: "",
   categoryId: "",
   readMinutes: "3",
+  description: "",
+  points: [],
+  productIds: [],
   enabled: true,
 };
+const MAX_HEALTH_TIP_POINTS = 20;
 
 // Matches the storefront's own fallback text+icon (components/trust-strip.tsx)
 // — shown pre-filled here so the admin sees what's currently live and edits
@@ -246,6 +253,9 @@ export default function ChannelSettingsPage() {
   // Health Tips — admin-entered article teasers, each optionally linked to
   // a real shared category (same list the Categories/Badge tab uses).
   const [healthTips, setHealthTips] = useState<HealthTipForm[]>([]);
+  // Keyed by tip index — same reasoning as quizSubSearch, several tips'
+  // search boxes can exist on screen at once.
+  const [healthTipSearch, setHealthTipSearch] = useState<Record<number, string>>({});
   // Social & Contact — the storefront side menu's "কাস্টমার কেয়ার" phone
   // number and "আমাদের ফলো করুন" social links.
   const [customerCarePhone, setCustomerCarePhone] = useState("");
@@ -324,6 +334,9 @@ export default function ChannelSettingsPage() {
         title: t.title,
         categoryId: t.categoryId ?? "",
         readMinutes: t.readMinutes !== undefined ? String(t.readMinutes) : "",
+        description: t.description ?? "",
+        points: t.points ?? [],
+        productIds: t.productIds ?? [],
         enabled: t.enabled ?? true,
       })),
     );
@@ -514,6 +527,43 @@ export default function ChannelSettingsPage() {
   }
   function updateHealthTip(index: number, patch: Partial<HealthTipForm>) {
     setHealthTips((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+  }
+
+  function addHealthTipPoint(index: number) {
+    setHealthTips((prev) =>
+      prev.map((t, i) =>
+        i === index && t.points.length < MAX_HEALTH_TIP_POINTS ? { ...t, points: [...t.points, ""] } : t,
+      ),
+    );
+  }
+  function removeHealthTipPoint(index: number, pointIndex: number) {
+    setHealthTips((prev) =>
+      prev.map((t, i) => (i === index ? { ...t, points: t.points.filter((_, j) => j !== pointIndex) } : t)),
+    );
+  }
+  function updateHealthTipPoint(index: number, pointIndex: number, value: string) {
+    setHealthTips((prev) =>
+      prev.map((t, i) =>
+        i === index ? { ...t, points: t.points.map((p, j) => (j === pointIndex ? value : p)) } : t,
+      ),
+    );
+  }
+
+  function addHealthTipProduct(index: number, productId: string) {
+    setHealthTips((prev) =>
+      prev.map((t, i) =>
+        i === index
+          ? { ...t, productIds: t.productIds.includes(productId) ? t.productIds : [...t.productIds, productId] }
+          : t,
+      ),
+    );
+  }
+  function removeHealthTipProduct(index: number, productId: string) {
+    setHealthTips((prev) =>
+      prev.map((t, i) =>
+        i === index ? { ...t, productIds: t.productIds.filter((id) => id !== productId) } : t,
+      ),
+    );
   }
 
   function addSocialLink() {
@@ -836,6 +886,9 @@ export default function ChannelSettingsPage() {
           title: t.title.trim(),
           categoryId: t.categoryId || undefined,
           readMinutes: t.readMinutes ? Number(t.readMinutes) : undefined,
+          description: t.description.trim() || undefined,
+          points: t.points.map((p) => p.trim()).filter(Boolean),
+          productIds: t.productIds,
           enabled: t.enabled,
         }));
       themeConfig.customerCarePhone = customerCarePhone.trim() || undefined;
@@ -1994,9 +2047,10 @@ export default function ChannelSettingsPage() {
             {tab === "healthTips" && (
               <div className="space-y-4">
                 <p className="text-xs text-foreground/50">
-                  Article teaser cards shown in the homepage&rsquo;s &ldquo;স্বাস্থ্য টিপস&rdquo; section — just a
-                  title, an optional category (colors the card the same as that category elsewhere on the site),
-                  and a read time. No article page exists yet, just the teaser.
+                  Article cards shown in the homepage&rsquo;s &ldquo;স্বাস্থ্য টিপস&rdquo; section — a title, an
+                  optional category (colors the card the same as that category elsewhere on the site), a read
+                  time, and now a real detail page: a short description and a numbered list of points. The detail
+                  page also shows real products from the tip&rsquo;s category, when one is set.
                 </p>
                 {healthTips.length === 0 && (
                   <p className="text-xs text-foreground/50">No health tips added yet.</p>
@@ -2061,6 +2115,142 @@ export default function ChannelSettingsPage() {
                           className="w-full text-sm"
                         />
                       </div>
+                    </div>
+                    <div className="mt-3">
+                      <Label className="!text-sm">Description</Label>
+                      <Textarea
+                        value={tip.description}
+                        onChange={(e) => updateHealthTip(index, { description: e.target.value })}
+                        placeholder="শীতে বাতাস শুষ্ক থাকে, তাই গোড়ালির চামড়া শক্ত হয়ে ফেটে যায়। কয়েকটা অভ্যাস বদলালেই এটা অনেকটা ঠেকানো যায়।"
+                        maxLength={600}
+                        rows={2}
+                        className="w-full resize-y text-sm"
+                      />
+                    </div>
+                    <div className="mt-3">
+                      <Label className="!text-sm">Points</Label>
+                      <div className="space-y-2">
+                        {tip.points.map((point, pointIndex) => (
+                          <div key={pointIndex} className="flex items-center gap-2">
+                            <span className="num grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                              {pointIndex + 1}
+                            </span>
+                            <Input
+                              value={point}
+                              onChange={(e) => updateHealthTipPoint(index, pointIndex, e.target.value)}
+                              placeholder="রাতে ঘুমানোর আগে পা ধুয়ে মুছে হিল ক্রিম লাগান"
+                              maxLength={300}
+                              className="w-full text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeHealthTipPoint(index, pointIndex)}
+                              className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {tip.points.length < MAX_HEALTH_TIP_POINTS && (
+                        <button
+                          type="button"
+                          onClick={() => addHealthTipPoint(index)}
+                          className="mt-2 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                        >
+                          + Add point
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <Label className="!text-sm">Suggested products</Label>
+                      <p className="mb-2 text-xs text-foreground/50">
+                        Shown on the detail page&rsquo;s &ldquo;এই সমস্যায় কাজে লাগবে&rdquo; row. Leave empty to
+                        fall back to real products from the category above.
+                      </p>
+                      {(() => {
+                        const search = healthTipSearch[index] ?? "";
+                        const matches = search.trim()
+                          ? channelProducts
+                              .filter(
+                                (p) =>
+                                  !tip.productIds.includes(p.id) &&
+                                  p.name.toLowerCase().includes(search.trim().toLowerCase()),
+                              )
+                              .slice(0, 8)
+                          : [];
+                        const assigned = tip.productIds
+                          .map((id) => channelProducts.find((p) => p.id === id))
+                          .filter((p): p is Product => !!p);
+                        return (
+                          <>
+                            {assigned.length === 0 ? (
+                              <p className="text-xs text-foreground/50">No products selected yet.</p>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {assigned.map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className="flex items-center gap-2 rounded-lg border border-black/10 px-2.5 py-1.5"
+                                  >
+                                    <span className="flex-1 text-sm">
+                                      {p.name} <span className="text-xs text-foreground/40">({p.sku})</span>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeHealthTipProduct(index, p.id)}
+                                      className="shrink-0 rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                                      title="Remove"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {channelProducts.length > 0 && (
+                              <div className="mt-2">
+                                <Input
+                                  value={search}
+                                  onChange={(e) =>
+                                    setHealthTipSearch((prev) => ({ ...prev, [index]: e.target.value }))
+                                  }
+                                  placeholder="Search this storefront's products by name…"
+                                  className="w-full text-sm"
+                                />
+                                {search.trim() &&
+                                  (matches.length > 0 ? (
+                                    <div className="mt-2 space-y-1.5">
+                                      {matches.map((p) => (
+                                        <div
+                                          key={p.id}
+                                          className="flex items-center gap-2 rounded-lg border border-black/10 px-2.5 py-1.5"
+                                        >
+                                          <span className="flex-1 text-sm">
+                                            {p.name} <span className="text-xs text-foreground/40">({p.sku})</span>
+                                          </span>
+                                          <Button
+                                            type="button"
+                                            variant="secondary"
+                                            onClick={() => {
+                                              addHealthTipProduct(index, p.id);
+                                              setHealthTipSearch((prev) => ({ ...prev, [index]: "" }));
+                                            }}
+                                          >
+                                            + Add
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-2 text-xs text-foreground/50">No matching products.</p>
+                                  ))}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}

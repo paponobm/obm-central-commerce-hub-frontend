@@ -131,6 +131,14 @@ export interface ChannelHealthTip {
   // storefront, so this never points at a stale/dead category.
   categoryId?: string;
   readMinutes?: number;
+  // The detail page's intro paragraph and numbered point list — order here
+  // IS display order.
+  description?: string;
+  points?: string[];
+  // The detail page's "এই সমস্যায় কাজে লাগবে" row — specific products,
+  // falls back to the category above when empty. Order here IS display
+  // order.
+  productIds?: string[];
   enabled?: boolean;
 }
 
