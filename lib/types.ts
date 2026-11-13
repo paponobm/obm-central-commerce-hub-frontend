@@ -97,6 +97,18 @@ export interface ChannelFlashSale {
   productIds: string[];
 }
 
+// The order-confirmation page's "একই পার্সেলে যোগ করুন" upsell strip —
+// Settings → Checkout Management.
+export interface ChannelCheckoutUpsell {
+  enabled: boolean;
+  // Minutes the countdown runs for, starting when the confirmation page
+  // loads — not a shared absolute deadline like ChannelFlashSale.endsAt.
+  durationMinutes?: number;
+  discountPercent?: number;
+  // Order here IS display order.
+  productIds: string[];
+}
+
 export interface ChannelCartSuggestions {
   // Order here IS display order.
   productIds: string[];
@@ -191,6 +203,7 @@ export interface ChannelThemeConfig {
   categorySlugs?: string[];
   comboBanners?: ChannelComboBanner[];
   flashSale?: ChannelFlashSale;
+  checkoutUpsell?: ChannelCheckoutUpsell;
   cartSuggestions?: ChannelCartSuggestions;
   quizProblems?: ChannelQuizProblem[];
   healthTips?: ChannelHealthTip[];

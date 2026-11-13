@@ -50,6 +50,9 @@ interface LineItem {
   image?: string;
   quantity: number;
   unitPrice: string; // blank = let the backend resolve channel/base price
+  // The per-item discount this line already had (e.g. from a storefront
+  // checkout) — carried through on save so it isn't silently reset to 0.
+  lineDiscount: string;
 }
 
 function availableStock(p: Product): number {
@@ -136,6 +139,7 @@ export default function EditOrderPage() {
             image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            lineDiscount: item.discount ?? "0",
           })),
         );
       })
@@ -172,6 +176,7 @@ export default function EditOrderPage() {
           image: p.images?.[0]?.url,
           quantity: 1,
           unitPrice: "",
+          lineDiscount: "0",
         },
       ];
     });
@@ -255,6 +260,7 @@ export default function EditOrderPage() {
           productId: i.productId,
           quantity: i.quantity,
           unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+          discount: Number(i.lineDiscount) > 0 ? Number(i.lineDiscount) : undefined,
         })),
         discount: discount ? Number(discount) : undefined,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,

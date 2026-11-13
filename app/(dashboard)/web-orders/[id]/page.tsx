@@ -197,6 +197,11 @@ interface LineItem {
   image?: string;
   quantity: number;
   unitPrice: string; // blank = let the backend resolve channel/base price
+  // The per-item discount already applied when this order was placed (e.g. a
+  // storefront quantity-tier discount) — carried through on save so Approve
+  // doesn't silently reset it to 0 and inflate the order's real total. Never
+  // edited directly in this UI.
+  lineDiscount: string;
 }
 
 function availableStock(p: Product): number {
@@ -485,6 +490,7 @@ export default function WebOrderDetailsPage() {
               image: i.image ?? undefined,
               quantity: i.quantity,
               unitPrice: String(i.unitPrice),
+              lineDiscount: "0",
             })),
           };
         })
@@ -497,7 +503,11 @@ export default function WebOrderDetailsPage() {
         setDeliveryMethod(o.deliveryMethod ?? DELIVERY_METHODS[0]);
         setShippingAddress(o.shippingAddress);
         setShippingNote(o.notes ?? "");
-        setDiscount(Number(o.discount) > 0 ? o.discount : "");
+        // Manual-only: the discount already applied at checkout shows in the
+        // breakdown box below instead, so Approve never silently re-charges
+        // it a second time by both keeping it here AND preserving it via
+        // lineDiscount/order.discount server-side.
+        setDiscount("");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
         setLineItems(
           formItems ??
@@ -508,6 +518,7 @@ export default function WebOrderDetailsPage() {
               image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
+              lineDiscount: item.discount ?? "0",
             })),
         );
         if (isLead) return null;
@@ -555,6 +566,7 @@ export default function WebOrderDetailsPage() {
           quantity: 1,
           // Starts at the price the picker shows, so it can be edited like the rest.
           unitPrice: String(Number(p.basePrice)),
+          lineDiscount: "0",
         },
       ];
     });
@@ -570,16 +582,46 @@ export default function WebOrderDetailsPage() {
     setLineItems((rows) => rows.filter((r) => r.productId !== productId));
   }
 
-  // Mirrors OrdersService.updateOrder's exact formula, same as New Order.
+  // Sub Total shown below is the raw, pre-discount product total (matches
+  // each line's own Total column) — unchanged from before. Grand Total,
+  // though, is computed from netSubtotal (below), which nets out each line's
+  // OWN already-applied discount (lineDiscount) — never from this raw figure
+  // — so it's never off by the amount that discount was.
   const subTotal = lineItems.reduce((sum, item) => {
     const unitPrice = item.unitPrice
       ? Number(item.unitPrice)
       : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
     return sum + item.quantity * unitPrice;
   }, 0);
+  // The real, already-charged breakdown from the order as it was placed —
+  // used for the read-only box below.
+  const realItemDiscountTotal =
+    order?.items.reduce((sum, item) => sum + Number(item.discount || 0), 0) ?? 0;
+  const realSubtotal = Number(order?.subtotal ?? 0);
+  const realRawProductTotal = realSubtotal + realItemDiscountTotal;
+  const realOrderDiscount = Number(order?.discount ?? 0);
+  const realShippingFee = Number(order?.shippingFee ?? 0);
+  const itemDiscountPercent =
+    realRawProductTotal > 0 ? Math.round((realItemDiscountTotal / realRawProductTotal) * 100) : 0;
+  const orderDiscountPercent =
+    realRawProductTotal > 0 ? Math.round((realOrderDiscount / realRawProductTotal) * 100) : 0;
+  const hasRealBreakdown = realItemDiscountTotal > 0 || realOrderDiscount > 0 || realRawProductTotal > 0;
+  // Each line's own already-applied discount (lineDiscount) netted out, same
+  // as OrdersService.updateOrder's own per-line total — so this always
+  // starts from সর্বমোট's real basis (১৮০০, not ২০০০) whether or not the
+  // admin has touched anything yet.
+  const netSubtotal = lineItems.reduce((sum, item) => {
+    const unitPrice = item.unitPrice
+      ? Number(item.unitPrice)
+      : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
+    return sum + Math.max(0, item.quantity * unitPrice - (Number(item.lineDiscount) || 0));
+  }, 0);
+  // The already-applied checkout discount (realOrderDiscount) always comes
+  // off first — the Discount field above is a manual EXTRA on top of it, per
+  // its own "manual amount only" placeholder, not a replacement for it.
   const orderTotal = Math.max(
     0,
-    subTotal - (Number(discount) || 0) + (Number(shippingFee) || 0),
+    netSubtotal - realOrderDiscount - (Number(discount) || 0) + (Number(shippingFee) || 0),
   );
   // Same as New Order: what is still due after the advance.
   const grandTotal = Math.max(0, orderTotal - (Number(advanceAmount) || 0));
@@ -671,6 +713,10 @@ export default function WebOrderDetailsPage() {
           productId: i.productId,
           quantity: i.quantity,
           unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+          // Preserves whatever per-item discount checkout already applied —
+          // omitting it here would reset it to 0 and silently inflate the
+          // order's total on save (see lineDiscount on LineItem).
+          discount: Number(i.lineDiscount) > 0 ? Number(i.lineDiscount) : undefined,
         })),
         discount: discount ? Number(discount) : undefined,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
@@ -877,6 +923,38 @@ export default function WebOrderDetailsPage() {
                   />
                 </div>
               </div>
+
+              {!isLead && hasRealBreakdown && (
+                <div className="mt-4 rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 p-3">
+                  <div className="mb-2 text-xs font-semibold text-foreground/70">
+                    Website checkout breakdown (already applied — Discount above is for an extra manual amount only)
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-foreground/70">পণ্যের মূল দাম</span>
+                      <span className="font-medium text-foreground">{formatAmount(realRawProductTotal)}৳</span>
+                    </div>
+                    {realItemDiscountTotal > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-foreground/70">পণ্যে ছাড়{itemDiscountPercent > 0 ? `(${itemDiscountPercent}%)` : ""}</span>
+                        <span className="font-medium text-status-cancelled">-{formatAmount(realItemDiscountTotal)}৳</span>
+                      </div>
+                    )}
+                    {realOrderDiscount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-foreground/70">পরিমাণে ছাড়{orderDiscountPercent > 0 ? `(${orderDiscountPercent}%)` : ""}</span>
+                        <span className="font-medium text-status-cancelled">-{formatAmount(realOrderDiscount)}৳</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-foreground/70">ডেলিভারি চার্জ</span>
+                      <span className="font-medium text-foreground">
+                        {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </Card>
 
             {!done && (

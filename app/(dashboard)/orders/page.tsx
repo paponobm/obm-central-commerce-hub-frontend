@@ -268,6 +268,35 @@ function sortValue(o: OrderListItem, key: SortKey): number | string {
   }
 }
 
+// One line of the Order Details modal's Activity Log, as the server
+// describes it (same /admin/orders/:id/activity shape Web Order Details
+// uses) — who did what, and when: order created, status changes, invoice
+// prints, notes, response changes.
+interface ActivityEntry {
+  key: string;
+  at: string;
+  by: string | null;
+  text: string;
+}
+
+function ActivityLogRow({ entry }: { entry: ActivityEntry }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border-l-4 border-primary bg-black/[0.02] py-2.5 pl-3 pr-4">
+      <div className="min-w-0 text-sm font-medium text-foreground">{entry.text}</div>
+      <div className="flex shrink-0 items-center gap-6 text-right text-xs">
+        <div>
+          <div className="text-foreground/40">At</div>
+          <div className="text-foreground/70">{formatDateTime(entry.at)}</div>
+        </div>
+        <div>
+          <div className="text-foreground/40">User Name</div>
+          <div className="text-foreground/70">{entry.by ?? "—"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -323,6 +352,7 @@ export default function OrdersPage() {
   const [detailsOrderId, setDetailsOrderId] = useState<string | null>(null);
   const [detailsData, setDetailsData] = useState<OrderDetail | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [detailsActivity, setDetailsActivity] = useState<ActivityEntry[]>([]);
   const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
@@ -811,6 +841,7 @@ export default function OrdersPage() {
     if (!detailsOrderId) return;
     setDetailsData(null);
     setDetailsError(null);
+    setDetailsActivity([]);
     setShowRecordPayment(false);
     setPaymentAmount("");
     setPaymentTxnId("");
@@ -819,6 +850,10 @@ export default function OrdersPage() {
       .get<OrderDetail>(`/admin/orders/${detailsOrderId}`)
       .then(setDetailsData)
       .catch((err) => setDetailsError(err instanceof ApiError ? err.message : "Failed to load order"));
+    api
+      .get<ActivityEntry[]>(`/admin/orders/${detailsOrderId}/activity`)
+      .then(setDetailsActivity)
+      .catch(() => {});
   }, [detailsOrderId]);
 
   async function submitPayment(e: React.FormEvent) {
@@ -2054,6 +2089,19 @@ export default function OrdersPage() {
                       </div>
                       );
                     })}
+                  </div>
+
+                  <div className="rounded-lg border border-black/10 p-4">
+                    <h4 className="mb-3 text-base font-semibold text-foreground">Activity Log</h4>
+                    {detailsActivity.length === 0 ? (
+                      <p className="text-sm text-foreground/50">No activity yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {detailsActivity.map((a) => (
+                          <ActivityLogRow key={a.key} entry={a} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

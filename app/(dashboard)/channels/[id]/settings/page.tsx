@@ -158,6 +158,7 @@ const TABS = [
   { key: "badges", label: "Badge & Category" },
   { key: "combo", label: "Home Page Combo" },
   { key: "flashSale", label: "Flash Sale" },
+  { key: "checkoutUpsell", label: "Checkout Management" },
   { key: "problem", label: "Problem" },
   { key: "reviews", label: "Review" },
   { key: "healthTips", label: "Health Tips" },
@@ -247,6 +248,15 @@ export default function ChannelSettingsPage() {
   const [flashSaleProductIds, setFlashSaleProductIds] = useState<string[]>([]);
   const [allProducts, setAllProducts] = useState<Product[] | null>(null);
   const [productToAdd, setProductToAdd] = useState("");
+  // Checkout Management — the order-confirmation page's "একই পার্সেলে যোগ
+  // করুন" upsell strip: selected products (order = display order) + a
+  // relative countdown length (minutes, not a shared deadline like Flash
+  // Sale) + the extra discount percent advertised for adding one.
+  const [checkoutUpsellEnabled, setCheckoutUpsellEnabled] = useState(false);
+  const [checkoutUpsellDuration, setCheckoutUpsellDuration] = useState("15");
+  const [checkoutUpsellDiscount, setCheckoutUpsellDiscount] = useState("10");
+  const [checkoutUpsellProductIds, setCheckoutUpsellProductIds] = useState<string[]>([]);
+  const [checkoutUpsellProductToAdd, setCheckoutUpsellProductToAdd] = useState("");
   // Review — admin-entered testimonials, each optionally linked to a real
   // product on this storefront (same channelProducts list as Flash Sale).
   const [reviews, setReviews] = useState<ReviewForm[]>([]);
@@ -319,6 +329,15 @@ export default function ChannelSettingsPage() {
     setFlashSaleEnabled(flashSale?.enabled ?? false);
     setFlashSaleEndsAt(isoToLocalInput(flashSale?.endsAt));
     setFlashSaleProductIds(flashSale?.productIds ?? []);
+    const checkoutUpsell = channel.themeConfig?.checkoutUpsell;
+    setCheckoutUpsellEnabled(checkoutUpsell?.enabled ?? false);
+    setCheckoutUpsellDuration(
+      checkoutUpsell?.durationMinutes !== undefined ? String(checkoutUpsell.durationMinutes) : "15",
+    );
+    setCheckoutUpsellDiscount(
+      checkoutUpsell?.discountPercent !== undefined ? String(checkoutUpsell.discountPercent) : "10",
+    );
+    setCheckoutUpsellProductIds(checkoutUpsell?.productIds ?? []);
     setReviews(
       (channel.themeConfig?.reviews ?? []).map((r) => ({
         customerName: r.customerName,
@@ -409,6 +428,34 @@ export default function ChannelSettingsPage() {
 
   function removeFlashProduct(productId: string) {
     setFlashSaleProductIds((prev) => prev.filter((pid) => pid !== productId));
+  }
+
+  // Checkout Management — same ordered-pick pattern as Flash Sale above,
+  // over the same channelProducts (already-published-here) list.
+  const orderedCheckoutUpsellProducts = checkoutUpsellProductIds
+    .map((pid) => channelProducts.find((p) => p.id === pid))
+    .filter((p): p is Product => !!p);
+  const offCheckoutUpsellProducts = channelProducts.filter(
+    (p) => !checkoutUpsellProductIds.includes(p.id),
+  );
+
+  function moveCheckoutUpsellProduct(productId: string, dir: -1 | 1) {
+    setCheckoutUpsellProductIds((prev) => {
+      const index = prev.indexOf(productId);
+      const target = index + dir;
+      if (index < 0 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function addCheckoutUpsellProduct(productId: string) {
+    setCheckoutUpsellProductIds((prev) => (prev.includes(productId) ? prev : [...prev, productId]));
+  }
+
+  function removeCheckoutUpsellProduct(productId: string) {
+    setCheckoutUpsellProductIds((prev) => prev.filter((pid) => pid !== productId));
   }
 
   // Cart Suggestions — same channelProducts list as Flash Sale (only
@@ -866,6 +913,12 @@ export default function ChannelSettingsPage() {
         enabled: flashSaleEnabled,
         endsAt: localInputToIso(flashSaleEndsAt),
         productIds: flashSaleProductIds,
+      };
+      themeConfig.checkoutUpsell = {
+        enabled: checkoutUpsellEnabled,
+        durationMinutes: checkoutUpsellDuration ? Number(checkoutUpsellDuration) : undefined,
+        discountPercent: checkoutUpsellDiscount ? Number(checkoutUpsellDiscount) : undefined,
+        productIds: checkoutUpsellProductIds,
       };
       // Blank reviews (never given a name or text) are dropped, same as
       // blank combos/tiers elsewhere on this page.
@@ -1742,6 +1795,156 @@ export default function ChannelSettingsPage() {
                     <p className="mt-2 text-xs text-foreground/50">
                       No products are published to this storefront yet — publish one from a product&rsquo;s Details
                       page first.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {tab === "checkoutUpsell" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-black/10 p-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      title={
+                        checkoutUpsellEnabled ? "On — shown on the order-confirmation page" : "Off — hidden"
+                      }
+                    >
+                      <Switch checked={checkoutUpsellEnabled} onChange={() => setCheckoutUpsellEnabled((v) => !v)} />
+                    </span>
+                    <Label className="!mb-0">
+                      Show the &ldquo;একই পার্সেলে যোগ করুন&rdquo; strip after checkout
+                    </Label>
+                  </div>
+                  <p className="mt-2 text-xs text-foreground/50">
+                    Shown on the order-confirmation page right after a customer places an order — a countdown
+                    strip suggesting products to add to the same parcel at an extra discount, with no added
+                    delivery charge.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-md">
+                    <div>
+                      <Label>Countdown length (minutes)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="120"
+                        step="1"
+                        value={checkoutUpsellDuration}
+                        onChange={(e) => setCheckoutUpsellDuration(e.target.value)}
+                      />
+                      <p className="mt-1 text-xs text-foreground/40">
+                        Starts fresh each time a customer reaches their own confirmation page.
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Extra discount (%)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={checkoutUpsellDiscount}
+                        onChange={(e) => setCheckoutUpsellDiscount(e.target.value)}
+                      />
+                      <p className="mt-1 text-xs text-foreground/40">Advertised on each product in the strip.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Products in this strip</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    The order below is the order shown on the storefront. Only products already published to
+                    this storefront can be added here.
+                  </p>
+                  {!allProducts ? (
+                    <p className="text-xs text-foreground/50">Loading products…</p>
+                  ) : orderedCheckoutUpsellProducts.length === 0 ? (
+                    <p className="text-xs text-foreground/50">No products selected yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {orderedCheckoutUpsellProducts.map((product, index) => (
+                        <div key={product.id} className="flex items-center gap-2">
+                          <span className="flex shrink-0 items-center gap-0.5">
+                            <span className="num grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                              {index + 1}
+                            </span>
+                            <span className="flex flex-col">
+                              <button
+                                type="button"
+                                onClick={() => moveCheckoutUpsellProduct(product.id, -1)}
+                                disabled={index === 0}
+                                title="Move up"
+                                className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveCheckoutUpsellProduct(product.id, 1)}
+                                disabled={index === orderedCheckoutUpsellProducts.length - 1}
+                                title="Move down"
+                                className="leading-none text-foreground/40 hover:text-foreground disabled:opacity-20"
+                              >
+                                ▼
+                              </button>
+                            </span>
+                          </span>
+                          {product.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded, not part of the Next.js image pipeline
+                            <img src={product.thumbnailUrl} alt={product.name} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                          ) : (
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/5 text-xs text-foreground/40">
+                              {product.name.charAt(0)}
+                            </span>
+                          )}
+                          <span className="flex-1">
+                            <span className="block text-sm font-medium">{product.name}</span>
+                            <span className="block text-xs text-foreground/40">{product.sku}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeCheckoutUpsellProduct(product.id)}
+                            className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {offCheckoutUpsellProducts.length > 0 && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Select
+                        value={checkoutUpsellProductToAdd}
+                        onChange={(e) => setCheckoutUpsellProductToAdd(e.target.value)}
+                        className="w-full text-sm"
+                      >
+                        <option value="">Add a product…</option>
+                        {offCheckoutUpsellProducts.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.sku})
+                          </option>
+                        ))}
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={!checkoutUpsellProductToAdd}
+                        onClick={() => {
+                          addCheckoutUpsellProduct(checkoutUpsellProductToAdd);
+                          setCheckoutUpsellProductToAdd("");
+                        }}
+                      >
+                        + Add to strip
+                      </Button>
+                    </div>
+                  )}
+                  {allProducts && channelProducts.length === 0 && (
+                    <p className="mt-2 text-xs text-foreground/50">
+                      No products are published to this storefront yet — publish one from a product&rsquo;s
+                      Details page first.
                     </p>
                   )}
                 </div>

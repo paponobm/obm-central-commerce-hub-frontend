@@ -123,6 +123,17 @@ function StatTile({
   );
 }
 
+// One line of the customer's Activity log — same shape the order/web-order
+// detail pages already use for their own Activity log (see
+// web-orders/[id]/page.tsx's ActivityEntry), minus the status-change-only
+// fields nothing here ever sets.
+interface ActivityEntry {
+  key: string;
+  at: string;
+  by: string | null;
+  text: string;
+}
+
 interface FormState {
   name: string;
   phone: string;
@@ -138,6 +149,10 @@ export default function CustomerDetailPage() {
   const { hasPermission } = useAuth();
   const [customer, setCustomer] = useState<CustomerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // e.g. the phone's name getting updated by a later order under a
+  // different name (see CustomersService.resolveCustomer) — shown so staff
+  // can see when/why a customer's name changed, not just the current value.
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
 
   const [form, setForm] = useState<FormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -148,6 +163,10 @@ export default function CustomerDetailPage() {
       .get<CustomerDetail>(`/admin/customers/${params.id}`)
       .then(setCustomer)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load customer"));
+    api
+      .get<ActivityEntry[]>(`/admin/customers/${params.id}/activity`)
+      .then(setActivity)
+      .catch(() => {});
   }
 
   useEffect(load, [params.id]);
@@ -316,6 +335,25 @@ export default function CustomerDetailPage() {
           </div>
         )}
       </Card>
+
+      {activity.length > 0 && (
+        <Card className="mt-6">
+          <h2 className="mb-3 text-base font-semibold text-foreground">Activity</h2>
+          <div className="space-y-3">
+            {activity.map((a) => (
+              <div key={a.key} className="text-sm">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/50">
+                  <span>{formatDateTime(a.at)}</span>
+                  {a.by && (
+                    <span className="rounded bg-black/5 px-1.5 py-0.5 font-medium text-foreground/70">{a.by}</span>
+                  )}
+                </div>
+                <div>{a.text}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {customer.ordersByChannel.length > 1 && (
         <Card className="mt-6">

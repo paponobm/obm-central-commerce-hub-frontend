@@ -458,7 +458,7 @@ export default function WebOrdersPage() {
                     <td className="px-4 py-4">
                       {o.customer.orderCount > 1 && (
                         <span className="inline-block rounded-md bg-sky-100 px-2 py-0.5 text-sm font-semibold text-sky-700">
-                          REPEAT
+                          REPEAT ({o.customer.orderCount})
                         </span>
                       )}
                     </td>
