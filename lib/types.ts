@@ -80,6 +80,31 @@ export interface ChannelComboTier {
   // once this combo group's own subtotal reaches this tier — same real
   // waiver as a spend-more reward's own freeDelivery.
   freeDelivery?: boolean;
+  // Marks this as the VIP tier — reaching it shows the storefront's VIP
+  // banner at checkout and, once the order is placed, a real coupon the
+  // backend generates on the spot (see Settings → VIP কুপন) on the
+  // confirmation page.
+  vip?: boolean;
+}
+
+// Settings → VIP কুপন's own discount rate — the one admin-set number every
+// auto-generated VIP coupon (see VipCoupon) uses. Codes themselves are never
+// admin-typed; see ChannelComboTier.vip for what triggers generating one.
+export interface ChannelVipCouponSettings {
+  discountPercent?: number;
+}
+
+// One row in Settings → VIP কুপন's list — a coupon the backend generated
+// when some order's own combo group reached a VIP-flagged pricing tier.
+// `usedOrder` is set once (and only once) a later order actually redeems it.
+export interface VipCoupon {
+  id: string;
+  code: string;
+  discountPercent: number;
+  createdAt: string;
+  usedAt: string | null;
+  grantedOrder: { orderNumber: string; shippingName: string };
+  usedOrder: { orderNumber: string; shippingName: string } | null;
 }
 
 export interface ChannelComboBanner {
@@ -154,6 +179,16 @@ export interface ChannelHealthTip {
   enabled?: boolean;
 }
 
+// One section of the storefront's /policy page ("ডেলিভারি ও রিটার্ন নীতি") —
+// a title + bulleted lines. Order here IS display order. Empty/unset on the
+// channel falls back to the page's original two hardcoded sections (see the
+// backend's StorefrontService.getPolicy).
+export interface ChannelPolicySection {
+  title: string;
+  points?: string[];
+  enabled?: boolean;
+}
+
 // Fixed platform palette — keep in sync with the backend's
 // SOCIAL_LINK_PLATFORMS (social-link.dto.ts).
 export type ChannelSocialPlatform = "facebook" | "instagram" | "youtube" | "tiktok" | "whatsapp" | "website";
@@ -207,6 +242,7 @@ export interface ChannelThemeConfig {
   cartSuggestions?: ChannelCartSuggestions;
   quizProblems?: ChannelQuizProblem[];
   healthTips?: ChannelHealthTip[];
+  policySections?: ChannelPolicySection[];
   reviews?: ChannelReview[];
   customerCarePhone?: string;
   socialLinks?: ChannelSocialLink[];
@@ -215,6 +251,7 @@ export interface ChannelThemeConfig {
   quantityDiscounts?: ChannelQuantityDiscount[];
   deliveryCharge?: number;
   coupons?: ChannelCoupon[];
+  vipCoupon?: ChannelVipCouponSettings;
 }
 
 export interface Channel {

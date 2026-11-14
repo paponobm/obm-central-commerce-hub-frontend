@@ -23,6 +23,7 @@ import type {
   ChannelSocialPlatform,
   ChannelTrustBadge,
   Product,
+  VipCoupon,
 } from "@/lib/types";
 
 interface SpendingRewardForm {
@@ -95,6 +96,38 @@ const EMPTY_HEALTH_TIP: HealthTipForm = {
 };
 const MAX_HEALTH_TIP_POINTS = 20;
 
+interface PolicySectionForm {
+  title: string;
+  points: string[];
+  enabled: boolean;
+}
+const EMPTY_POLICY_SECTION: PolicySectionForm = { title: "", points: [], enabled: true };
+const MAX_POLICY_SECTIONS = 20;
+const MAX_POLICY_POINTS = 30;
+// Matches the backend's own fallback (StorefrontService.getPolicy) — shown
+// pre-filled here so a channel that's never touched this tab starts from
+// exactly what's already live on /policy, same precedent as
+// DEFAULT_TRUST_BADGES/DEFAULT_COMBO_BANNER above.
+const DEFAULT_POLICY_SECTIONS: PolicySectionForm[] = [
+  {
+    title: "ডেলিভারি",
+    points: [
+      "সারা বাংলাদেশে হোম ডেলিভারি।",
+      "ক্যাশ অন ডেলিভারি — পণ্য হাতে পেয়ে টাকা দিন।",
+      "পণ্য হাতে পাওয়ার সাথে সাথেই প্যাকেট যাচাই করে নিন।",
+    ],
+    enabled: true,
+  },
+  {
+    title: "রিটার্ন ও বদল",
+    points: [
+      "ভাঙা বা ভুল পণ্য পেলে দ্রুত আমাদের জানান — আমরা বদলে দেব।",
+      "সিল করা প্যাকেট খোলা বা ব্যবহৃত পণ্যের ক্ষেত্রে বদল প্রযোজ্য নয়।",
+    ],
+    enabled: true,
+  },
+];
+
 // Matches the storefront's own fallback text+icon (components/trust-strip.tsx)
 // — shown pre-filled here so the admin sees what's currently live and edits
 // from there.
@@ -162,8 +195,10 @@ const TABS = [
   { key: "problem", label: "Problem" },
   { key: "reviews", label: "Review" },
   { key: "healthTips", label: "Health Tips" },
+  { key: "policy", label: "Policy" },
   { key: "social", label: "Social & Contact" },
   { key: "other", label: "Other Settings" },
+  { key: "vipCoupon", label: "VIP কুপন" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -266,6 +301,9 @@ export default function ChannelSettingsPage() {
   // Keyed by tip index — same reasoning as quizSubSearch, several tips'
   // search boxes can exist on screen at once.
   const [healthTipSearch, setHealthTipSearch] = useState<Record<number, string>>({});
+  // Policy — the /policy page's ("ডেলিভারি ও রিটার্ন নীতি") sections, each a
+  // title + bulleted lines.
+  const [policySections, setPolicySections] = useState<PolicySectionForm[]>([]);
   // Social & Contact — the storefront side menu's "কাস্টমার কেয়ার" phone
   // number and "আমাদের ফলো করুন" social links.
   const [customerCarePhone, setCustomerCarePhone] = useState("");
@@ -288,6 +326,13 @@ export default function ChannelSettingsPage() {
   // checkout — see CouponDto). Real: the best of this and the spend-more
   // reward discount is applied, whichever is higher, not both.
   const [coupons, setCoupons] = useState<CouponForm[]>([]);
+  // VIP কুপন — the one real rate every backend-auto-generated VIP coupon
+  // uses (see ComboTierDto.vip / VipCoupon). Codes themselves are never
+  // typed here; vipCoupons below is just the read-only list of what's
+  // already been issued.
+  const [vipCouponDiscountPercent, setVipCouponDiscountPercent] = useState("");
+  const [vipCoupons, setVipCoupons] = useState<VipCoupon[] | null>(null);
+  const [vipCouponsError, setVipCouponsError] = useState<string | null>(null);
   const [allCategories, setAllCategories] = useState<Category[] | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingPositionSlug, setEditingPositionSlug] = useState<string | null>(null);
@@ -359,6 +404,16 @@ export default function ChannelSettingsPage() {
         enabled: t.enabled ?? true,
       })),
     );
+    const savedPolicy = channel.themeConfig?.policySections;
+    setPolicySections(
+      savedPolicy?.length
+        ? savedPolicy.map((s) => ({
+            title: s.title,
+            points: s.points ?? [],
+            enabled: s.enabled ?? true,
+          }))
+        : DEFAULT_POLICY_SECTIONS,
+    );
     setCustomerCarePhone(channel.themeConfig?.customerCarePhone ?? "");
     setSocialLinks(channel.themeConfig?.socialLinks ?? []);
     setMinimumOrderAmount(
@@ -389,8 +444,21 @@ export default function ChannelSettingsPage() {
         description: c.description ?? "",
       })),
     );
+    setVipCouponDiscountPercent(
+      channel.themeConfig?.vipCoupon?.discountPercent !== undefined
+        ? String(channel.themeConfig.vipCoupon.discountPercent)
+        : "",
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
+
+  useEffect(() => {
+    if (!channel) return;
+    api
+      .get<VipCoupon[]>(`/admin/channels/${channel.id}/vip-coupons`)
+      .then(setVipCoupons)
+      .catch((err) => setVipCouponsError(err instanceof ApiError ? err.message : "Failed to load VIP coupons"));
+  }, [channel]);
 
   useEffect(() => {
     api
@@ -609,6 +677,37 @@ export default function ChannelSettingsPage() {
     setHealthTips((prev) =>
       prev.map((t, i) =>
         i === index ? { ...t, productIds: t.productIds.filter((id) => id !== productId) } : t,
+      ),
+    );
+  }
+
+  function addPolicySection() {
+    setPolicySections((prev) =>
+      prev.length >= MAX_POLICY_SECTIONS ? prev : [...prev, { ...EMPTY_POLICY_SECTION }],
+    );
+  }
+  function removePolicySection(index: number) {
+    setPolicySections((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updatePolicySection(index: number, patch: Partial<PolicySectionForm>) {
+    setPolicySections((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  }
+  function addPolicyPoint(index: number) {
+    setPolicySections((prev) =>
+      prev.map((s, i) =>
+        i === index && s.points.length < MAX_POLICY_POINTS ? { ...s, points: [...s.points, ""] } : s,
+      ),
+    );
+  }
+  function removePolicyPoint(index: number, pointIndex: number) {
+    setPolicySections((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, points: s.points.filter((_, j) => j !== pointIndex) } : s)),
+    );
+  }
+  function updatePolicyPoint(index: number, pointIndex: number, value: string) {
+    setPolicySections((prev) =>
+      prev.map((s, i) =>
+        i === index ? { ...s, points: s.points.map((p, j) => (j === pointIndex ? value : p)) } : s,
       ),
     );
   }
@@ -906,6 +1005,7 @@ export default function ChannelSettingsPage() {
               enabled: t.enabled,
               ...(t.discountPercent ? { discountPercent: t.discountPercent } : {}),
               ...(t.freeDelivery ? { freeDelivery: true } : {}),
+              ...(t.vip ? { vip: true } : {}),
             })),
           enabled: c.enabled,
         }));
@@ -943,6 +1043,15 @@ export default function ChannelSettingsPage() {
           points: t.points.map((p) => p.trim()).filter(Boolean),
           productIds: t.productIds,
           enabled: t.enabled,
+        }));
+      // Blank sections (never given a title) are dropped, same as blank
+      // reviews/tips.
+      themeConfig.policySections = policySections
+        .filter((s) => s.title.trim())
+        .map((s) => ({
+          title: s.title.trim(),
+          points: s.points.map((p) => p.trim()).filter(Boolean),
+          enabled: s.enabled,
         }));
       themeConfig.customerCarePhone = customerCarePhone.trim() || undefined;
       // Blank URLs (row added but never filled in) are dropped.
@@ -984,6 +1093,9 @@ export default function ChannelSettingsPage() {
           discountPercent: Number(c.discountPercent),
           ...(c.description.trim() ? { description: c.description.trim() } : {}),
         }));
+      themeConfig.vipCoupon = vipCouponDiscountPercent.trim()
+        ? { discountPercent: Number(vipCouponDiscountPercent) }
+        : undefined;
 
       await api.patch(`/admin/channels/${id}`, {
         name,
@@ -1059,16 +1171,16 @@ export default function ChannelSettingsPage() {
           </div>
         </Card>
 
-        <Card>
-          <div className="space-y-4">
+        <Card className="min-w-0">
+          <div className="min-w-0 space-y-4">
             <h2 className="text-base font-semibold text-foreground">Storefront content</h2>
-            <div className="flex gap-1 border-b border-black/5">
+            <div className="flex gap-1 overflow-x-auto border-b border-black/5">
               {TABS.map((t) => (
                 <button
                   key={t.key}
                   type="button"
                   onClick={() => setTab(t.key)}
-                  className={`shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
                     tab === t.key
                       ? "border-primary text-primary"
                       : "border-transparent text-foreground/60 hover:text-foreground"
@@ -1637,6 +1749,17 @@ export default function ChannelSettingsPage() {
                                 onChange={(e) => updateComboTier(ci, ti, { freeDelivery: e.target.checked })}
                               />
                               Free delivery
+                            </label>
+                            <label
+                              className="flex shrink-0 items-center gap-1.5 pt-2 text-xs text-foreground/70"
+                              title="Reaching this card shows the VIP banner at checkout and, once the order is placed, a real coupon the backend generates on the spot (Settings → VIP কুপন sets its rate)"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={tier.vip ?? false}
+                                onChange={(e) => updateComboTier(ci, ti, { vip: e.target.checked })}
+                              />
+                              VIP
                             </label>
                             <button
                               type="button"
@@ -2467,6 +2590,99 @@ export default function ChannelSettingsPage() {
               </div>
             )}
 
+            {tab === "policy" && (
+              <div className="space-y-4">
+                <p className="text-xs text-foreground/50">
+                  Sections shown on the storefront&rsquo;s &ldquo;ডেলিভারি ও রিটার্ন নীতি&rdquo; page — each a title
+                  and a bulleted list of lines. A channel that&rsquo;s never edited this tab shows the two sections
+                  already live today (Delivery, Return &amp; Exchange); editing and saving here replaces them.
+                </p>
+                {policySections.length === 0 && (
+                  <p className="text-xs text-foreground/50">No sections added yet.</p>
+                )}
+                {policySections.map((section, index) => (
+                  <div
+                    key={index}
+                    className={`rounded-lg border border-black/10 p-3 ${section.enabled ? "" : "opacity-50"}`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span title={section.enabled ? "On — shown on storefront" : "Off — hidden from storefront"}>
+                          <Switch
+                            checked={section.enabled}
+                            onChange={() => updatePolicySection(index, { enabled: !section.enabled })}
+                          />
+                        </span>
+                        <Label className="!mb-0">Section {index + 1}</Label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removePolicySection(index)}
+                        className="rounded border border-black/10 px-2 py-1 text-xs text-status-cancelled"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div>
+                      <Label className="!text-sm">Title</Label>
+                      <Input
+                        value={section.title}
+                        onChange={(e) => updatePolicySection(index, { title: e.target.value })}
+                        placeholder="ডেলিভারি"
+                        maxLength={120}
+                        className="w-full text-sm"
+                      />
+                    </div>
+                    <div className="mt-3">
+                      <Label className="!text-sm">Lines</Label>
+                      <div className="space-y-2">
+                        {section.points.map((point, pointIndex) => (
+                          <div key={pointIndex} className="flex items-center gap-2">
+                            <span className="num grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                              •
+                            </span>
+                            <Input
+                              value={point}
+                              onChange={(e) => updatePolicyPoint(index, pointIndex, e.target.value)}
+                              placeholder="সারা বাংলাদেশে হোম ডেলিভারি।"
+                              maxLength={300}
+                              className="w-full text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removePolicyPoint(index, pointIndex)}
+                              className="shrink-0 rounded border border-black/10 px-2 py-2 text-xs text-status-cancelled"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {section.points.length < MAX_POLICY_POINTS && (
+                        <button
+                          type="button"
+                          onClick={() => addPolicyPoint(index)}
+                          className="mt-2 inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                        >
+                          + Add line
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {policySections.length < MAX_POLICY_SECTIONS && (
+                  <button
+                    type="button"
+                    onClick={addPolicySection}
+                    className="inline-flex items-center rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                  >
+                    + Add section
+                  </button>
+                )}
+              </div>
+            )}
+
             {tab === "social" && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-black/10 p-3">
@@ -2745,6 +2961,75 @@ export default function ChannelSettingsPage() {
                   >
                     + Add coupon
                   </button>
+                </div>
+              </div>
+            )}
+
+            {tab === "vipCoupon" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Discount rate</Label>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    The percent every VIP coupon gives. Codes are never typed here — the backend generates a fresh,
+                    unique one automatically the moment an order&rsquo;s own combo reaches a VIP-flagged pricing
+                    tier (Settings → Home Page Combo → Pricing tier cards → VIP), shown once on that order&rsquo;s
+                    own confirmation page. Each code works exactly once, on a later order — the list below shows
+                    everything issued and whether it&rsquo;s still unused.
+                  </p>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={vipCouponDiscountPercent}
+                    onChange={(e) => setVipCouponDiscountPercent(e.target.value)}
+                    placeholder="e.g. 15"
+                    className="w-28 text-sm"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-black/10 p-3">
+                  <Label>Issued coupons</Label>
+                  {vipCouponsError && <p className="text-xs text-status-cancelled">{vipCouponsError}</p>}
+                  {!vipCouponsError && vipCoupons === null && (
+                    <p className="text-xs text-foreground/50">Loading…</p>
+                  )}
+                  {vipCoupons !== null && vipCoupons.length === 0 && (
+                    <p className="text-xs text-foreground/50">No VIP coupons issued yet.</p>
+                  )}
+                  {vipCoupons !== null && vipCoupons.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="text-xs text-foreground/50">
+                            <th className="pb-1.5 pr-3 font-medium">Code</th>
+                            <th className="pb-1.5 pr-3 font-medium">Rate</th>
+                            <th className="pb-1.5 pr-3 font-medium">Granted on</th>
+                            <th className="pb-1.5 font-medium">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vipCoupons.map((v) => (
+                            <tr key={v.id} className="border-t border-black/5">
+                              <td className="num py-1.5 pr-3 font-semibold">{v.code}</td>
+                              <td className="num py-1.5 pr-3">{v.discountPercent}%</td>
+                              <td className="py-1.5 pr-3 text-foreground/70">
+                                {v.grantedOrder.orderNumber} · {v.grantedOrder.shippingName}
+                              </td>
+                              <td className="py-1.5">
+                                {v.usedOrder ? (
+                                  <span className="text-foreground/50">
+                                    Used on {v.usedOrder.orderNumber} · {v.usedOrder.shippingName}
+                                  </span>
+                                ) : (
+                                  <span className="font-medium text-status-delivered">Unused</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
