@@ -54,6 +54,7 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
     leadCancelled: lead.cancelled,
     subtotal: String(lead.total),
     discount: "0",
+    manualDiscount: "0",
     shippingFee: "0",
     total: String(lead.total),
     shippingName: lead.name ?? "",
@@ -202,6 +203,11 @@ interface LineItem {
   // doesn't silently reset it to 0 and inflate the order's real total. Never
   // edited directly in this UI.
   lineDiscount: string;
+  // This line's price when it first appeared on the page — never changes
+  // after that. Editing Price below this moves the gap into the manual
+  // Discount field instead of silently selling the line for less (see
+  // applyPriceEdit) — the website's own discount stays completely separate.
+  originalUnitPrice: string;
 }
 
 function availableStock(p: Product): number {
@@ -294,6 +300,9 @@ export default function WebOrderDetailsPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const [discount, setDiscount] = useState("");
+  // How much of the current Discount total came from each line's own Price
+  // edit — see applyPriceEdit.
+  const [lineDiscountContrib, setLineDiscountContrib] = useState<Record<string, number>>({});
   const [advanceAmount, setAdvanceAmount] = useState("");
   const [shippingFee, setShippingFee] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
@@ -367,9 +376,13 @@ export default function WebOrderDetailsPage() {
               items: validItems.map((i) => ({
                 productId: i.productId,
                 quantity: i.quantity,
-                unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+                unitPrice: i.unitPrice ? submitUnitPrice(i) : undefined,
               })),
-              discount: discount ? Number(discount) : undefined,
+              // realWebsiteDiscount is always 0 for a lead (it isn't a real
+              // order yet), so this is just the typed amount — kept for the
+              // same "website portion + manual on top" rule as the two
+              // sites below.
+              discount: realWebsiteDiscount + (Number(discount) || 0),
               shippingFee: shippingFee ? Number(shippingFee) : undefined,
               notes: shippingNote || undefined,
             });
@@ -418,7 +431,7 @@ export default function WebOrderDetailsPage() {
           items: validItems.map((i) => ({
             productId: i.productId,
             quantity: i.quantity,
-            unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+            unitPrice: i.unitPrice ? submitUnitPrice(i) : undefined,
           })),
         });
       } else if (order.status === "CANCELLED") {
@@ -491,6 +504,7 @@ export default function WebOrderDetailsPage() {
               quantity: i.quantity,
               unitPrice: String(i.unitPrice),
               lineDiscount: "0",
+              originalUnitPrice: String(i.unitPrice),
             })),
           };
         })
@@ -503,11 +517,12 @@ export default function WebOrderDetailsPage() {
         setDeliveryMethod(o.deliveryMethod ?? DELIVERY_METHODS[0]);
         setShippingAddress(o.shippingAddress);
         setShippingNote(o.notes ?? "");
-        // Manual-only: the discount already applied at checkout shows in the
-        // breakdown box below instead, so Approve never silently re-charges
-        // it a second time by both keeping it here AND preserving it via
-        // lineDiscount/order.discount server-side.
-        setDiscount("");
+        // Manual-only — prefilled with whatever manual amount is already
+        // saved (manualDiscount), never the website's own discount (that
+        // shows in the breakdown box below instead, via realWebsiteDiscount)
+        // — so reopening this page after a previous manual discount was
+        // saved doesn't make it look like it vanished.
+        setDiscount(Number(o.manualDiscount) > 0 ? o.manualDiscount : "");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
         setLineItems(
           formItems ??
@@ -519,6 +534,7 @@ export default function WebOrderDetailsPage() {
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               lineDiscount: item.discount ?? "0",
+              originalUnitPrice: item.unitPrice,
             })),
         );
         if (isLead) return null;
@@ -567,6 +583,7 @@ export default function WebOrderDetailsPage() {
           // Starts at the price the picker shows, so it can be edited like the rest.
           unitPrice: String(Number(p.basePrice)),
           lineDiscount: "0",
+          originalUnitPrice: String(Number(p.basePrice)),
         },
       ];
     });
@@ -582,16 +599,63 @@ export default function WebOrderDetailsPage() {
     setLineItems((rows) => rows.filter((r) => r.productId !== productId));
   }
 
-  // Sub Total shown below is the raw, pre-discount product total (matches
-  // each line's own Total column) — unchanged from before. Grand Total,
-  // though, is computed from netSubtotal (below), which nets out each line's
-  // OWN already-applied discount (lineDiscount) — never from this raw figure
-  // — so it's never off by the amount that discount was.
+  // A Price edit that goes BELOW this line's original price is a discount,
+  // not a silent price override — the gap (× quantity) ALSO shows in the
+  // manual Discount field below, live, as it's typed. Price itself still
+  // shows exactly what's typed (and that line's own Total column reflects
+  // it) — Sub Total/Grand Total don't double-count this because they price
+  // every line at max(current, original): a reduction is picked up via
+  // Discount instead, while a genuine increase (price typed ABOVE original)
+  // still flows through normally. Keeps the website's own already-applied
+  // discount (the breakdown box) completely untouched — this only ever
+  // adds to the separate, manual-only Discount field.
+  //
+  // lineDiscountContrib remembers how much of the current Discount total
+  // came from THIS line, so re-typing replaces that line's own slice
+  // instead of stacking on top of it on every keystroke.
+  function applyPriceEdit(item: LineItem, rawValue: string) {
+    updateLineItem(item.productId, { unitPrice: rawValue });
+    if (rawValue === "") return;
+    const newPrice = Math.max(0, Number(rawValue));
+    // Falls back to the line's current price if originalUnitPrice is ever
+    // missing (e.g. a row created before this field existed) — without
+    // this, Number(undefined) is NaN, every "newPrice < original" check
+    // is false, and a reduction would never reach Discount.
+    const original = Number(item.originalUnitPrice || item.unitPrice || 0);
+    const prevContrib = lineDiscountContrib[item.productId] ?? 0;
+    const newContrib =
+      newPrice < original ? Math.round((original - newPrice) * item.quantity * 100) / 100 : 0;
+    setDiscount((prev) => {
+      const base = Math.max(0, (Number(prev) || 0) - prevContrib);
+      const next = base + newContrib;
+      return next > 0 ? String(next) : "";
+    });
+    setLineDiscountContrib((prev) => ({ ...prev, [item.productId]: newContrib }));
+  }
+
+  // The price actually sent to the backend for a line — same max(current,
+  // original) protection as Sub Total/netSubtotal below, applied here too.
+  // Without this, Approve/Save would send the already-discounted price AND
+  // the Discount field for the same cut, taking it off the total twice.
+  function submitUnitPrice(item: LineItem): number {
+    const current = item.unitPrice ? Number(item.unitPrice) : 0;
+    const original = Number(item.originalUnitPrice || item.unitPrice || 0);
+    return Math.max(current, original);
+  }
+
+  // Sub Total — priced at max(current, original) per line, not the raw
+  // current price: a Price edit BELOW original is a discount (already
+  // counted via Discount below, see applyPriceEdit), so it's excluded here
+  // to avoid counting it twice; a genuine increase above original still
+  // flows through normally. Each line's own Total column (further down)
+  // still shows the actual current price × qty, so what's displayed per
+  // row always matches what was typed there.
   const subTotal = lineItems.reduce((sum, item) => {
     const unitPrice = item.unitPrice
       ? Number(item.unitPrice)
       : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
-    return sum + item.quantity * unitPrice;
+    const original = Number(item.originalUnitPrice || item.unitPrice || 0);
+    return sum + item.quantity * Math.max(unitPrice, original);
   }, 0);
   // The real, already-charged breakdown from the order as it was placed —
   // used for the read-only box below.
@@ -599,12 +663,19 @@ export default function WebOrderDetailsPage() {
     order?.items.reduce((sum, item) => sum + Number(item.discount || 0), 0) ?? 0;
   const realSubtotal = Number(order?.subtotal ?? 0);
   const realRawProductTotal = realSubtotal + realItemDiscountTotal;
+  // order.discount is the real COMBINED figure (website + any manual extra
+  // already saved); manualDiscount is just the admin-added slice of it — so
+  // the breakdown box (and the Discount field right below it) can show the
+  // website's own portion on its own, instead of re-showing a manual amount
+  // that was already saved last time as if it were freshly website-applied.
   const realOrderDiscount = Number(order?.discount ?? 0);
+  const realManualDiscount = Number(order?.manualDiscount ?? 0);
+  const realWebsiteDiscount = Math.max(0, realOrderDiscount - realManualDiscount);
   const realShippingFee = Number(order?.shippingFee ?? 0);
   const itemDiscountPercent =
     realRawProductTotal > 0 ? Math.round((realItemDiscountTotal / realRawProductTotal) * 100) : 0;
   const orderDiscountPercent =
-    realRawProductTotal > 0 ? Math.round((realOrderDiscount / realRawProductTotal) * 100) : 0;
+    realRawProductTotal > 0 ? Math.round((realWebsiteDiscount / realRawProductTotal) * 100) : 0;
   const hasRealBreakdown = realItemDiscountTotal > 0 || realOrderDiscount > 0 || realRawProductTotal > 0;
   // Each line's own already-applied discount (lineDiscount) netted out, same
   // as OrdersService.updateOrder's own per-line total — so this always
@@ -614,14 +685,19 @@ export default function WebOrderDetailsPage() {
     const unitPrice = item.unitPrice
       ? Number(item.unitPrice)
       : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
-    return sum + Math.max(0, item.quantity * unitPrice - (Number(item.lineDiscount) || 0));
+    // Same max(current, original) reasoning as Sub Total above — a Price
+    // reduction is already counted via Discount, not here.
+    const original = Number(item.originalUnitPrice || item.unitPrice || 0);
+    const effectivePrice = Math.max(unitPrice, original);
+    return sum + Math.max(0, item.quantity * effectivePrice - (Number(item.lineDiscount) || 0));
   }, 0);
-  // The already-applied checkout discount (realOrderDiscount) always comes
-  // off first — the Discount field above is a manual EXTRA on top of it, per
-  // its own "manual amount only" placeholder, not a replacement for it.
+  // The website's own discount (realWebsiteDiscount) always comes off
+  // first — the Discount field is the full manual amount on top of it
+  // (prefilled with whatever manual amount is already saved, so reopening
+  // this page doesn't lose sight of it), never a replacement for it.
   const orderTotal = Math.max(
     0,
-    netSubtotal - realOrderDiscount - (Number(discount) || 0) + (Number(shippingFee) || 0),
+    netSubtotal - realWebsiteDiscount - (Number(discount) || 0) + (Number(shippingFee) || 0),
   );
   // Same as New Order: what is still due after the advance.
   const grandTotal = Math.max(0, orderTotal - (Number(advanceAmount) || 0));
@@ -668,9 +744,11 @@ export default function WebOrderDetailsPage() {
           items: validItems.map((i) => ({
             productId: i.productId,
             quantity: i.quantity,
-            unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+            unitPrice: i.unitPrice ? submitUnitPrice(i) : undefined,
           })),
-          discount: discount ? Number(discount) : undefined,
+          // realWebsiteDiscount is always 0 for a lead — see the same note
+          // on cancelOrder above.
+          discount: realWebsiteDiscount + (Number(discount) || 0),
           shippingFee: shippingFee ? Number(shippingFee) : undefined,
           notes: shippingNote || undefined,
           paymentMethod,
@@ -712,13 +790,23 @@ export default function WebOrderDetailsPage() {
         items: validItems.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
-          unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+          unitPrice: i.unitPrice ? submitUnitPrice(i) : undefined,
           // Preserves whatever per-item discount checkout already applied —
           // omitting it here would reset it to 0 and silently inflate the
           // order's total on save (see lineDiscount on LineItem).
           discount: Number(i.lineDiscount) > 0 ? Number(i.lineDiscount) : undefined,
         })),
-        discount: discount ? Number(discount) : undefined,
+        // Discount is prefilled with whatever manual amount is already
+        // saved (see the load effect), so it's always the full intended
+        // manual total now, not an extra on top of the order's current
+        // combined discount — explicitly re-adding the website's own
+        // portion (realWebsiteDiscount) every save, never the stale
+        // combined figure, is what stops that portion from quietly
+        // growing a previous manual amount into itself on repeat edits.
+        discount: realWebsiteDiscount + (Number(discount) || 0),
+        // Tracked separately so the "Employee Discount Order" tag shows
+        // only the manual slice, not the combined figure above.
+        manualDiscount: Number(discount) || 0,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
         notes: shippingNote || undefined,
       });
@@ -924,37 +1012,6 @@ export default function WebOrderDetailsPage() {
                 </div>
               </div>
 
-              {!isLead && hasRealBreakdown && (
-                <div className="mt-4 rounded-lg border border-status-cancelled/30 bg-status-cancelled/5 p-3">
-                  <div className="mb-2 text-xs font-semibold text-foreground/70">
-                    Website checkout breakdown (already applied — Discount above is for an extra manual amount only)
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-foreground/70">পণ্যের মূল দাম</span>
-                      <span className="font-medium text-foreground">{formatAmount(realRawProductTotal)}৳</span>
-                    </div>
-                    {realItemDiscountTotal > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-foreground/70">পণ্যে ছাড়{itemDiscountPercent > 0 ? `(${itemDiscountPercent}%)` : ""}</span>
-                        <span className="font-medium text-status-cancelled">-{formatAmount(realItemDiscountTotal)}৳</span>
-                      </div>
-                    )}
-                    {realOrderDiscount > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-foreground/70">পরিমাণে ছাড়{orderDiscountPercent > 0 ? `(${orderDiscountPercent}%)` : ""}</span>
-                        <span className="font-medium text-status-cancelled">-{formatAmount(realOrderDiscount)}৳</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-foreground/70">ডেলিভারি চার্জ</span>
-                      <span className="font-medium text-foreground">
-                        {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
             </Card>
 
             {!done && (
@@ -1040,7 +1097,7 @@ export default function WebOrderDetailsPage() {
                     const lineTotal = item.quantity * unitPrice;
 
                     function setPrice(next: number) {
-                      updateLineItem(item.productId, { unitPrice: String(Math.max(0, next)) });
+                      applyPriceEdit(item, String(Math.max(0, next)));
                     }
 
                     return (
@@ -1157,13 +1214,9 @@ export default function WebOrderDetailsPage() {
                                 step="0.01"
                                 disabled={done}
                                 value={item.unitPrice !== "" ? String(Number(item.unitPrice)) : ""}
-                                onBlur={(e) => {
-                                  if (e.target.value !== "") {
-                                    updateLineItem(item.productId, { unitPrice: String(Number(e.target.value)) });
-                                  }
-                                }}
+                                onBlur={(e) => applyPriceEdit(item, e.target.value)}
                                 placeholder={product?.basePrice}
-                                onChange={(e) => updateLineItem(item.productId, { unitPrice: e.target.value })}
+                                onChange={(e) => applyPriceEdit(item, e.target.value)}
                                 className="w-0 min-w-0 flex-1 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 title="Unit price (blank = storefront/base price)"
                               />
@@ -1319,6 +1372,38 @@ export default function WebOrderDetailsPage() {
 
               </Card>
             </div>
+
+            {!isLead && hasRealBreakdown && (
+              <div className="rounded-lg border border-dashed border-orange-700 bg-orange-100 p-3">
+                <div className="mb-2 text-md font-semibold text-red/70">
+                  Website checkout breakdown 
+                </div>
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-foreground/70">পণ্যের মূল দাম</span>
+                    <span className="font-medium text-foreground">{formatAmount(realRawProductTotal)}৳</span>
+                  </div>
+                  {realItemDiscountTotal > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-foreground/70">পণ্যে ছাড়{itemDiscountPercent > 0 ? `(${itemDiscountPercent}%)` : ""}</span>
+                      <span className="font-bold text-status-cancelled">-{formatAmount(realItemDiscountTotal)}৳</span>
+                    </div>
+                  )}
+                  {realWebsiteDiscount > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-foreground/70">পরিমাণে ছাড়{orderDiscountPercent > 0 ? `(${orderDiscountPercent}%)` : ""}</span>
+                      <span className="font-bold text-status-cancelled">-{formatAmount(realWebsiteDiscount)}৳</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-foreground/70">ডেলিভারি চার্জ</span>
+                    <span className=" font-bold text-foreground">
+                      {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Card>
               <h2 className="mb-3 text-sm font-semibold text-foreground">Customer success rate</h2>

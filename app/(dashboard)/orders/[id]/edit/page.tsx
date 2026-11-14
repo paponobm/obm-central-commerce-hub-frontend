@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { OrderSource, PaymentMethod, Product, OrderDetail, Payment } from "@/lib/types";
-import { formatAmount } from "@/lib/format";
+import { formatAmount, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,34 @@ function availableStock(p: Product): number {
   return p.inventory ? p.inventory.currentStock - p.inventory.reservedStock : 0;
 }
 
+// One line of the Activity Log, as the server describes it (same
+// /admin/orders/:id/activity shape the Web Order Details and Orders list
+// pages use) — who did what, and when.
+interface ActivityEntry {
+  key: string;
+  at: string;
+  by: string | null;
+  text: string;
+}
+
+function ActivityLogRow({ entry }: { entry: ActivityEntry }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border-l-4 border-primary bg-black/[0.02] py-2.5 pl-3 pr-4">
+      <div className="min-w-0 text-sm font-medium text-foreground">{entry.text}</div>
+      <div className="flex shrink-0 items-center gap-6 text-right text-xs">
+        <div>
+          <div className="text-foreground/40">At</div>
+          <div className="text-foreground/70">{formatDateTime(entry.at)}</div>
+        </div>
+        <div>
+          <div className="text-foreground/40">User Name</div>
+          <div className="text-foreground/70">{entry.by ?? "—"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EditOrderPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -86,6 +114,7 @@ export default function EditOrderPage() {
   const [paymentDrafts, setPaymentDrafts] = useState<
     Record<string, { amount: string; method: PaymentMethod; transactionId: string }>
   >({});
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const pricingRef = useRef<HTMLDivElement>(null);
@@ -116,7 +145,11 @@ export default function EditOrderPage() {
         setSource(o.source);
         setShippingAddress(o.shippingAddress);
         setShippingNote(o.notes ?? "");
-        setDiscount(Number(o.discount) > 0 ? o.discount : "");
+        // Manual-only, same as Web Order Details — prefilled with whatever
+        // manual amount is already saved (manualDiscount), never the
+        // website's own discount (that shows in the breakdown box below
+        // instead, via realWebsiteDiscount).
+        setDiscount(Number(o.manualDiscount) > 0 ? o.manualDiscount : "");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
         setPayments(o.payments);
         setPaymentDrafts(
@@ -144,6 +177,10 @@ export default function EditOrderPage() {
         );
       })
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Failed to load order"));
+    api
+      .get<ActivityEntry[]>(`/admin/orders/${orderId}/activity`)
+      .then(setActivity)
+      .catch(() => {});
   }, [orderId]);
 
   const filteredProducts = useMemo(() => {
@@ -218,16 +255,51 @@ export default function EditOrderPage() {
     setPayments(latestPayments);
   }
 
-  // Mirrors OrdersService.updateOrder's exact formula, same as New Order.
+  // Sub Total shown below is the raw per-line total (matches each line's own
+  // Total column). Total, though, is computed from netSubtotal, which nets
+  // out each line's own already-applied discount (lineDiscount, e.g. a
+  // storefront quantity-tier discount carried through from checkout) — so
+  // it's never off by the amount that discount was, same fix already
+  // applied to the Web Order Details page.
   const subTotal = lineItems.reduce((sum, item) => {
     const unitPrice = item.unitPrice
       ? Number(item.unitPrice)
       : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
     return sum + item.quantity * unitPrice;
   }, 0);
+  const netSubtotal = lineItems.reduce((sum, item) => {
+    const unitPrice = item.unitPrice
+      ? Number(item.unitPrice)
+      : Number(products.find((p) => p.id === item.productId)?.basePrice ?? 0);
+    return sum + Math.max(0, item.quantity * unitPrice - (Number(item.lineDiscount) || 0));
+  }, 0);
+  // The real, already-charged breakdown from the order as it was placed —
+  // same "Website checkout breakdown" box as the Web Order Details page.
+  const realItemDiscountTotal =
+    order?.items.reduce((sum, item) => sum + Number(item.discount || 0), 0) ?? 0;
+  const realSubtotal = Number(order?.subtotal ?? 0);
+  const realRawProductTotal = realSubtotal + realItemDiscountTotal;
+  // order.discount is the real COMBINED figure (website + any manual extra
+  // already saved); manualDiscount is just the admin-added slice of it —
+  // same split as Web Order Details, so the breakdown box shows the
+  // website's own portion on its own.
+  const realOrderDiscount = Number(order?.discount ?? 0);
+  const realManualDiscount = Number(order?.manualDiscount ?? 0);
+  const realWebsiteDiscount = Math.max(0, realOrderDiscount - realManualDiscount);
+  const realShippingFee = Number(order?.shippingFee ?? 0);
+  const itemDiscountPercent =
+    realRawProductTotal > 0 ? Math.round((realItemDiscountTotal / realRawProductTotal) * 100) : 0;
+  const orderDiscountPercent =
+    realRawProductTotal > 0 ? Math.round((realWebsiteDiscount / realRawProductTotal) * 100) : 0;
+  const hasRealBreakdown = realItemDiscountTotal > 0 || realOrderDiscount > 0 || realRawProductTotal > 0;
+
+  // The website's own discount (realWebsiteDiscount) always comes off
+  // first — Discount above is the full manual amount on top of it
+  // (prefilled with whatever's already saved), never a replacement for it.
+  // Same rule as Web Order Details.
   const orderTotal = Math.max(
     0,
-    subTotal - (Number(discount) || 0) + (Number(shippingFee) || 0),
+    netSubtotal - realWebsiteDiscount - (Number(discount) || 0) + (Number(shippingFee) || 0),
   );
 
   async function handleSubmit(e: FormEvent) {
@@ -262,7 +334,16 @@ export default function EditOrderPage() {
           unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
           discount: Number(i.lineDiscount) > 0 ? Number(i.lineDiscount) : undefined,
         })),
-        discount: discount ? Number(discount) : undefined,
+        // Discount is prefilled with whatever manual amount is already
+        // saved, so it's always the full intended manual total — adding it
+        // to the website's own portion (realWebsiteDiscount) explicitly
+        // every save (never the stale combined figure) is what stops that
+        // portion from quietly growing a previous manual amount into
+        // itself on repeat edits. manualDiscount tracks just the manual
+        // slice, separately, for the "Employee Discount Order" tag — same
+        // rule as Web Order Details.
+        discount: realWebsiteDiscount + (Number(discount) || 0),
+        manualDiscount: Number(discount) || 0,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
         notes: shippingNote || undefined,
       });
@@ -617,6 +698,38 @@ export default function EditOrderPage() {
           </Card>
         </div>
 
+        {hasRealBreakdown && (
+          <div className="rounded-lg border border-dashed border-orange-400 bg-orange-50 p-3">
+            <div className="mb-2 text-xs font-semibold text-foreground/70">
+              Website checkout breakdown (already applied — Discount above is for an extra manual amount only)
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-foreground/70">পণ্যের মূল দাম</span>
+                <span className="font-medium text-foreground">{formatAmount(realRawProductTotal)}৳</span>
+              </div>
+              {realItemDiscountTotal > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-foreground/70">পণ্যে ছাড়{itemDiscountPercent > 0 ? `(${itemDiscountPercent}%)` : ""}</span>
+                  <span className="font-medium text-status-cancelled">-{formatAmount(realItemDiscountTotal)}৳</span>
+                </div>
+              )}
+              {realWebsiteDiscount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-foreground/70">পরিমাণে ছাড়{orderDiscountPercent > 0 ? `(${orderDiscountPercent}%)` : ""}</span>
+                  <span className="font-medium text-status-cancelled">-{formatAmount(realWebsiteDiscount)}৳</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-foreground/70">ডেলিভারি চার্জ</span>
+                <span className="font-medium text-foreground">
+                  {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div ref={pricingRef}>
           <Card>
             <div className="grid grid-cols-2 gap-3 whitespace-nowrap sm:grid-cols-4">
@@ -735,6 +848,19 @@ export default function EditOrderPage() {
             </Button>
           </Card>
         </div>
+
+        <Card>
+          <h2 className="mb-3 text-base font-semibold text-foreground">Activity Log</h2>
+          {activity.length === 0 ? (
+            <p className="text-sm text-foreground/50">No activity yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {activity.map((a) => (
+                <ActivityLogRow key={a.key} entry={a} />
+              ))}
+            </div>
+          )}
+        </Card>
 
         {lineItems.length > 0 && !pricingInView && (
           <div className="sticky bottom-0 z-10 mt-6 rounded-lg bg-primary px-6 py-1.5 shadow-card">

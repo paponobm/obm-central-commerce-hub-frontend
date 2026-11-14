@@ -107,6 +107,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
     leadCancelled: lead.cancelled,
     subtotal: String(lead.total),
     discount: "0",
+    manualDiscount: "0",
     shippingFee: "0",
     total: String(lead.total),
     shippingName: lead.name ?? "",

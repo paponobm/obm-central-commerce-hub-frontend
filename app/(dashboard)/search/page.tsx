@@ -117,6 +117,7 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
     customerResponse: null,
     subtotal: String(lead.total),
     discount: "0",
+    manualDiscount: "0",
     shippingFee: "0",
     total: String(lead.total),
     shippingName: lead.name ?? "",
@@ -266,13 +267,13 @@ function OrdersTable({ orders }: { orders: OrderListItem[] }) {
                   )}
                 </td>
                 <td className="px-4 py-4">
-                  {Number(o.discount) > 0 && (
+                  {Number(o.manualDiscount) > 0 && (
                     <span className="inline-flex items-start gap-1.5 rounded-2xl border border-sky-200 bg-sky-100 px-2.5 py-1.5 text-sm leading-snug text-sky-700">
                       <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
                       <span className="flex flex-col">
                         <span>Employee</span>
                         <span>Discount</span>
-                        <span>Order · {formatAmount(o.discount)}</span>
+                        <span>Order · {formatAmount(o.manualDiscount)}</span>
                       </span>
                     </span>
                   )}

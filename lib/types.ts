@@ -413,6 +413,11 @@ interface OrderBase {
   customerResponse: CustomerResponseStatus | null;
   subtotal: string;
   discount: string;
+  // The slice of `discount` an admin typed in manually — never includes
+  // whatever discount the storefront itself already applied at checkout.
+  // Powers the "Employee Discount Order" tag; `discount`/`total` above are
+  // the real combined figures the order is actually charged.
+  manualDiscount: string;
   shippingFee: string;
   total: string;
   shippingName: string;
