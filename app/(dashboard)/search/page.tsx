@@ -129,6 +129,8 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
     preorderNotifyAt: null,
     createdAt: lead.createdAt,
     updatedAt: lead.updatedAt,
+    statusEnteredAt: lead.createdAt,
+    responseEnteredAt: lead.createdAt,
     createdBy: null,
     shipment: null,
     invoicePrinted: false,
@@ -145,6 +147,7 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
       unitPrice: String(i.unitPrice),
       discount: "0",
       total: String(i.quantity * i.unitPrice),
+      isSuggested: false,
       product: { thumbnailUrl: i.image ?? null, images: i.image ? [{ url: i.image }] : [] },
     })),
   };

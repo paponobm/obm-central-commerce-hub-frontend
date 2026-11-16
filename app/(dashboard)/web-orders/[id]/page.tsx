@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { CustomerResponseStatus, PaymentMethod, Product, OrderDetail, OrderListItem, OrderLockHolder } from "@/lib/types";
+import type { CustomerResponseStatus, PaymentMethod, Product, OrderDetail, OrderItem, OrderListItem, OrderLockHolder } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
@@ -80,6 +80,7 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
       unitPrice: String(i.unitPrice),
       discount: "0",
       total: String(i.quantity * i.unitPrice),
+      isSuggested: false,
       product: { thumbnailUrl: i.image ?? null, images: i.image ? [{ url: i.image }] : [] },
     })),
   };
@@ -126,6 +127,28 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
         )}
       </div>
       <div className="whitespace-pre-line">{entry.text}</div>
+    </div>
+  );
+}
+
+// One row of the read-only "Order items"/"Suggested products" lists.
+function OrderItemRow({ item }: { item: OrderItem }) {
+  const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      {thumb ? (
+        // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+        <img src={thumb} alt={item.productName} className="h-12 w-12 shrink-0 rounded-md object-cover" />
+      ) : (
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-black/5 text-foreground/40">
+          {item.productName.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium">{item.productName}</div>
+        <div className="text-xs text-foreground/50">{formatAmount(item.unitPrice)}৳</div>
+      </div>
+      <span className="shrink-0 text-foreground/60">{item.quantity}x</span>
     </div>
   );
 }
@@ -909,6 +932,11 @@ export default function WebOrderDetailsPage() {
   // only a real order that has moved past PENDING some other way is locked.
   const done = !isLead && order.status !== "PENDING" && order.status !== "CANCELLED";
 
+  // Order items vs. products added on a later edit — split for display so a
+  // product added while following up (e.g. on a non-responsive customer)
+  // reads as what it is, not as part of what the customer originally ordered.
+  const realOrderItems = order.items.filter((item) => !item.isSuggested);
+  const suggestedOrderItems = order.items.filter((item) => item.isSuggested);
 
   // Clock cursor while something is being saved on this page.
   const busy = submitting || responseSaving || noteSaving;
@@ -1008,6 +1036,11 @@ export default function WebOrderDetailsPage() {
                     placeholder="Enter shipping note"
                     value={shippingNote}
                     onChange={(e) => setShippingNote(e.target.value)}
+                    className={
+                      shippingNote
+                        ? "w-full !bg-[color-mix(in_srgb,var(--status-pending)_12%,transparent)]"
+                        : "w-full"
+                    }
                   />
                 </div>
               </div>
@@ -1372,6 +1405,23 @@ export default function WebOrderDetailsPage() {
 
               </Card>
             </div>
+             <Card>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Customer success rate</h2>
+              {successRate && successRate.successRate !== null ? (
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-foreground/50">Success rate</div>
+                    <div className="text-2xl font-bold text-status-delivered">{successRate.successRate}%</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-foreground/50">Total orders</div>
+                    <div className="text-2xl font-bold">{successRate.orderCount}</div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground/50">No order history yet.</p>
+              )}
+            </Card>
 
             {!isLead && hasRealBreakdown && (
               <div className="rounded-lg border border-dashed border-orange-700 bg-orange-100 p-3">
@@ -1405,49 +1455,27 @@ export default function WebOrderDetailsPage() {
               </div>
             )}
 
-            <Card>
-              <h2 className="mb-3 text-sm font-semibold text-foreground">Customer success rate</h2>
-              {successRate && successRate.successRate !== null ? (
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-foreground/50">Success rate</div>
-                    <div className="text-2xl font-bold text-status-delivered">{successRate.successRate}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-foreground/50">Total orders</div>
-                    <div className="text-2xl font-bold">{successRate.orderCount}</div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-foreground/50">No order history yet.</p>
-              )}
-            </Card>
+           
 
             <Card>
               <h2 className="mb-3 text-sm font-semibold text-foreground">Order items</h2>
               <div className="space-y-3">
-                {order.items.map((item) => {
-                  const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
-                  return (
-                  <div key={item.id} className="flex items-center gap-3 text-sm">
-                    {thumb ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                      <img src={thumb} alt={item.productName} className="h-12 w-12 shrink-0 rounded-md object-cover" />
-                    ) : (
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-black/5 text-foreground/40">
-                        {item.productName.charAt(0).toUpperCase()}
-                      </span>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{item.productName}</div>
-                      <div className="text-xs text-foreground/50">{formatAmount(item.unitPrice)}৳</div>
-                    </div>
-                    <span className="shrink-0 text-foreground/60">{item.quantity}x</span>
-                  </div>
-                  );
-                })}
+                {realOrderItems.map((item) => (
+                  <OrderItemRow key={item.id} item={item} />
+                ))}
               </div>
             </Card>
+
+            {suggestedOrderItems.length > 0 && (
+              <div className="rounded-lg border border-[color-mix(in_srgb,var(--status-pending)_35%,transparent)] bg-[color-mix(in_srgb,var(--status-pending)_8%,transparent)] p-3">
+                <h2 className="mb-3 text-sm font-semibold text-foreground">Suggested products</h2>
+                <div className="space-y-3">
+                  {suggestedOrderItems.map((item) => (
+                    <OrderItemRow key={item.id} item={item} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <Card>
               <h2 className="mb-3 text-sm font-semibold text-foreground">Order tags</h2>

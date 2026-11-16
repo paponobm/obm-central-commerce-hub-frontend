@@ -79,6 +79,9 @@ interface CheckoutLead {
   updatedAt: string;
   adminNotes: { id: string; note: string; createdAt: string; user: { name: string } | null }[];
   total: number;
+  // When it most recently entered its current customerResponse (falls back
+  // to createdAt) — see OrderListItem.responseEnteredAt.
+  responseEnteredAt: string;
   items: {
     productId: string;
     productName: string;
@@ -119,6 +122,8 @@ function leadToRow(lead: CheckoutLead): WebRow {
     preorderNotifyAt: null,
     createdAt: lead.createdAt,
     updatedAt: lead.updatedAt,
+    statusEnteredAt: lead.createdAt,
+    responseEnteredAt: lead.responseEnteredAt,
     createdBy: null,
     shipment: null,
     invoicePrinted: false,
@@ -135,6 +140,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
       unitPrice: String(i.unitPrice),
       discount: "0",
       total: String(i.quantity * i.unitPrice),
+      isSuggested: false,
       product: { thumbnailUrl: i.image ?? null, images: i.image ? [{ url: i.image }] : [] },
     })),
   };
@@ -144,6 +150,11 @@ function matchesTab(o: WebRow, tab: TabKey): boolean {
   if (tab === "all") return true;
   return webOrderStage(o) === tab;
 }
+
+// Tabs keyed on a customerResponse category — their Date column shows when
+// the row most recently entered THAT response, not its original creation
+// time (e.g. when it moved from Processing to Good But No Response).
+const RESPONSE_TABS: TabKey[] = ["goodNoResponse", "noResponse", "advancePayment", "onHold"];
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "processing", label: "Processing" },
@@ -278,6 +289,7 @@ export default function WebOrdersPage() {
   const visible = useMemo(() => {
     if (!orders) return null;
     const q = search.trim().toLowerCase();
+    const dateField = RESPONSE_TABS.includes(tab) ? "responseEnteredAt" : "createdAt";
     return orders
       .filter((o) => matchesTab(o, tab))
       .filter((o) =>
@@ -286,7 +298,7 @@ export default function WebOrdersPage() {
         o.customer.name.toLowerCase().includes(q) ||
         o.customer.phone.toLowerCase().includes(q),
       )
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
   }, [orders, tab, search]);
 
   return (
@@ -375,7 +387,7 @@ export default function WebOrdersPage() {
                       />
                     </td>
                     <td className="whitespace-nowrap px-4 py-4">
-                      <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(o.createdAt)}</div>
+                      <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(RESPONSE_TABS.includes(tab) ? o.responseEnteredAt : o.createdAt)}</div>
                       <div className="text-sm text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
                     </td>
                     <td className="px-4 py-4 text-foreground/70">

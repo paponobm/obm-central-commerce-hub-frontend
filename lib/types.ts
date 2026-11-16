@@ -488,6 +488,15 @@ export interface OrderListItem extends OrderBase {
   adminNotes: { id: string; note: string; createdAt: string; user: { name: string } | null }[];
   // The latest change (status, response, note or approval) and who made it.
   lastUpdate: { at: string; by: string | null };
+  // When the order most recently entered its current status (falls back to
+  // createdAt if it has never changed status) — what a status tab's Date
+  // column shows, since createdAt would otherwise always be the original
+  // order time even inside e.g. the RTS tab.
+  statusEnteredAt: string;
+  // Same idea for the Web Orders page's response-based tabs (Good But No
+  // Response, No Response, On Hold, Advance Payment) — when it most recently
+  // entered its current customerResponse (falls back to statusEnteredAt).
+  responseEnteredAt: string;
   customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null; orderCount: number };
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
   createdBy: { id: string; name: string } | null;
@@ -560,6 +569,10 @@ export interface OrderItem {
   unitPrice: string;
   discount: string;
   total: string;
+  // True when this line was added on a later edit, after the order already
+  // existed, rather than part of the original order — e.g. an agent adding
+  // a product to tempt a non-responsive customer. Set by the backend.
+  isSuggested: boolean;
   product?: { thumbnailUrl: string | null; images: { url: string }[] };
 }
 

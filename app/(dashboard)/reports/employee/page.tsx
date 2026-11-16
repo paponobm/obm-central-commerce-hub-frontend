@@ -102,6 +102,10 @@ interface EmployeeRow {
   id: string;
   name: string;
   total: Metric;
+  // The admin-added slice of discount (Order.manualDiscount) summed across
+  // every order this employee created in range — never the website's own
+  // discount, same split as the Web Order Details "Employee Discount" tag.
+  totalDiscount: number;
   byStatus: Record<OrderStatus, Metric>;
   bySource: Record<OrderSource, Metric>;
 }
@@ -114,7 +118,7 @@ interface EmployeeReport {
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
-type SortKey = "total" | OrderStatus | OrderSource;
+type SortKey = "total" | "discount" | OrderStatus | OrderSource;
 type MetricKind = "count" | "amount";
 interface SortState {
   key: SortKey;
@@ -188,6 +192,7 @@ export default function EmployeeReportPage() {
   const dataColumns: DataColumn[] = [
     { key: "total", metric: "count", label: "Total", tone: "neutral", isTotalCount: true },
     { key: "total", metric: "amount", label: "Total Money", tone: "positive" },
+    { key: "discount", metric: "amount", label: "Discount", tone: "neutral" },
     ...columns.flatMap((c) => [
       { key: c.key, metric: "count" as MetricKind, label: `${c.label} Count`, tone: c.tone },
       { key: c.key, metric: "amount" as MetricKind, label: `${c.label} Amount`, tone: c.tone },
@@ -196,6 +201,7 @@ export default function EmployeeReportPage() {
 
   function metricFor(emp: EmployeeRow, key: SortKey): Metric {
     if (key === "total") return emp.total;
+    if (key === "discount") return { count: 0, amount: emp.totalDiscount };
     return tab === "status" ? emp.byStatus[key as OrderStatus] : emp.bySource[key as OrderSource];
   }
 
@@ -241,10 +247,12 @@ export default function EmployeeReportPage() {
   const grandTotal = useMemo(() => {
     if (!report) return null;
     const total: Metric = { count: 0, amount: 0 };
+    let totalDiscount = 0;
     const byColumn = new Map<SortKey, Metric>(columns.map((c) => [c.key, { count: 0, amount: 0 }]));
     for (const emp of filteredEmployees) {
       total.count += emp.total.count;
       total.amount += emp.total.amount;
+      totalDiscount += emp.totalDiscount;
       for (const c of columns) {
         const cell = tab === "status" ? emp.byStatus[c.key as OrderStatus] : emp.bySource[c.key as OrderSource];
         const acc = byColumn.get(c.key)!;
@@ -252,7 +260,7 @@ export default function EmployeeReportPage() {
         acc.amount += cell.amount;
       }
     }
-    return { total, byColumn };
+    return { total, totalDiscount, byColumn };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, filteredEmployees, tab]);
 
@@ -411,7 +419,12 @@ export default function EmployeeReportPage() {
                       <tr className="border-t-2 border-black/10 bg-black/[0.03] text-foreground">
                         <td className="sticky left-0 bg-[color-mix(in_srgb,black_3%,var(--card-bg))] px-5 py-2.5">Total</td>
                         {dataColumns.map((col) => {
-                          const acc = col.key === "total" ? grandTotal.total : grandTotal.byColumn.get(col.key)!;
+                          const acc =
+                            col.key === "total"
+                              ? grandTotal.total
+                              : col.key === "discount"
+                                ? { count: 0, amount: grandTotal.totalDiscount }
+                                : grandTotal.byColumn.get(col.key)!;
                           return (
                             <td key={`${col.key}-${col.metric}`} className="px-5 py-2.5 text-right">
                               {col.metric === "count" ? acc.count : `৳${formatAmount(acc.amount)}`}
@@ -438,6 +451,12 @@ export default function EmployeeReportPage() {
                         <button type="button" onClick={() => toggleSort("total", "count")} className="inline-flex items-center hover:text-foreground">
                           Total
                           <SortIcon active={sort?.key === "total" && sort.metric === "count"} dir={sort?.key === "total" && sort.metric === "count" ? sort.dir : undefined} />
+                        </button>
+                      </th>
+                      <th rowSpan={2} className="whitespace-nowrap px-5 py-2.5 text-right align-bottom font-medium">
+                        <button type="button" onClick={() => toggleSort("discount", "amount")} className="inline-flex items-center hover:text-foreground">
+                          Discount
+                          <SortIcon active={sort?.key === "discount"} dir={sort?.key === "discount" ? sort.dir : undefined} />
                         </button>
                       </th>
                       {columns.map((c, i) => (
@@ -490,6 +509,7 @@ export default function EmployeeReportPage() {
                             <span className="text-foreground/40">0</span>
                           )}
                         </td>
+                        <td className="px-5 py-2.5 text-right text-foreground">৳{formatAmount(emp.totalDiscount)}</td>
                         {columns.map((c) => {
                           const metric = metricFor(emp, c.key);
                           const pct = emp.total.count > 0 ? (metric.count / emp.total.count) * 100 : 0;
@@ -513,6 +533,7 @@ export default function EmployeeReportPage() {
                       <tr className="border-t-2 border-black/10 bg-black/[0.03] text-foreground">
                         <td className="sticky left-0 bg-[color-mix(in_srgb,black_3%,var(--card-bg))] px-5 py-2.5">Total</td>
                         <td className="px-5 py-2.5 text-right">{grandTotal.total.count}</td>
+                        <td className="px-5 py-2.5 text-right">৳{formatAmount(grandTotal.totalDiscount)}</td>
                         {columns.map((c) => {
                           const acc = grandTotal.byColumn.get(c.key)!;
                           return (

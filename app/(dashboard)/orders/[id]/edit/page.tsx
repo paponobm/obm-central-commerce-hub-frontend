@@ -291,7 +291,14 @@ export default function EditOrderPage() {
     realRawProductTotal > 0 ? Math.round((realItemDiscountTotal / realRawProductTotal) * 100) : 0;
   const orderDiscountPercent =
     realRawProductTotal > 0 ? Math.round((realWebsiteDiscount / realRawProductTotal) * 100) : 0;
-  const hasRealBreakdown = realItemDiscountTotal > 0 || realOrderDiscount > 0 || realRawProductTotal > 0;
+  // Only a real website order ever has a "website's own discount" to break
+  // out — a MANUAL/PHONE/etc. order created from New Order has no
+  // storefront checkout behind it at all, so this box would otherwise show
+  // for one with a perfectly ordinary, fully-manual discount and imply a
+  // website portion that was never real.
+  const hasRealBreakdown =
+    order?.source === "WEBSITE" &&
+    (realItemDiscountTotal > 0 || realOrderDiscount > 0 || realRawProductTotal > 0);
 
   // The website's own discount (realWebsiteDiscount) always comes off
   // first — Discount above is the full manual amount on top of it

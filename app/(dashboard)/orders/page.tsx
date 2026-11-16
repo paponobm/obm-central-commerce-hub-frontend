@@ -251,10 +251,13 @@ const SORT_OPTIONS: { label: string; key: SortKey; dir: "asc" | "desc" }[] = [
   { label: "Discount (Low to High)", key: "discount", dir: "asc" },
 ];
 
-function sortValue(o: OrderListItem, key: SortKey): number | string {
+// `dateField` is "statusEnteredAt" inside a status tab (Pending, RTS, …) so
+// the Date column/sort reflects when the order entered THAT status, and
+// "createdAt" on "All", where there's no single status to anchor it to.
+function sortValue(o: OrderListItem, key: SortKey, dateField: "createdAt" | "statusEnteredAt" = "createdAt"): number | string {
   switch (key) {
     case "createdAt":
-      return new Date(o.createdAt).getTime();
+      return new Date(o[dateField]).getTime();
     case "total":
       return Number(o.total);
     case "shippingFee":
@@ -441,9 +444,10 @@ export default function OrdersPage() {
       qtyMax,
     }));
     if (!sort) return filtered;
+    const dateField = activeTab ? "statusEnteredAt" : "createdAt";
     const sorted = [...filtered].sort((a, b) => {
-      const av = sortValue(a, sort.key);
-      const bv = sortValue(b, sort.key);
+      const av = sortValue(a, sort.key, dateField);
+      const bv = sortValue(b, sort.key, dateField);
       if (av === bv) return 0;
       const cmp = av < bv ? -1 : 1;
       return sort.dir === "asc" ? cmp : -cmp;
@@ -1545,7 +1549,7 @@ export default function OrdersPage() {
                         />
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(o.createdAt)}</div>
+                        <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(activeTab ? o.statusEnteredAt : o.createdAt)}</div>
                         <div className="text-sm text-foreground/40">
                           Updated {listUpdated(o.updatedAt)}
                         </div>
