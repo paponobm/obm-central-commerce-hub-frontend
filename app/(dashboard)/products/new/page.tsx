@@ -61,6 +61,13 @@ const ORIGIN_COUNTRIES = [
   "Sri Lanka",
 ];
 
+// "কার জন্য" (Who is this for) — multi-select, unlike Origin, so it's a
+// checkbox list rather than a single dropdown. Not a fixed enum: shown here
+// as a starting point merged with GET /admin/products/for-who-tags (the
+// distinct set already used across every product), so a tag typed once in
+// "+ Add new" becomes a real checkbox for every product after that.
+const DEFAULT_FOR_WHO_TAGS = ["নিজের জন্য", "পরিবারের জন্য", "বাবা-মায়ের জন্য", "শিশুর জন্য"];
+
 // Abbreviates one option value into a SKU token — a single word becomes
 // itself (alnum only, "250g" -> "250G"); multiple words become initials
 // ("Gift Box" -> "GB"). Purely a convenience suggestion — every variant's
@@ -107,6 +114,12 @@ export default function NewProductPage() {
   // list (which only ever led to inconsistent keys like "Country" vs
   // "Origin" across products).
   const [origin, setOrigin] = useState("");
+  // The checkbox list itself — starts with the defaults, grows with
+  // whatever GET /admin/products/for-who-tags returns plus anything typed
+  // into "+ Add new" during this session.
+  const [forWhoTags, setForWhoTags] = useState<string[]>(DEFAULT_FOR_WHO_TAGS);
+  const [selectedForWho, setSelectedForWho] = useState<string[]>([]);
+  const [newForWhoTag, setNewForWhoTag] = useState("");
 
   // Thumbnail / gallery — same staged-upload pattern as before: upload
   // immediately to get a URL, attach to the product right after it's created.
@@ -135,7 +148,22 @@ export default function NewProductPage() {
   useEffect(() => {
     api.get<Category[]>("/admin/categories").then(setCategories).catch(() => {});
     api.get<Channel[]>("/admin/channels").then(setChannels).catch(() => {});
+    api
+      .get<string[]>("/admin/products/for-who-tags")
+      .then((tags) => setForWhoTags((prev) => Array.from(new Set([...prev, ...tags]))))
+      .catch(() => {});
   }, []);
+
+  function toggleForWho(tag: string) {
+    setSelectedForWho((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+  function addForWhoTag() {
+    const tag = newForWhoTag.trim();
+    if (!tag) return;
+    setForWhoTags((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
+    setSelectedForWho((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
+    setNewForWhoTag("");
+  }
 
   function handleNameChange(value: string) {
     setName(value);
@@ -384,6 +412,7 @@ export default function NewProductPage() {
         shortDescription: shortDescription.trim() || undefined,
         description: description.trim() || undefined,
         specifications: specifications.length ? specifications : undefined,
+        forWho: selectedForWho.length ? selectedForWho : undefined,
         costPrice: 0,
         basePrice,
         compareAtPrice,
@@ -551,6 +580,51 @@ export default function NewProductPage() {
                   <option key={c} value={c} />
                 ))}
               </datalist>
+            </div>
+
+            <div className="mt-4">
+              <Label className="!text-base">For Who</Label>
+              <p className="mb-2 text-xs text-foreground/50">
+                Powers the storefront combo builder&rsquo;s &ldquo;কম্বোটা কার জন্য?&rdquo; filter. Pick any that
+                apply, or add a brand new tag — it becomes a real option for every product after this.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {forWhoTags.map((tag) => (
+                  <label
+                    key={tag}
+                    className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm ${
+                      selectedForWho.includes(tag)
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-black/10 text-foreground/70"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedForWho.includes(tag)}
+                      onChange={() => toggleForWho(tag)}
+                      className="mr-1.5"
+                    />
+                    {tag}
+                  </label>
+                ))}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  value={newForWhoTag}
+                  onChange={(e) => setNewForWhoTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addForWhoTag();
+                    }
+                  }}
+                  placeholder="e.g. প্রবীণদের জন্য"
+                  className="!text-sm"
+                />
+                <Button type="button" variant="secondary" onClick={addForWhoTag}>
+                  + Add new
+                </Button>
+              </div>
             </div>
           </Card>
 

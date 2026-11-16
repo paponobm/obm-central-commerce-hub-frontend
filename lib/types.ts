@@ -333,6 +333,10 @@ export interface Product {
   description: string | null;
   slug: string | null;
   specifications: ProductSpecification[] | null;
+  // "কার জন্য" tags (e.g. "পরিবারের জন্য") — multi-select, unlike Origin.
+  // Not a fixed enum: the New/Edit Product form's checkbox list is just the
+  // distinct set already used across every product (GET /admin/products/for-who-tags).
+  forWho: string[];
   costPrice: string;
   basePrice: string;
   compareAtPrice: string | null;
@@ -377,6 +381,10 @@ export interface ProductChannelOverride {
 
 export interface InventorySummary {
   productId: string;
+  // Set only when this row is one specific variant's own stock (Inventory
+  // page's expandVariants view) — null for a plain product row, or when
+  // expandVariants wasn't requested.
+  variantId: string | null;
   sku: string;
   name: string;
   imageUrl: string | null;

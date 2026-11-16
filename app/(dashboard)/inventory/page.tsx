@@ -8,6 +8,7 @@ export default function InventoryPage() {
       title="Inventory"
       description="Current, reserved, and available stock for every product."
       lowStockOnly={false}
+      expandVariants
     />
   );
 }

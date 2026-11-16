@@ -114,10 +114,16 @@ export function InventoryList({
   title,
   description,
   lowStockOnly,
+  expandVariants = false,
 }: {
   title: string;
   description: string;
   lowStockOnly: boolean;
+  // Opt-in — breaks a variant product into one row per variant, each its
+  // own real stock (not the combined total). Only the main Inventory page
+  // asks for this; Low Stock and everywhere else keeps today's one-row-
+  // per-product behavior.
+  expandVariants?: boolean;
 }) {
   const { hasPermission } = useAuth();
   const [rows, setRows] = useState<InventorySummary[] | null>(null);
@@ -178,6 +184,7 @@ export function InventoryList({
     const params = new URLSearchParams();
     if (lowStockOnly) params.set("lowStock", "true");
     if (search) params.set("search", search);
+    if (expandVariants) params.set("expandVariants", "true");
     const qs = params.toString();
     try {
       setRows(await api.get<InventorySummary[]>(`/admin/inventory${qs ? `?${qs}` : ""}`));
@@ -251,12 +258,24 @@ export function InventoryList({
     try {
       if (hasDelta) {
         const delta_ = Number(delta);
-        await api.post(`/admin/inventory/${adjusting.productId}/adjust`, {
-          // Damage is always a reduction — let the admin type a plain positive count.
-          delta: type === "DAMAGE" ? -Math.abs(delta_) : delta_,
-          type,
-          note: note || undefined,
-        });
+        const signedDelta = type === "DAMAGE" ? -Math.abs(delta_) : delta_;
+        if (adjusting.variantId) {
+          // This row is one specific variant — its own stock lives on the
+          // variant row, not the product's combined total, so it's set
+          // through the variant endpoint instead of /inventory/adjust.
+          // That endpoint keeps the combined Inventory total and the
+          // activity log in sync the same way either path would.
+          await api.patch(`/admin/products/${adjusting.productId}/variants/${adjusting.variantId}`, {
+            stock: adjusting.currentStock + signedDelta,
+          });
+        } else {
+          await api.post(`/admin/inventory/${adjusting.productId}/adjust`, {
+            // Damage is always a reduction — let the admin type a plain positive count.
+            delta: signedDelta,
+            type,
+            note: note || undefined,
+          });
+        }
       }
       if (thresholdChanged) {
         await api.patch(`/admin/inventory/${adjusting.productId}/threshold`, {
@@ -373,7 +392,7 @@ export function InventoryList({
             </thead>
             <tbody>
               {pagedRows!.map((r) => (
-                <tr key={r.productId} className="border-b border-black/5 last:border-0">
+                <tr key={r.variantId ?? r.productId} className="border-b border-black/5 last:border-0">
                   <td className="py-2.5">
                     <div className="flex items-center gap-2.5">
                       {r.imageUrl ? (
