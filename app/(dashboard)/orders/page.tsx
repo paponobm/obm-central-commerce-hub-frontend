@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
@@ -38,6 +38,22 @@ function UserIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+
+function ChevronLeftIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M9 18l6-6-6-6" />
     </svg>
   );
 }
@@ -158,13 +174,13 @@ const TABS: { label: string; value: OrderStatus | "" | "OVERDUE" }[] = [
   { label: "Shipped", value: "SHIPPED" },
   { label: "Overdue", value: "OVERDUE" },
   { label: "Delivered", value: "DELIVERED" },
+   { label: "Partial", value: "PARTIAL" },
   { label: "Pending Return", value: "PENDING_RETURN" },
   { label: "Returned", value: "RETURNED" },
-  { label: "Partial", value: "PARTIAL" },
-  { label: "Cancelled", value: "CANCELLED" },
-  { label: "Pending Cancel", value: "PENDING_CANCEL" },
   { label: "Preorder", value: "PREORDER" },
   { label: "Lost", value: "LOST" },
+  { label: "Cancelled", value: "CANCELLED" },
+  // { label: "Pending Cancel", value: "PENDING_CANCEL" },
   { label: "All", value: "" },
 ];
 
@@ -377,6 +393,12 @@ export default function OrdersPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<OrderStatus | "" | "OVERDUE">(tabFromParam(searchParams.get("tab")));
+  // The tab row can overflow (more tabs than fit) — these let the fixed
+  // arrow buttons at its edges scroll it without relying on drag/trackpad.
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+  function scrollTabs(direction: "left" | "right") {
+    tabsScrollRef.current?.scrollBy({ left: direction === "left" ? -200 : 200, behavior: "smooth" });
+  }
   const [rtsSub, setRtsSub] = useState<RtsSubTab>(rtsSubFromParam(searchParams.get("sub")));
   const [overdueSub, setOverdueSub] = useState<OverdueSubTab>(overdueSubFromParam(searchParams.get("osub")));
   const [source, setSource] = useState("");
@@ -1159,25 +1181,45 @@ export default function OrdersPage() {
         // }
       />
 
-      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-black/5">
-        {TABS.map((t) => (
+      <div className="relative mb-4 border-b border-black/5">
+        <div ref={tabsScrollRef} className="scrollbar-none flex gap-1 overflow-x-auto pr-16">
+          {TABS.map((t) => (
+            <button
+              key={t.value || "all"}
+              onClick={() => selectTab(t.value)}
+              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-base font-medium transition-colors ${
+                activeTab === t.value
+                  ? "border-primary text-primary"
+                  : "border-transparent text-foreground/60 hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              <Pill tone={activeTab === t.value ? "info" : "primary"}>{counts[t.value] ?? 0}</Pill>
+            </button>
+          ))}
+        </div>
+        {/* <div className="absolute right-0 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-full border border-primary/15 bg-white  p-0.5 shadow-sm">
           <button
-            key={t.value || "all"}
-            onClick={() => selectTab(t.value)}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-base font-medium transition-colors ${
-              activeTab === t.value
-                ? "border-primary text-primary"
-                : "border-transparent text-foreground/60 hover:text-foreground"
-            }`}
+            type="button"
+            onClick={() => scrollTabs("left")}
+            aria-label="Scroll tabs left"
+            className="bg-white flex h-7 w-7 items-center justify-center text-primary hover:bg-primary/15"
           >
-            {t.label}
-            <Pill tone={activeTab === t.value ? "info" : "primary"}>{counts[t.value] ?? 0}</Pill>
+            <ChevronLeftIcon className="h-4 w-4" />
           </button>
-        ))}
+          <button
+            type="button"
+            onClick={() => scrollTabs("right")}
+            aria-label="Scroll tabs right"
+            className="bg-white flex h-7 w-7 items-center justify-center  text-primary hover:bg-primary/15"
+          >
+            <ChevronRightIcon className="h-4 w-4" />
+          </button>
+        </div> */}
       </div>
 
       {activeTab === "READY_TO_SHIP" && (
-        <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto">
+        <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto rounded-lg bg-black/[0.03] p-1.5">
           {RTS_SUB_TABS.map((t) => (
             <button
               key={t.key}
@@ -1185,7 +1227,7 @@ export default function OrdersPage() {
               className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 rtsSub === t.key
                   ? "border-primary bg-primary/10 text-primary"
-                  : "border-black/10 text-foreground/60 hover:text-foreground"
+                  : "border-black/10 bg-white text-foreground/60 hover:text-foreground"
               }`}
             >
               {t.label}
@@ -1196,7 +1238,7 @@ export default function OrdersPage() {
       )}
 
       {activeTab === "OVERDUE" && (
-        <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto">
+        <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto rounded-lg bg-black/[0.03] p-1.5">
           {OVERDUE_SUB_TABS.map((t) => (
             <button
               key={t.key}
@@ -1204,7 +1246,7 @@ export default function OrdersPage() {
               className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 overdueSub === t.key
                   ? "border-primary bg-primary/10 text-primary"
-                  : "border-black/10 text-foreground/60 hover:text-foreground"
+                  : "border-black/10 bg-white text-foreground/60 hover:text-foreground"
               }`}
             >
               {t.label}

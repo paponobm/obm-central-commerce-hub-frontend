@@ -182,3 +182,14 @@ body {
   border-radius: 0.5rem;
   margin: 0.4em 0;
 }
+
+/* Hides the scrollbar entirely on a horizontally-scrollable row (e.g. the
+   Orders page's tab bar) — it still scrolls (drag/trackpad/the row's own
+   arrow buttons), there's just no visible scrollbar track/thumb. */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
