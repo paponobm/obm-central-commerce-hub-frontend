@@ -20,7 +20,7 @@ import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
 import { printStickers } from "@/lib/print-sticker";
 import { telHref } from "@/lib/phone";
-import { CAN_CANCEL_FROM, PIPELINE_LABEL, nextPathInPipeline, prevInPipeline } from "@/lib/order-pipeline";
+import { CAN_CANCEL_FROM, PIPELINE_LABEL, nextPathInPipeline, prevInPipeline, canMoveToPendingReturn } from "@/lib/order-pipeline";
 import { isOverdueShipped } from "@/lib/order-overdue";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -608,6 +608,11 @@ export default function OrdersPage() {
   const canBulkPrev = prevTargets.length > 0;
   const prevLabel = prevTargets.every((s) => s === prevTargets[0]) ? PIPELINE_LABEL[prevTargets[0]] : null;
 
+  const canBulkPendingReturn = selectedOrders.some((o) => canMoveToPendingReturn(o.status));
+  // Mirrors the per-row "Move to Pending" action already offered for a
+  // single Preorder order — same PREORDER -> PENDING transition, bulk.
+  const canBulkConvertToPending = selectedOrders.some((o) => o.status === "PREORDER");
+
   const canBulkCancel = selectedOrders.some((o) => CAN_CANCEL_FROM.has(o.status));
   // Mirrors the per-row "Entry to Steadfast" action's own eligibility —
   // same statuses it's offered for there.
@@ -800,6 +805,81 @@ export default function OrdersPage() {
         [
           failed > 0 ? `${failed} failed.` : null,
           ineligible > 0 ? `${ineligible} skipped (no previous stage from their current status).` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+  }
+
+  // A Shipped/Partial/Delivered order entering a return — lands at
+  // PENDING_RETURN itself, same one-step pattern as bulkMovePrev, not the
+  // full walk to RETURNED (that stays a separate, deliberate confirmation).
+  async function bulkMovePendingReturn() {
+    if (!allOrders) return;
+    const targets = allOrders.filter((o) => selectedIds.has(o.id));
+    if (targets.length === 0) return;
+
+    setSelectedIds(new Set());
+    setBulkBusy(true);
+    setRowError(null);
+    let failed = 0;
+    let ineligible = 0;
+    for (const o of targets) {
+      if (!canMoveToPendingReturn(o.status)) {
+        ineligible++;
+        continue;
+      }
+      try {
+        await api.patch(`/admin/orders/${o.id}/status`, { status: "PENDING_RETURN" });
+      } catch {
+        failed++;
+      }
+    }
+    await loadOrders(search);
+    setBulkBusy(false);
+    if (failed > 0 || ineligible > 0) {
+      setRowError(
+        [
+          failed > 0 ? `${failed} failed.` : null,
+          ineligible > 0 ? `${ineligible} skipped (not Shipped/Partial/Delivered).` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+  }
+
+  // Same PREORDER -> PENDING transition the per-row "Move to Pending" action
+  // already does for one order at a time — this is its bulk equivalent.
+  async function bulkConvertToPending() {
+    if (!allOrders) return;
+    const targets = allOrders.filter((o) => selectedIds.has(o.id));
+    if (targets.length === 0) return;
+
+    setSelectedIds(new Set());
+    setBulkBusy(true);
+    setRowError(null);
+    let failed = 0;
+    let ineligible = 0;
+    for (const o of targets) {
+      if (o.status !== "PREORDER") {
+        ineligible++;
+        continue;
+      }
+      try {
+        await api.patch(`/admin/orders/${o.id}/status`, { status: "PENDING" });
+      } catch {
+        failed++;
+      }
+    }
+    await loadOrders(search);
+    setBulkBusy(false);
+    if (failed > 0 || ineligible > 0) {
+      setRowError(
+        [
+          failed > 0 ? `${failed} failed.` : null,
+          ineligible > 0 ? `${ineligible} skipped (not Preorder).` : null,
         ]
           .filter(Boolean)
           .join(" "),
@@ -1031,7 +1111,7 @@ export default function OrdersPage() {
   }
 
   function renderActionsCell(o: OrderListItem, menuKey: string) {
-    const menuWidth = 176; // w-44
+    const menuWidth = 224; // wide enough for Invoice + Sticker side by side
     return (
           <td className="px-4 py-4">
             <div className="relative flex justify-end">
@@ -1049,7 +1129,7 @@ export default function OrdersPage() {
                   // some statuses — estimate the real height so the flip
                   // decision below is accurate instead of guessing high.
                   const itemHeight = 36;
-                  let menuHeight = itemHeight * 4 + 9 + 8; // Invoice, Sticker, Order Details, Edit + divider + padding
+                  let menuHeight = itemHeight * 3 + 9 + 8; // Invoice+Sticker row, Order Details, Edit + divider + padding
                   if (o.status === "PREORDER") menuHeight += itemHeight;
                   if (CAN_CANCEL_FROM.has(o.status)) menuHeight += itemHeight;
                   if (o.status === "READY_TO_SHIP" || o.status === "PENDING" || o.status === "SHIPPED") {
@@ -1073,30 +1153,32 @@ export default function OrdersPage() {
                     style={{ top: menuPos.top, left: menuPos.left, width: menuWidth }}
                     className="fixed z-30 overflow-hidden rounded-lg border border-black/10 bg-white py-1 shadow-lg"
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        setSelectedIds(new Set([o.id]));
-                        setPrintError(null);
-                        setShowPrintDialog(true);
-                      }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
-                    >
-                      <PrinterIcon className="h-4 w-4 text-foreground/50" />
-                      Invoice
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        runPrintSticker(new Set([o.id]));
-                      }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
-                    >
-                      <TagIcon className="h-4 w-4 text-foreground/50" />
-                      Sticker
-                    </button>
+                    <div className="flex gap-1 px-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          setSelectedIds(new Set([o.id]));
+                          setPrintError(null);
+                          setShowPrintDialog(true);
+                        }}
+                        className="flex flex-1 items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
+                      >
+                        <PrinterIcon className="h-4 w-4 text-foreground/50" />
+                        Invoice
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          runPrintSticker(new Set([o.id]));
+                        }}
+                        className="flex flex-1 items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-left text-base text-foreground hover:bg-black/5"
+                      >
+                        <TagIcon className="h-4 w-4 text-foreground/50" />
+                        Sticker
+                      </button>
+                    </div>
                     <div className="my-1 border-t border-black/5" />
                     <button
                       type="button"
@@ -1236,6 +1318,7 @@ export default function OrdersPage() {
           ))}
         </div>
       )}
+      
 
       {activeTab === "OVERDUE" && (
         <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto rounded-lg bg-black/[0.03] p-1.5">
@@ -1553,34 +1636,36 @@ export default function OrdersPage() {
           <div className="px-2 pb-1 pt-2 text-sm font-medium text-foreground/40">
             Print Options
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setBulkMenuOpen(false);
-              setPrintError(null);
-              setShowPrintDialog(true);
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-foreground/60">
-              🧾
-            </span>
-            Invoice
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setBulkMenuOpen(false);
-              setPrintError(null);
-              runPrintSticker(selectedIds);
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-foreground/60">
-              🏷️
-            </span>
-            Sticker
-          </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setBulkMenuOpen(false);
+                setPrintError(null);
+                setShowPrintDialog(true);
+              }}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-foreground/60">
+                🧾
+              </span>
+              Invoice
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBulkMenuOpen(false);
+                setPrintError(null);
+                runPrintSticker(selectedIds);
+              }}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-foreground/60">
+                🏷️
+              </span>
+              Sticker
+            </button>
+          </div>
 
           <div className="my-1 border-t border-black/5" />
 
@@ -1613,6 +1698,32 @@ export default function OrdersPage() {
               {bulkBusy ? "Working…" : prevLabel ? `Sent back to ${prevLabel}` : "Move to Previous Status"}
             </button>
           )}
+          {canBulkPendingReturn && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkMovePendingReturn}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/10 text-sm text-foreground/60">
+                ↩
+              </span>
+              {bulkBusy ? "Working…" : "Move to Pending Return"}
+            </button>
+          )}
+          {canBulkConvertToPending && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkConvertToPending}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-foreground hover:bg-black/5 disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-sm text-primary-fg">
+                🛒
+              </span>
+              {bulkBusy ? "Working…" : "Convert to Pending"}
+            </button>
+          )}
           {canBulkCancel && (
             <button
               type="button"
@@ -1623,10 +1734,10 @@ export default function OrdersPage() {
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-sm text-white">
                 ✕
               </span>
-              Cancel
+              Cancel Order
             </button>
           )}
-          {!canBulkNext && !canBulkPrev && !canBulkCancel && (
+          {!canBulkNext && !canBulkPrev && !canBulkPendingReturn && !canBulkConvertToPending && !canBulkCancel && (
             <p className="px-2 py-2 text-base text-foreground/50">
               No status actions available for this selection.
             </p>

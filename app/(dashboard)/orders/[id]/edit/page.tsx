@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api-client";
 import type { OrderSource, PaymentMethod, Product, OrderDetail, Payment, OverdueResponse } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
 import { isOverdueShipped } from "@/lib/order-overdue";
+import { minPreorderNotifyAt, PREORDER_REASONS } from "@/lib/order-pipeline";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,14 @@ interface LineItem {
   lineDiscount: string;
 }
 
+// datetime-local inputs want local-time "YYYY-MM-DDTHH:mm", not an ISO string.
+function toDatetimeLocal(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function availableStock(p: Product): number {
   return p.inventory ? p.inventory.currentStock - p.inventory.reservedStock : 0;
 }
@@ -122,6 +131,10 @@ export default function EditOrderPage() {
   const [productSearch, setProductSearch] = useState("");
   const [discount, setDiscount] = useState("");
   const [shippingFee, setShippingFee] = useState("");
+  // Only meaningful while the order is still PREORDER — same panel New
+  // Order itself offers, just prefilled from whatever's already saved.
+  const [preorderReason, setPreorderReason] = useState(PREORDER_REASONS[0]);
+  const [preorderNotifyAt, setPreorderNotifyAt] = useState("");
 
   // Advance Payment rows — editable in place, saved per-row via its own
   // "Update" button rather than the main form submit, since a payment edit
@@ -176,6 +189,8 @@ export default function EditOrderPage() {
         // instead, via realWebsiteDiscount).
         setDiscount(Number(o.manualDiscount) > 0 ? o.manualDiscount : "");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
+        setPreorderReason(o.preorderReason ?? PREORDER_REASONS[0]);
+        setPreorderNotifyAt(toDatetimeLocal(o.preorderNotifyAt));
         setPayments(o.payments);
         setPaymentDrafts(
           Object.fromEntries(
@@ -400,6 +415,14 @@ export default function EditOrderPage() {
         manualDiscount: Number(discount) || 0,
         shippingFee: shippingFee ? Number(shippingFee) : undefined,
         notes: shippingNote || undefined,
+        ...(order?.status === "PREORDER"
+          ? {
+              preorderReason: preorderReason || undefined,
+              preorderNotifyAt: preorderNotifyAt
+                ? new Date(preorderNotifyAt).toISOString()
+                : undefined,
+            }
+          : {}),
       });
       await savePaymentDrafts();
       router.push("/orders");
@@ -664,6 +687,32 @@ export default function EditOrderPage() {
                     </option>
                   ))}
                 </Select>
+                {order.status === "PREORDER" && (
+                  <>
+                    <div>
+                      <Label>Preorder Reason</Label>
+                      <Select
+                        value={preorderReason}
+                        onChange={(e) => setPreorderReason(e.target.value)}
+                      >
+                        {PREORDER_REASONS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Notification Date</Label>
+                      <Input
+                        type="datetime-local"
+                        min={minPreorderNotifyAt()}
+                        value={preorderNotifyAt}
+                        onChange={(e) => setPreorderNotifyAt(e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

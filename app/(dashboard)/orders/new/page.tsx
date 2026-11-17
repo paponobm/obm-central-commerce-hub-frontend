@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import type { OrderSource, PaymentMethod, Product, OrderDetail } from "@/lib/types";
 import { formatAmount } from "@/lib/format";
+import { minPreorderNotifyAt, PREORDER_REASONS } from "@/lib/order-pipeline";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,9 +31,6 @@ const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFE
 // Free-text on the order, purely informational (see Order.deliveryMethod) —
 // not tied to any courier integration, so this list is just a starting set.
 const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delivery", "Other"];
-// Starting set for the optional Preorder Reason dropdown — same "informational
-// starting list" convention as DELIVERY_METHODS above.
-const PREORDER_REASONS = ["Out of Stock", "Upcoming Launch", "Custom Order", "Other"];
 
 // Opens the Preorder Reason/Notification Date bar — same hand-drawn-SVG
 // convention as the sidebar's own icons.
@@ -168,8 +166,8 @@ export default function NewOrderPage() {
   // Preorder — the order starts life in the Preorder list instead of
   // Pending; reason/notify date are both optional even when this is on.
   const [isPreorder, setIsPreorder] = useState(false);
-  // Reason/date stay collapsed behind the bell icon until clicked — turning
-  // Preorder on by itself shouldn't immediately show them.
+  // Opens the moment Preorder is switched on (see the Switch's onChange
+  // below) — the bell icon still lets it be toggled shut/reopened from there.
   const [showPreorderDetails, setShowPreorderDetails] = useState(false);
   const [preorderReason, setPreorderReason] = useState(PREORDER_REASONS[0]);
   const [preorderNotifyAt, setPreorderNotifyAt] = useState("");
@@ -506,10 +504,10 @@ export default function NewOrderPage() {
                     onChange={() =>
                       setIsPreorder((v) => {
                         const next = !v;
-                        // Collapses the bar again whenever Preorder is
-                        // switched off, so turning it back on later starts
-                        // from the same "not shown yet" state.
-                        if (!next) setShowPreorderDetails(false);
+                        // Opens the bar the moment Preorder is switched on,
+                        // and collapses it again when switched off, so
+                        // turning it back on later starts fresh.
+                        setShowPreorderDetails(next);
                         return next;
                       })
                     }
@@ -536,6 +534,7 @@ export default function NewOrderPage() {
                       <Input
                         type="datetime-local"
                         className="w-full !text-base"
+                        min={minPreorderNotifyAt()}
                         value={preorderNotifyAt}
                         onChange={(e) => setPreorderNotifyAt(e.target.value)}
                       />
