@@ -115,6 +115,7 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
     paymentStatus: "UNPAID",
     shipmentStatus: "NOT_SHIPPED",
     customerResponse: null,
+    overdueResponse: null,
     subtotal: String(lead.total),
     discount: "0",
     manualDiscount: "0",

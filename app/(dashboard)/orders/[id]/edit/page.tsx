@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderSource, PaymentMethod, Product, OrderDetail, Payment } from "@/lib/types";
+import type { OrderSource, PaymentMethod, Product, OrderDetail, Payment, OverdueResponse } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
+import { isOverdueShipped } from "@/lib/order-overdue";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,21 @@ const PAYMENT_METHODS: PaymentMethod[] = ["COD", "BKASH", "NAGAD", "BANK_TRANSFE
 // Free-text on the order, purely informational (see Order.deliveryMethod) —
 // not tied to any courier integration, so this list is just a starting set.
 const DELIVERY_METHODS = ["Steadfast", "Pathao", "RedX", "eCourier", "Own Delivery", "Other"];
+
+// Manual triage options for the "Shipped Action" card (Overdue, "New" is
+// excluded — that's just the absence of a selection, never one itself).
+const OVERDUE_RESPONSES: OverdueResponse[] = [
+  "CUSTOMER_CONFIRM",
+  "NO_RESPONSE",
+  "CUSTOMER_REFUSED",
+  "COURIER_CLAIM",
+];
+const OVERDUE_RESPONSE_LABELS: Record<OverdueResponse, string> = {
+  CUSTOMER_CONFIRM: "Customer Confirm",
+  NO_RESPONSE: "No Response",
+  CUSTOMER_REFUSED: "Customer Refused",
+  COURIER_CLAIM: "Courier Claim",
+};
 
 // Mirrors OrdersService's EDITABLE_STATUSES — content editing is only safe
 // while stock is merely *reserved*, not yet deducted (i.e. before SHIPPED).
@@ -117,6 +133,14 @@ export default function EditOrderPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // "Shipped Action" — manual triage of an overdue SHIPPED order, saved via
+  // its own Update button (same reasoning as paymentDrafts above: its own
+  // endpoint, not the main form submit).
+  const [overdueDraft, setOverdueDraft] = useState<OverdueResponse | "">("");
+  const [overdueNote, setOverdueNote] = useState("");
+  const [overdueSaving, setOverdueSaving] = useState(false);
+  const [overdueError, setOverdueError] = useState<string | null>(null);
   const pricingRef = useRef<HTMLDivElement>(null);
   const [pricingInView, setPricingInView] = useState(false);
 
@@ -139,6 +163,7 @@ export default function EditOrderPage() {
       .get<OrderDetail>(`/admin/orders/${orderId}`)
       .then((o) => {
         setOrder(o);
+        setOverdueDraft(o.overdueResponse ?? "");
         setCustomerName(o.shippingName);
         setCustomerPhone(o.shippingPhone);
         setDeliveryMethod(o.deliveryMethod ?? DELIVERY_METHODS[0]);
@@ -253,6 +278,28 @@ export default function EditOrderPage() {
       latestPayments = updated.payments;
     }
     setPayments(latestPayments);
+  }
+
+  async function saveOverdueResponse() {
+    if (!overdueDraft) return;
+    setOverdueSaving(true);
+    setOverdueError(null);
+    try {
+      const updated = await api.patch<OrderDetail>(`/admin/orders/${orderId}/overdue-response`, {
+        overdueResponse: overdueDraft,
+        note: overdueNote || undefined,
+      });
+      setOrder(updated);
+      setOverdueNote("");
+      api
+        .get<ActivityEntry[]>(`/admin/orders/${orderId}/activity`)
+        .then(setActivity)
+        .catch(() => {});
+    } catch (err) {
+      setOverdueError(err instanceof ApiError ? err.message : "Failed to update");
+    } finally {
+      setOverdueSaving(false);
+    }
   }
 
   // Sub Total shown below is the raw per-line total (matches each line's own
@@ -388,6 +435,7 @@ export default function EditOrderPage() {
   }
 
   if (!EDITABLE_STATUSES.has(order.status)) {
+    const overdue = isOverdueShipped(order);
     return (
       <div className="mx-auto max-w-6xl">
         <PageHeader
@@ -398,10 +446,141 @@ export default function EditOrderPage() {
             </Button>
           }
         />
-        <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
-          Order {order.orderNumber} can no longer be edited (status: {order.status.replaceAll("_", " ")}).
-          Stock for this order has already shipped or otherwise moved past the editable stage.
-        </p>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+              Order {order.orderNumber} can no longer be edited (status: {order.status.replaceAll("_", " ")}).
+              Stock for this order has already shipped or otherwise moved past the editable stage. Read-only below.
+            </p>
+
+            <Card>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Customer</h2>
+              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <div className="font-medium text-foreground">{order.shippingName}</div>
+                  <div className="text-foreground/60">{order.shippingPhone}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-foreground/40">
+                    Shipping To
+                  </div>
+                  <div className="text-foreground/70">{order.shippingAddress}</div>
+                  {order.deliveryMethod && (
+                    <div className="text-xs text-foreground/50">Via {order.deliveryMethod}</div>
+                  )}
+                </div>
+              </div>
+              {order.notes && (
+                <p className="mt-3 rounded-lg bg-black/5 px-3 py-2 text-sm text-foreground/70">
+                  Note: {order.notes}
+                </p>
+              )}
+            </Card>
+
+            <Card>
+              <h2 className="mb-4 text-sm font-semibold text-foreground">Products</h2>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-black/5 text-left text-xs text-foreground/50">
+                    <th className="pb-2 font-medium">Product</th>
+                    <th className="pb-2 font-medium text-right">Qty</th>
+                    <th className="pb-2 font-medium text-right">Unit Price</th>
+                    <th className="pb-2 font-medium text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map((item) => (
+                    <tr key={item.id} className="border-b border-black/5 last:border-0">
+                      <td className="py-2.5">
+                        <div className="font-medium text-foreground">{item.productName}</div>
+                        <div className="text-xs text-foreground/50">{item.sku}</div>
+                      </td>
+                      <td className="py-2.5 text-right">{item.quantity}</td>
+                      <td className="py-2.5 text-right">{formatAmount(item.unitPrice)}</td>
+                      <td className="py-2.5 text-right font-medium text-foreground">
+                        {formatAmount(item.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-4 ml-auto w-56 space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-foreground/60">Subtotal</span>
+                  <span>{formatAmount(order.subtotal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground/60">Discount</span>
+                  <span>-{formatAmount(order.discount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground/60">Shipping</span>
+                  <span>{formatAmount(order.shippingFee)}</span>
+                </div>
+                <div className="flex justify-between border-t border-black/5 pt-1 font-semibold text-foreground">
+                  <span>Total</span>
+                  <span>{formatAmount(order.total)}</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            {overdue && (
+              <Card>
+                <h2 className="mb-3 text-sm font-semibold text-foreground">Shipped Action</h2>
+                <Select
+                  value={overdueDraft}
+                  onChange={(e) => setOverdueDraft(e.target.value as OverdueResponse | "")}
+                >
+                  <option value="">Select action</option>
+                  {OVERDUE_RESPONSES.map((r) => (
+                    <option key={r} value={r}>
+                      {OVERDUE_RESPONSE_LABELS[r]}
+                    </option>
+                  ))}
+                </Select>
+                <div className="mt-3">
+                  <Label>Note (optional)</Label>
+                  <Textarea
+                    rows={3}
+                    placeholder="Add a note about this action (optional)"
+                    value={overdueNote}
+                    onChange={(e) => setOverdueNote(e.target.value)}
+                  />
+                </div>
+                {overdueError && (
+                  <p className="mt-2 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
+                    {overdueError}
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!overdueDraft || overdueSaving}
+                  onClick={saveOverdueResponse}
+                  className="mt-3 w-full"
+                >
+                  {overdueSaving ? "Updating…" : "Update"}
+                </Button>
+              </Card>
+            )}
+
+            <Card>
+              <h2 className="mb-3 text-sm font-semibold text-foreground">Activity Log</h2>
+              {activity.length === 0 ? (
+                <p className="text-sm text-foreground/50">No activity yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {activity.map((a) => (
+                    <ActivityLogRow key={a.key} entry={a} />
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
       </div>
     );
   }

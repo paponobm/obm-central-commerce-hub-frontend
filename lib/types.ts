@@ -35,6 +35,13 @@ export type CustomerResponseStatus =
   | "INTERESTED"
   | "NOT_INTERESTED"
   | "CONFIRMED";
+// Manual triage of an overdue SHIPPED order — null means "New"/not yet
+// triaged. Unrelated to CustomerResponseStatus (pre-shipment follow-up).
+export type OverdueResponse =
+  | "CUSTOMER_CONFIRM"
+  | "NO_RESPONSE"
+  | "CUSTOMER_REFUSED"
+  | "COURIER_CLAIM";
 export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID" | "REFUNDED";
 export type ShipmentStatus =
   | "NOT_SHIPPED"
@@ -456,6 +463,9 @@ interface OrderBase {
   shipmentStatus: ShipmentStatus;
   // Empty until someone sets it from Web Orders.
   customerResponse: CustomerResponseStatus | null;
+  // Manual triage of an overdue SHIPPED order — null means "New". See the
+  // Edit page's "Shipped Action" card and OverdueResponse's own comment.
+  overdueResponse: OverdueResponse | null;
   subtotal: string;
   discount: string;
   // The slice of `discount` an admin typed in manually — never includes
@@ -519,6 +529,10 @@ export interface OrderDetail extends OrderBase {
   timeline: TimelineEntry[];
   payments: Payment[];
   shipment: OrderShipment | null;
+  // Same as OrderListItem's own fields of these names — the backend's
+  // findOne/findByOrderNumber compute them identically.
+  statusEnteredAt: string;
+  responseEnteredAt: string;
 }
 
 export interface OrderShipment {

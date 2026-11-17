@@ -10,6 +10,7 @@ import type {
   OrderDetail,
   OrderStatus,
   OrderSource,
+  OverdueResponse,
   PaymentStatus,
   PaymentMethod,
   Integration,
@@ -20,6 +21,7 @@ import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-inv
 import { printStickers } from "@/lib/print-sticker";
 import { telHref } from "@/lib/phone";
 import { CAN_CANCEL_FROM, PIPELINE_LABEL, nextPathInPipeline, prevInPipeline } from "@/lib/order-pipeline";
+import { isOverdueShipped } from "@/lib/order-overdue";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,13 +106,57 @@ function SendIcon({ className }: { className?: string }) {
   );
 }
 
+// RTS has two child tabs, by age, not by a real OrderStatus — both "New" and
+// "Pending RTS" are still status READY_TO_SHIP underneath; this is purely a
+// second-row sub-filter shown only while the RTS tab itself is active. Once
+// an order has sat in RTS longer than this without shipping, it reclassifies
+// from New to Pending RTS purely by the clock, no action needed.
+const RTS_PENDING_AFTER_MS = 48 * 60 * 60 * 1000;
+function isNewRts(o: OrderListItem): boolean {
+  return Date.now() - new Date(o.statusEnteredAt).getTime() <= RTS_PENDING_AFTER_MS;
+}
+
+// Always exactly one of these is active while RTS is the main tab — New is
+// the default landing sub-tab, same as RTS itself defaults to showing the
+// freshest work first.
+type RtsSubTab = "new" | "pending";
+
+const RTS_SUB_TABS: { key: RtsSubTab; label: string }[] = [
+  { key: "new", label: "New" },
+  { key: "pending", label: "Pending RTS" },
+];
+
+function matchesRtsSubTab(o: OrderListItem, sub: RtsSubTab): boolean {
+  return sub === "new" ? isNewRts(o) : !isNewRts(o);
+}
+
+// Always exactly one of these is active while Overdue is the main tab — New
+// (not yet triaged — overdueResponse is null) is the default landing
+// sub-tab, same convention as RTS's own New/Pending RTS split. The other
+// four are set manually on the order's Edit page ("Shipped Action"), not
+// computed — see OverdueResponse's own comment in lib/types.ts.
+type OverdueSubTab = "new" | OverdueResponse;
+
+const OVERDUE_SUB_TABS: { key: OverdueSubTab; label: string }[] = [
+  { key: "new", label: "New" },
+  { key: "CUSTOMER_CONFIRM", label: "Customer Confirm" },
+  { key: "NO_RESPONSE", label: "No Response" },
+  { key: "CUSTOMER_REFUSED", label: "Customer Refused" },
+  { key: "COURIER_CLAIM", label: "Courier Claim" },
+];
+
+function matchesOverdueSubTab(o: OrderListItem, sub: OverdueSubTab): boolean {
+  return sub === "new" ? o.overdueResponse === null : o.overdueResponse === sub;
+}
+
 // Matches the reference tab set exactly. Confirmed/Processing aren't given
 // their own tab (the reference doesn't show them either) but stay reachable
 // — and countable — via "All".
-const TABS: { label: string; value: OrderStatus | "" }[] = [
+const TABS: { label: string; value: OrderStatus | "" | "OVERDUE" }[] = [
   { label: "Pending", value: "PENDING" },
   { label: "RTS", value: "READY_TO_SHIP" },
   { label: "Shipped", value: "SHIPPED" },
+  { label: "Overdue", value: "OVERDUE" },
   { label: "Delivered", value: "DELIVERED" },
   { label: "Pending Return", value: "PENDING_RETURN" },
   { label: "Returned", value: "RETURNED" },
@@ -122,18 +168,35 @@ const TABS: { label: string; value: OrderStatus | "" }[] = [
   { label: "All", value: "" },
 ];
 
+// Generalizes plain `status === value` to also handle the two pseudo-tabs
+// above: Shipped now excludes anything that's actually gone Overdue, and
+// Overdue only matches via its own age check, not a real status equality.
+function matchesTopTab(o: OrderListItem, value: OrderStatus | "" | "OVERDUE"): boolean {
+  if (value === "") return true;
+  if (value === "OVERDUE") return isOverdueShipped(o);
+  if (value === "SHIPPED") return o.status === "SHIPPED" && !isOverdueShipped(o);
+  return o.status === value;
+}
+
 // Tab lives in the URL (?tab=...) so a reload lands back on the same tab
 // instead of always resetting to the default. "all" stands in for the
 // empty-string value, which an omitted/absent param already means "PENDING".
-function tabFromParam(value: string | null): OrderStatus | "" {
+function tabFromParam(value: string | null): OrderStatus | "" | "OVERDUE" {
   if (!value) return "PENDING";
   if (value === "all") return "";
-  return TABS.some((t) => t.value === value) ? (value as OrderStatus) : "PENDING";
+  return TABS.some((t) => t.value === value) ? (value as OrderStatus | "OVERDUE") : "PENDING";
 }
-function tabToParam(value: OrderStatus | ""): string | null {
+function tabToParam(value: OrderStatus | "" | "OVERDUE"): string | null {
   if (value === "PENDING") return null;
   if (value === "") return "all";
   return value;
+}
+function rtsSubFromParam(value: string | null): RtsSubTab {
+  return value === "pending" ? "pending" : "new";
+}
+function overdueSubFromParam(value: string | null): OverdueSubTab {
+  const sub = OVERDUE_SUB_TABS.find((t) => t.key === value);
+  return sub ? sub.key : "new";
 }
 
 type OrderFilters = {
@@ -313,7 +376,9 @@ export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<OrderListItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<OrderStatus | "">(tabFromParam(searchParams.get("tab")));
+  const [activeTab, setActiveTab] = useState<OrderStatus | "" | "OVERDUE">(tabFromParam(searchParams.get("tab")));
+  const [rtsSub, setRtsSub] = useState<RtsSubTab>(rtsSubFromParam(searchParams.get("sub")));
+  const [overdueSub, setOverdueSub] = useState<OverdueSubTab>(overdueSubFromParam(searchParams.get("osub")));
   const [source, setSource] = useState("");
   const [channelId, setChannelId] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
@@ -409,7 +474,27 @@ export default function OrdersPage() {
     const c: Record<string, number> = { "": allOrders?.length ?? 0 };
     for (const t of TABS) {
       if (t.value === "") continue;
-      c[t.value] = allOrders?.filter((o) => o.status === t.value).length ?? 0;
+      c[t.value] = allOrders?.filter((o) => matchesTopTab(o, t.value)).length ?? 0;
+    }
+    return c;
+  }, [allOrders]);
+
+  // Only meaningful while the RTS tab itself is active — how many of its
+  // orders fall into each child sub-tab.
+  const rtsSubCounts = useMemo(() => {
+    const rtsOrders = allOrders?.filter((o) => o.status === "READY_TO_SHIP") ?? [];
+    return {
+      new: rtsOrders.filter(isNewRts).length,
+      pending: rtsOrders.filter((o) => !isNewRts(o)).length,
+    };
+  }, [allOrders]);
+
+  // Only meaningful while the Overdue tab itself is active.
+  const overdueSubCounts = useMemo(() => {
+    const overdueOrders = allOrders?.filter(isOverdueShipped) ?? [];
+    const c = {} as Record<OverdueSubTab, number>;
+    for (const t of OVERDUE_SUB_TABS) {
+      c[t.key] = overdueOrders.filter((o) => matchesOverdueSubTab(o, t.key)).length;
     }
     return c;
   }, [allOrders]);
@@ -429,8 +514,14 @@ export default function OrdersPage() {
 
   const visibleOrders = useMemo(() => {
     if (!allOrders) return null;
-    const tabbed = activeTab ? allOrders.filter((o) => o.status === activeTab) : allOrders;
-    const filtered = tabbed.filter((o) => orderMatchesFilters(o, {
+    const tabbed = activeTab ? allOrders.filter((o) => matchesTopTab(o, activeTab)) : allOrders;
+    const subFiltered =
+      activeTab === "READY_TO_SHIP"
+        ? tabbed.filter((o) => matchesRtsSubTab(o, rtsSub))
+        : activeTab === "OVERDUE"
+          ? tabbed.filter((o) => matchesOverdueSubTab(o, overdueSub))
+          : tabbed;
+    const filtered = subFiltered.filter((o) => orderMatchesFilters(o, {
       printFilter,
       dateRange,
       sku: skuFilter.trim().toLowerCase(),
@@ -456,6 +547,8 @@ export default function OrdersPage() {
   }, [
     allOrders,
     activeTab,
+    rtsSub,
+    overdueSub,
     sort,
     printFilter,
     dateRange,
@@ -510,15 +603,43 @@ export default function OrdersPage() {
   // A selection only ever makes sense against the tab you made it on —
   // switching tabs drops it, so coming back to a tab never shows stale
   // checkmarks left over from before you navigated away.
-  function selectTab(value: OrderStatus | "") {
+  function selectTab(value: OrderStatus | "" | "OVERDUE") {
     setActiveTab(value);
+    setRtsSub("new");
+    setOverdueSub("new");
     setSelectedIds(new Set());
     const params = new URLSearchParams(searchParams.toString());
     const tabParam = tabToParam(value);
     if (tabParam) params.set("tab", tabParam);
     else params.delete("tab");
+    params.delete("sub");
+    params.delete("osub");
     const qs = params.toString();
     // replace, not push — switching tabs shouldn't pile up Back-stops.
+    router.replace(qs ? `/orders?${qs}` : "/orders", { scroll: false });
+  }
+
+  // Only reachable while the RTS tab is active — switches between its two
+  // child tabs (always exactly one active, New by default).
+  function selectRtsSub(value: RtsSubTab) {
+    setRtsSub(value);
+    setSelectedIds(new Set());
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "new") params.delete("sub");
+    else params.set("sub", value);
+    const qs = params.toString();
+    router.replace(qs ? `/orders?${qs}` : "/orders", { scroll: false });
+  }
+
+  // Only reachable while the Overdue tab is active — switches between its
+  // five child tabs (always exactly one active, New by default).
+  function selectOverdueSub(value: OverdueSubTab) {
+    setOverdueSub(value);
+    setSelectedIds(new Set());
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "new") params.delete("osub");
+    else params.set("osub", value);
+    const qs = params.toString();
     router.replace(qs ? `/orders?${qs}` : "/orders", { scroll: false });
   }
 
@@ -1054,6 +1175,44 @@ export default function OrdersPage() {
           </button>
         ))}
       </div>
+
+      {activeTab === "READY_TO_SHIP" && (
+        <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto">
+          {RTS_SUB_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => selectRtsSub(t.key)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                rtsSub === t.key
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-black/10 text-foreground/60 hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              <Pill tone={rtsSub === t.key ? "info" : "primary"}>{rtsSubCounts[t.key]}</Pill>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeTab === "OVERDUE" && (
+        <div className="-mt-3 mb-4 flex gap-1 overflow-x-auto">
+          {OVERDUE_SUB_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => selectOverdueSub(t.key)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                overdueSub === t.key
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-black/10 text-foreground/60 hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              <Pill tone={overdueSub === t.key ? "info" : "primary"}>{overdueSubCounts[t.key]}</Pill>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="w-64">

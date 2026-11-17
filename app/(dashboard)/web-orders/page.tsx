@@ -106,6 +106,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
     paymentStatus: "UNPAID",
     shipmentStatus: "NOT_SHIPPED",
     customerResponse: lead.customerResponse ?? "NO_RESPONSE",
+    overdueResponse: null,
     hasResponse: lead.customerResponse !== null,
     leadCancelled: lead.cancelled,
     subtotal: String(lead.total),
