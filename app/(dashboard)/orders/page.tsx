@@ -613,6 +613,11 @@ export default function OrdersPage() {
   // single Preorder order — same PREORDER -> PENDING transition, bulk.
   const canBulkConvertToPending = selectedOrders.some((o) => o.status === "PREORDER");
 
+  // A Pending Return parcel that's confirmed gone for good, instead of
+  // actually making it back — own bulk action, not the generic "next
+  // status" slot (that's already Sent to Returned for this status).
+  const canBulkLost = selectedOrders.some((o) => o.status === "PENDING_RETURN");
+
   const canBulkCancel = selectedOrders.some((o) => CAN_CANCEL_FROM.has(o.status));
   // Mirrors the per-row "Entry to Steadfast" action's own eligibility —
   // same statuses it's offered for there.
@@ -880,6 +885,44 @@ export default function OrdersPage() {
         [
           failed > 0 ? `${failed} failed.` : null,
           ineligible > 0 ? `${ineligible} skipped (not Preorder).` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+  }
+
+  // Pending Return -> Lost: the parcel never actually made it back, same
+  // terminal outcome as a Shipped order going straight to Lost, just
+  // confirmed one stage later.
+  async function bulkMoveLost() {
+    if (!allOrders) return;
+    const targets = allOrders.filter((o) => selectedIds.has(o.id));
+    if (targets.length === 0) return;
+
+    setSelectedIds(new Set());
+    setBulkBusy(true);
+    setRowError(null);
+    let failed = 0;
+    let ineligible = 0;
+    for (const o of targets) {
+      if (o.status !== "PENDING_RETURN") {
+        ineligible++;
+        continue;
+      }
+      try {
+        await api.patch(`/admin/orders/${o.id}/status`, { status: "LOST" });
+      } catch {
+        failed++;
+      }
+    }
+    await loadOrders(search);
+    setBulkBusy(false);
+    if (failed > 0 || ineligible > 0) {
+      setRowError(
+        [
+          failed > 0 ? `${failed} failed.` : null,
+          ineligible > 0 ? `${ineligible} skipped (not Pending Return).` : null,
         ]
           .filter(Boolean)
           .join(" "),
@@ -1724,6 +1767,19 @@ export default function OrdersPage() {
               {bulkBusy ? "Working…" : "Convert to Pending"}
             </button>
           )}
+          {canBulkLost && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={bulkMoveLost}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-base font-medium text-status-cancelled hover:bg-status-cancelled/10 disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-cancelled text-sm text-white">
+                ✕
+              </span>
+              {bulkBusy ? "Working…" : "Sent to Lost"}
+            </button>
+          )}
           {canBulkCancel && (
             <button
               type="button"
@@ -1737,7 +1793,7 @@ export default function OrdersPage() {
               Cancel Order
             </button>
           )}
-          {!canBulkNext && !canBulkPrev && !canBulkPendingReturn && !canBulkConvertToPending && !canBulkCancel && (
+          {!canBulkNext && !canBulkPrev && !canBulkPendingReturn && !canBulkConvertToPending && !canBulkLost && !canBulkCancel && (
             <p className="px-2 py-2 text-base text-foreground/50">
               No status actions available for this selection.
             </p>
