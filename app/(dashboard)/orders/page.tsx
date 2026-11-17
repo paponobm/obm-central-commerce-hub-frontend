@@ -42,22 +42,6 @@ function UserIcon({ className }: { className?: string }) {
   );
 }
 
-function ChevronLeftIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M9 18l6-6-6-6" />
-    </svg>
-  );
-}
-
 function PhoneIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -396,9 +380,6 @@ export default function OrdersPage() {
   // The tab row can overflow (more tabs than fit) — these let the fixed
   // arrow buttons at its edges scroll it without relying on drag/trackpad.
   const tabsScrollRef = useRef<HTMLDivElement>(null);
-  function scrollTabs(direction: "left" | "right") {
-    tabsScrollRef.current?.scrollBy({ left: direction === "left" ? -200 : 200, behavior: "smooth" });
-  }
   const [rtsSub, setRtsSub] = useState<RtsSubTab>(rtsSubFromParam(searchParams.get("sub")));
   const [overdueSub, setOverdueSub] = useState<OverdueSubTab>(overdueSubFromParam(searchParams.get("osub")));
   const [source, setSource] = useState("");
@@ -1323,24 +1304,6 @@ export default function OrdersPage() {
             </button>
           ))}
         </div>
-        {/* <div className="absolute right-0 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-full border border-primary/15 bg-white  p-0.5 shadow-sm">
-          <button
-            type="button"
-            onClick={() => scrollTabs("left")}
-            aria-label="Scroll tabs left"
-            className="bg-white flex h-7 w-7 items-center justify-center text-primary hover:bg-primary/15"
-          >
-            <ChevronLeftIcon className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollTabs("right")}
-            aria-label="Scroll tabs right"
-            className="bg-white flex h-7 w-7 items-center justify-center  text-primary hover:bg-primary/15"
-          >
-            <ChevronRightIcon className="h-4 w-4" />
-          </button>
-        </div> */}
       </div>
 
       {activeTab === "READY_TO_SHIP" && (
