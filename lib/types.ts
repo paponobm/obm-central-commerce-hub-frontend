@@ -510,6 +510,10 @@ export interface OrderListItem extends OrderBase {
   customer: Pick<Customer, "id" | "name" | "phone"> & { successRate: number | null; orderCount: number };
   channel: Pick<Channel, "id" | "name" | "slug"> | null;
   createdBy: { id: string; name: string } | null;
+  // Which staff user gets credit for working this web order — null until
+  // someone's touched it, then last-action-wins (whoever most recently
+  // changed its response or approved it).
+  webHandledBy: { id: string; name: string } | null;
   shipment: Pick<OrderShipment, "id" | "provider" | "status" | "externalConsignmentId"> | null;
 }
 
@@ -529,6 +533,8 @@ export interface OrderDetail extends OrderBase {
   timeline: TimelineEntry[];
   payments: Payment[];
   shipment: OrderShipment | null;
+  // Same field as OrderListItem's own — see its comment.
+  webHandledBy: { id: string; name: string } | null;
   // Same as OrderListItem's own fields of these names — the backend's
   // findOne/findByOrderNumber compute them identically.
   statusEnteredAt: string;

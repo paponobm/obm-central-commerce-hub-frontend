@@ -100,14 +100,20 @@ function SummaryCard({
 }
 
 // Mirrors the backend's role-hierarchy.ts — which roles a given actor role
-// is allowed to create/edit users as. Manager and Member grant no
+// is allowed to create/edit users as. Manager, Member and Agent grant no
 // user-management capability at all (absent as keys => []).
 const ASSIGNABLE_ROLES: Record<string, string[]> = {
-  "Super Admin": ["Super Admin", "Admin", "Manager", "Member"],
-  Admin: ["Manager", "Member"],
+  "Super Admin": ["Super Admin", "Admin", "Manager", "Member", "Agent"],
+  Admin: ["Manager", "Member", "Agent"],
 };
 function assignableRoleNames(actorRoleName: string | undefined): string[] {
   return ASSIGNABLE_ROLES[actorRoleName ?? ""] ?? [];
+}
+
+// Mirrors the backend's isSingleStoreRole — Member and Agent are both
+// always scoped to exactly one assigned store.
+function isSingleStoreRole(roleName: string | undefined): boolean {
+  return roleName === "Member" || roleName === "Agent";
 }
 
 const ADMIN_ONLY_PERMISSION = "users.manage";
@@ -483,7 +489,7 @@ export default function UsersPage() {
     });
   }
 
-  const accessIsMember = accessUser?.role.name === "Member";
+  const accessIsMember = isSingleStoreRole(accessUser?.role.name);
   const accessIsAdmin = accessUser?.role.name === "Admin";
 
   // Every scope is always offered — which stores (and "All Stores") a user

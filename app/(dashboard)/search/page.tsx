@@ -133,6 +133,7 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
     statusEnteredAt: lead.createdAt,
     responseEnteredAt: lead.createdAt,
     createdBy: null,
+    webHandledBy: null,
     shipment: null,
     invoicePrinted: false,
     webApproved: false,

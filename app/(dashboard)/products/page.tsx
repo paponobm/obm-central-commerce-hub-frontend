@@ -267,7 +267,6 @@ export default function ProductsPage() {
                 <th className="px-3 py-3 font-bold">Product</th>
                 <th className="px-3 py-3 font-bold">Category / Brand</th>
                 <th className="px-3 py-3 font-bold">Published Stores</th>
-                {!activeChannelId && <th className="px-3 py-3 text-right font-bold">Stock</th>}
                 <th className="px-3 py-3 text-right font-bold">Base Price</th>
                 <th className="px-3 py-3 font-bold">Status</th>
                 <th className="rounded-r-lg px-3 py-3 text-right font-bold">Actions</th>
@@ -276,9 +275,7 @@ export default function ProductsPage() {
             <tbody>
               {pagedProducts!.map((p, i) => {
                 const image = p.thumbnailUrl ?? p.images?.[0]?.url;
-                const available = p.inventory
-                  ? p.inventory.currentStock - p.inventory.reservedStock
-                  : 0;
+                const activeVariants = p.variants?.filter((v) => v.isActive) ?? [];
                 return (
                   <tr key={p.id} className="border-b border-black/5 last:border-0">
                     <td className="px-3 py-3 text-foreground/50">
@@ -312,6 +309,12 @@ export default function ProductsPage() {
                             className="font-bold text-primary hover:underline"
                           >
                             {p.name}
+                            {activeVariants.length > 1 && (
+                              <span className="font-normal text-foreground/50">
+                                {" "}
+                                ({activeVariants.length} variants)
+                              </span>
+                            )}
                           </button>
                           <div className="text-sm text-foreground/50">{p.sku}</div>
                         </div>
@@ -334,19 +337,15 @@ export default function ProductsPage() {
                         <span className="text-sm text-foreground/40">Not published</span>
                       )}
                     </td>
-                    {!activeChannelId && (
-                    <td className="px-3 py-3 text-right">
-                      <span
-                        className={`font-bold ${
-                          available <= 0 ? "text-status-cancelled" : "text-status-delivered"
-                        }`}
-                      >
-                        {available}
-                      </span>
-                    </td>
-                    )}
                     <td className="px-3 py-3 text-right font-medium text-foreground">
-                      {money(p.basePrice)}
+                      {activeVariants.length > 1
+                        ? (() => {
+                            const prices = activeVariants.map((v) => Number(v.basePrice));
+                            const min = Math.min(...prices);
+                            const max = Math.max(...prices);
+                            return min === max ? money(min) : `${money(min)} - ${money(max)}`;
+                          })()
+                        : money(p.basePrice)}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">

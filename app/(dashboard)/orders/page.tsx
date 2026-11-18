@@ -2043,7 +2043,10 @@ export default function OrdersPage() {
                         )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 text-foreground/60">
-                        {o.createdBy?.name ?? "—"}
+                        {/* createdBy is always null for a website order (nobody
+                            manually entered it) — webHandledBy is the staff
+                            member who actually worked it from Web Orders. */}
+                        {o.createdBy?.name ?? o.webHandledBy?.name ?? "—"}
                       </td>
                       <td className="px-4 py-4">
                         <span className={`inline-block rounded-full px-2.5 py-1 text-sm font-medium ${SOURCE_STYLE[o.source]}`}>

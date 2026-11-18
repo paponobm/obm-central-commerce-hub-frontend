@@ -126,6 +126,7 @@ function leadToRow(lead: CheckoutLead): WebRow {
     statusEnteredAt: lead.createdAt,
     responseEnteredAt: lead.responseEnteredAt,
     createdBy: null,
+    webHandledBy: null,
     shipment: null,
     invoicePrinted: false,
     webApproved: false,
@@ -432,6 +433,11 @@ export default function WebOrdersPage() {
                         Updated {formatRelativeTime(o.lastUpdate.at)}
                         {o.lastUpdate.by ? ` · ${o.lastUpdate.by}` : ""}
                       </div>
+                      {o.webHandledBy && (
+                        <div className="mt-0.5 text-sm text-foreground/50">
+                          Handled by: <span className="font-medium text-foreground/70">{o.webHandledBy.name}</span>
+                        </div>
+                      )}
                       {o.notes && <div className="mt-1">{o.notes}</div>}
                       {o.adminNotes.map((n) => (
                         <div key={n.id} className="mt-1">

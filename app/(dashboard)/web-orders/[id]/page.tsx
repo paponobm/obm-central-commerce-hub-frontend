@@ -74,6 +74,7 @@ function leadAsOrder(lead: LeadRecord): OrderDetail {
     timeline: [],
     payments: [],
     shipment: null,
+    webHandledBy: null,
     items: lead.items.map((i) => ({
       id: i.productId,
       productId: i.productId,
@@ -974,6 +975,11 @@ export default function WebOrderDetailsPage() {
           <span className="rounded-full border border-black/10 px-3 py-1 text-foreground/70">
             Created {formatDateTime(order.createdAt)}
           </span>
+          {order.webHandledBy && (
+            <span className="rounded-full border border-black/10 px-3 py-1 text-foreground/70">
+              Handled by {order.webHandledBy.name}
+            </span>
+          )}
         </div>
       </div>
 

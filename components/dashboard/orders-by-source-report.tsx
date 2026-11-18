@@ -11,9 +11,10 @@ import { DateRangeSelect } from "@/components/ui/date-range-select";
 import { LoadingLine } from "@/components/ui/spinner";
 
 // A specific store's orders broken down by source, with the same "Today ▾"
-// filter as Web Order Report. Every source, not just WEBSITE — includeWebUnapproved
-// keeps a pending web order counted here even before it's approved, matching
-// what the original all-time stat on this card used to count.
+// filter as Web Order Report. Every source, not just WEBSITE — but a web
+// order only counts once it's approved (no includeWebUnapproved), same
+// "real order" rule the Total Orders card already uses. A pending web
+// order still shows up on its own in Pending Web Orders/Web Order Report.
 export function OrdersBySourceReport({ channelId }: { channelId: string }) {
   const [orders, setOrders] = useState<OrderListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +27,7 @@ export function OrdersBySourceReport({ channelId }: { channelId: string }) {
 
     function load() {
       api
-        .get<OrderListItem[]>(`/admin/orders?channelId=${channelId}&includeWebUnapproved=true`)
+        .get<OrderListItem[]>(`/admin/orders?channelId=${channelId}`)
         .then((data) => {
           if (!cancelled) setOrders(data);
         })
