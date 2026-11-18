@@ -323,7 +323,7 @@ export default function NewProductPage() {
   function categoriesForChannel(channel: Channel): Category[] {
     const curatedSlugs = channel.themeConfig?.categorySlugs;
     const published = categories.filter((c) => c.isPublished);
-    if (!curatedSlugs?.length) return published;
+    if (!curatedSlugs) return published;
     return published.filter((c) => curatedSlugs.includes(c.slug));
   }
 

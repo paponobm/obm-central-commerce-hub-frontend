@@ -33,11 +33,16 @@ export function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-fg transition-opacity hover:opacity-90"
+        className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-fg transition-opacity hover:opacity-90"
         title={user?.name}
         aria-label="Account menu"
       >
-        {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+        {user?.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded profile photo
+          <img src={user.avatarUrl} alt={user.name} className="h-full w-full object-cover" />
+        ) : (
+          user?.name?.charAt(0)?.toUpperCase() ?? "U"
+        )}
       </button>
 
       {open && (

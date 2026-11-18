@@ -124,15 +124,17 @@ const EMPTY_FORM: FormState = {
   channelIds: [],
 };
 
-// A channel with no explicit categorySlugs (or an empty one) is
-// "unrestricted" — every published category shows on it, same fallback the
-// storefront's own StorefrontService.getCategories uses. Mirrors that
-// filter exactly so this admin page never shows a category as published
-// somewhere the storefront wouldn't actually show it.
+// A channel with no explicit categorySlugs (null/undefined — never
+// curated) is "unrestricted" — every published category shows on it, same
+// fallback the storefront's own StorefrontService.getCategories uses. An
+// explicit empty array is a real restriction (every category unchecked
+// here), not the same as "never configured" — mirrors that service's own
+// distinction exactly so this admin page never shows a category as
+// published somewhere the storefront wouldn't actually show it.
 function isCategoryOnChannel(category: Category, channel: Channel): boolean {
   if (!category.isPublished) return false;
   const slugs = channel.themeConfig?.categorySlugs;
-  if (!slugs || slugs.length === 0) return true;
+  if (!slugs) return true;
   return slugs.includes(category.slug);
 }
 

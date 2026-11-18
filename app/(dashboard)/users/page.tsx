@@ -298,6 +298,11 @@ export default function UsersPage() {
   const [accessError, setAccessError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const [search, setSearch] = useState("");
+  // Active by default — Inactive staff are the exception, not what you
+  // want cluttering the list on every visit.
+  const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "all">("active");
+
   async function load() {
     try {
       setUsers(await api.get<StaffUser[]>("/admin/users"));
@@ -560,6 +565,16 @@ export default function UsersPage() {
   const activeCount = users?.filter((u) => u.isActive).length ?? 0;
   const inactiveCount = totalUsers - activeCount;
 
+  // Status/search narrow the table only — the summary cards above stay
+  // based on the full list so they always reflect true totals.
+  const filteredUsers = (users ?? []).filter((u) => {
+    if (statusFilter === "active" && !u.isActive) return false;
+    if (statusFilter === "inactive" && u.isActive) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
   return (
     <div>
       <PageHeader
@@ -580,6 +595,26 @@ export default function UsersPage() {
         <SummaryCard label="Inactive" value={String(inactiveCount)} tone="pending" />
       </div>
 
+      <div className="mb-4 flex items-center gap-3">
+        <div className="w-64">
+          <Input
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="w-44">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as "active" | "inactive" | "all")}
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="all">All</option>
+          </Select>
+        </div>
+      </div>
+
       <Card>
         {loadError && (
           <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
@@ -588,6 +623,10 @@ export default function UsersPage() {
         )}
         {!users ? (
           <LoadingLine />
+        ) : filteredUsers.length === 0 ? (
+          <p className="px-3 py-6 text-center text-base text-foreground/50">
+            No users match this search/filter.
+          </p>
         ) : (
           <table className="w-full text-left text-base">
             <thead>
@@ -601,7 +640,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u, i) => {
+              {filteredUsers.map((u, i) => {
                 const unrestricted = u.role.name === "Super Admin" || u.permissions.includes(STORE_WIDE_PERMISSION);
                 const canManage = assignable.includes(u.role.name);
                 return (

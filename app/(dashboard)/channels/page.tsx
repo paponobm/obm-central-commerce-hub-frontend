@@ -100,7 +100,16 @@ export default function ChannelsPage() {
                   <span />
                 </Card>
               ))
-            : channels.map((channel) => (
+            : channels.map((channel) => {
+                // No products and no orders ever — most likely a channel
+                // created here that never got an actual storefront app
+                // built/connected for it (see Channels page's own
+                // explanation). Not a guarantee either way (a brand-new,
+                // legitimately-in-progress store looks the same at this
+                // exact moment), just a nudge so an abandoned one doesn't
+                // sit unnoticed in the list.
+                const looksUnconnected = channel.productCount === 0 && channel.orderCount === 0;
+                return (
                 <Card key={channel.id} className="flex flex-col gap-4">
                   <div className="flex items-start justify-between">
                     <div>
@@ -109,9 +118,12 @@ export default function ChannelsPage() {
                       </div>
                       <div className="text-xs text-foreground/50">{channel.slug}</div>
                     </div>
-                    <Pill tone={channel.isActive ? "primary" : "default"}>
-                      {channel.isActive ? "Active" : "Inactive"}
-                    </Pill>
+                    <div className="flex flex-col items-end gap-1">
+                      <Pill tone={channel.isActive ? "primary" : "default"}>
+                        {channel.isActive ? "Active" : "Inactive"}
+                      </Pill>
+                      {looksUnconnected && <Pill tone="warning">No storefront connected</Pill>}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-6 text-sm">
@@ -133,7 +145,8 @@ export default function ChannelsPage() {
                     Manage
                   </Button>
                 </Card>
-              ))}
+                );
+              })}
         </div>
       )}
 
