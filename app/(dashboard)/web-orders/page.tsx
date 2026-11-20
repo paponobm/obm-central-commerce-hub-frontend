@@ -50,6 +50,7 @@ import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
 import { useAuth } from "@/lib/auth-context";
 import { LoadingLine } from "@/components/ui/spinner";
 import { listOrderLocks } from "@/lib/order-locks";
+import { CourierSuccessBadge } from "@/components/orders/courier-success-badge";
 import type { OrderLockHolder } from "@/lib/types";
 
 type TabKey =
@@ -428,8 +429,8 @@ export default function WebOrdersPage() {
                       </div>
                       {!isCompleteWebOrder(o) && <div className="mt-1 text-sm text-red-600">Details missing</div>}
                     </td>
-                    <td className="max-w-[220px] px-4 py-4 text-sm text-foreground">
-                      <div className="text-foreground/50">
+                    <td className="max-w-[220px] px-4 py-4 text-xm text-foreground">
+                      <div className="text-foreground/50 text-xs">
                         Updated {formatRelativeTime(o.lastUpdate.at)}
                         {o.lastUpdate.by ? ` · ${o.lastUpdate.by}` : ""}
                       </div>
@@ -438,7 +439,7 @@ export default function WebOrdersPage() {
                           Handled by: <span className="font-medium text-foreground/70">{o.webHandledBy.name}</span>
                         </div>
                       )}
-                      {o.notes && <div className="mt-1">{o.notes}</div>}
+                      {o.notes && <div className="mt-1 ">{o.notes}</div>}
                       {o.adminNotes.map((n) => (
                         <div key={n.id} className="mt-1">
                           <span className="font-medium text-foreground/60">{n.user?.name ?? "Unknown"}:</span> {n.note}
@@ -469,11 +470,7 @@ export default function WebOrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      {o.customer.successRate !== null ? (
-                        <span className="font-semibold text-status-delivered">{o.customer.successRate}%</span>
-                      ) : (
-                        <span className="text-foreground/40">—</span>
-                      )}
+                      <CourierSuccessBadge phone={o.shippingPhone || o.customer.phone} />
                     </td>
                     <td className="px-4 py-4">
                       {o.customer.orderCount > 1 && (

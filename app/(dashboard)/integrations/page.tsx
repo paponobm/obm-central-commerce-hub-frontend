@@ -12,6 +12,7 @@ import { Pill, StatusBadge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
 import { LoadingLine } from "@/components/ui/spinner";
+import { BdCourierCard } from "@/components/integrations/bd-courier-card";
 
 const PROVIDER_LABELS: Record<string, string> = {
   STEADFAST: "Steadfast Courier",
@@ -237,6 +238,7 @@ export default function IntegrationsPage() {
           )
         }
       />
+      <BdCourierCard canManage={canManage} />
       <Card>
         {loadError && (
           <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">

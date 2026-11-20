@@ -775,6 +775,45 @@ export interface Integration {
   updatedAt: string;
 }
 
+// BD Courier's own per-number delivery-success lookup — a separate
+// account-wide API key, not one of the shipment-provider Integrations
+// above (it doesn't book/track shipments, just reports history).
+export interface BdCourierCourierStat {
+  key: string;
+  name: string;
+  logo: string | null;
+  totalParcel: number;
+  successParcel: number;
+  cancelledParcel: number;
+  successRatio: number;
+}
+
+export interface BdCourierFraudReport {
+  id: string;
+  name: string;
+  details: string;
+  createdAt: string;
+  courierName: string | null;
+  courierLogo: string | null;
+}
+
+export interface BdCourierCheckResult {
+  phone: string;
+  summary: BdCourierCourierStat;
+  couriers: BdCourierCourierStat[];
+  reports: BdCourierFraudReport[];
+}
+
+// "Our Record" — our own order history for a phone number, shown
+// alongside (not derived from) the BD Courier lookup above.
+export interface PhoneSummary {
+  isNewCustomer: boolean;
+  totalOrders: number;
+  shippedOrders: number;
+  lastName: string | null;
+  lastAddress: string | null;
+}
+
 // Who currently has a Web Order (or incomplete checkout) open — see
 // lib/order-locks.ts.
 export interface OrderLockHolder {

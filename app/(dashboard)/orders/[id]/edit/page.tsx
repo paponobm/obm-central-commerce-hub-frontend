@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine } from "@/components/ui/spinner";
+import { CourierCheckPanel } from "@/components/orders/courier-check-panel";
 
 const SOURCES: OrderSource[] = [
   "UNKNOWN",
@@ -619,6 +620,8 @@ export default function EditOrderPage() {
           </Button>
         }
       />
+
+      <CourierCheckPanel phone={customerPhone} />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>

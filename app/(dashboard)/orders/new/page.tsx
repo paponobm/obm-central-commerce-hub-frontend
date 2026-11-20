@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { CourierCheckPanel } from "@/components/orders/courier-check-panel";
 
 const SOURCES: OrderSource[] = [
   "UNKNOWN",
@@ -358,6 +359,14 @@ export default function NewOrderPage() {
             Cancel
           </Button>
         }
+      />
+
+      <CourierCheckPanel
+        phone={customerPhone}
+        onAutofill={(name, address) => {
+          if (!customerName) setCustomerName(name);
+          if (!shippingAddress) setShippingAddress(address);
+        }}
       />
 
       <form onSubmit={handleSubmit} className="space-y-6">

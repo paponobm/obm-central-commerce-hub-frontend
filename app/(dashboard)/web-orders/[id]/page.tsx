@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { WEB_STAGE_COLORS, WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine } from "@/components/ui/spinner";
+import { CourierCheckPanel } from "@/components/orders/courier-check-panel";
 import {
   HEARTBEAT_INTERVAL_MS,
   acquireOrderLock,
@@ -983,6 +984,8 @@ export default function WebOrderDetailsPage() {
         </div>
       </div>
 
+     
+
       {done && (
         <p className="rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
           Order {order.orderNumber} is already past web approval (status: {order.status.replaceAll("_", " ")}).
@@ -990,6 +993,7 @@ export default function WebOrderDetailsPage() {
       )}
       <form onSubmit={handleApprove} className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
+             <CourierCheckPanel phone={customerPhone} />
             <Card>
               <h2 className="mb-4 text-sm font-semibold text-foreground">Customer details</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
