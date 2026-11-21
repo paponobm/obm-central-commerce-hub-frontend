@@ -1,5 +1,8 @@
 import { getAccessToken, setAccessToken } from "./token-store";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
+// Must match the backend's own limit (uploads.controller.ts MAX_FILE_SIZE) —
+// this just lets the user know instantly instead of waiting on a round trip.
+const MAX_UPLOAD_SIZE = 1 * 1024 * 1024;
 
 // const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://obm-central-commerce-hub-backend.onrender.com";
 
@@ -124,6 +127,13 @@ export const api = {
   // No Content-Type here — the browser sets multipart/form-data with the
   // correct boundary itself; setting it manually breaks the upload.
   upload: <T>(path: string, file: File) => {
+    if (file.size > MAX_UPLOAD_SIZE) {
+      return Promise.reject(
+        new ApiError(413, {
+          message: `Image is too large (max ${MAX_UPLOAD_SIZE / (1024 * 1024)}MB)`,
+        }),
+      );
+    }
     const formData = new FormData();
     formData.append("file", file);
     return request<T>(path, { method: "POST", body: formData });
