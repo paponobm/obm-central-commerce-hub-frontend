@@ -322,16 +322,23 @@ export default function UsersPage() {
     api.get<Role[]>("/admin/roles").then(setRoles).catch(() => {});
   }, []);
 
+  const selectedRole = roles.find((r) => r.id === form?.roleId);
+  const isSuperAdminRole = selectedRole?.name === "Super Admin";
+
   const assignable = assignableRoleNames(currentUser?.role);
-  const assignableRoles = roles.filter((r) => assignable.includes(r.name));
+  // "Super Admin" is never an offerable choice here — that role only ever
+  // comes from the one-time create-super-admin script (see
+  // UsersService.create/update) — except it stays shown, unselectable-away,
+  // on the one existing Super Admin's own edit form so its current value
+  // still has a matching option.
+  const assignableRoles = roles.filter(
+    (r) => assignable.includes(r.name) && (r.name !== "Super Admin" || selectedRole?.name === "Super Admin"),
+  );
   const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? id;
   // Manage-access and Delete are Super Admin only — an Admin can still
   // edit a Manager/Member (gated by canManage below) but can't grant
   // permissions or remove accounts.
   const isSuperAdminActor = currentUser?.role === "Super Admin";
-
-  const selectedRole = roles.find((r) => r.id === form?.roleId);
-  const isSuperAdminRole = selectedRole?.name === "Super Admin";
 
   function openCreate() {
     setFormError(null);
@@ -417,10 +424,17 @@ export default function UsersPage() {
     setSubmitting(true);
     try {
       if (form.id) {
+        // Only send roleId when it actually changed — the backend treats
+        // its mere presence on a self-edit as "changing your own role" and
+        // blocks the whole request (see UsersService.update), which was
+        // silently blocking a Super Admin from even just updating their own
+        // password, since this form always re-sent the unchanged roleId.
+        const original = users?.find((u) => u.id === form.id);
+        const roleChanged = original ? original.role.id !== form.roleId : true;
         await api.patch(`/admin/users/${form.id}`, {
           name: form.name,
           email: form.email,
-          roleId: form.roleId,
+          ...(roleChanged ? { roleId: form.roleId } : {}),
           isActive: form.isActive,
           ...(form.password ? { password: form.password } : {}),
           ...profileFields,
