@@ -470,7 +470,11 @@ export default function WebOrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <CourierSuccessBadge phone={o.shippingPhone || o.customer.phone} />
+                      <CourierSuccessBadge
+                        phone={o.shippingPhone || o.customer.phone}
+                        orderId={o.isLead ? undefined : o.id}
+                        leadId={o.isLead ? o.id.slice("lead-".length) : undefined}
+                      />
                     </td>
                     <td className="px-4 py-4">
                       {o.customer.orderCount > 1 && (

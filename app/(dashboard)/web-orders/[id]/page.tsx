@@ -993,7 +993,11 @@ export default function WebOrderDetailsPage() {
       )}
       <form onSubmit={handleApprove} className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
-             <CourierCheckPanel phone={customerPhone} />
+             <CourierCheckPanel
+                phone={customerPhone}
+                orderId={isLead ? undefined : orderId}
+                leadId={isLead ? (leadId ?? undefined) : undefined}
+              />
             <Card>
               <h2 className="mb-4 text-sm font-semibold text-foreground">Customer details</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

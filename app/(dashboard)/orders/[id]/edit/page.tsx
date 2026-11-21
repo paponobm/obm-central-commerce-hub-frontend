@@ -621,7 +621,7 @@ export default function EditOrderPage() {
         }
       />
 
-      <CourierCheckPanel phone={customerPhone} />
+      <CourierCheckPanel phone={customerPhone} orderId={orderId} />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>

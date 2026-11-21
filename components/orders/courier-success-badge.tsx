@@ -43,12 +43,19 @@ function SuccessRing({ ratio }: { ratio: number }) {
 }
 
 // The Web Orders list's own "Success Rate" column — BD Courier's overall
-// delivery success for this row's phone number, one lookup per row (the
-// same cached /admin/bd-courier/check endpoint the New Order/Edit Order
-// panel uses, so a number already checked there doesn't re-bill here).
-// Silently shows "—" when BD Courier isn't connected or has no history
-// for this number, same convention as that panel.
-export function CourierSuccessBadge({ phone }: { phone: string }) {
+// delivery success for this row's phone number. orderId/leadId route this
+// through the persisted, fetch-once endpoint (same one the detail panel
+// uses) — once a row's been checked, reopening or reloading this list
+// never re-bills for it again, only an actual phone-number edit does.
+export function CourierSuccessBadge({
+  phone,
+  orderId,
+  leadId,
+}: {
+  phone: string;
+  orderId?: string;
+  leadId?: string;
+}) {
   const [result, setResult] = useState<BdCourierCheckResult | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -59,8 +66,11 @@ export function CourierSuccessBadge({ phone }: { phone: string }) {
       return;
     }
     setLoading(true);
+    const params = new URLSearchParams({ phone });
+    if (orderId) params.set("orderId", orderId);
+    if (leadId) params.set("leadId", leadId);
     api
-      .get<BdCourierCheckResult>(`/admin/bd-courier/check?phone=${phone}`)
+      .get<BdCourierCheckResult>(`/admin/bd-courier/check?${params}`)
       .then((r) => {
         if (!cancelled) setResult(r);
       })
@@ -71,7 +81,7 @@ export function CourierSuccessBadge({ phone }: { phone: string }) {
     return () => {
       cancelled = true;
     };
-  }, [phone]);
+  }, [phone, orderId, leadId]);
 
   if (loading) return <span className="text-sm text-foreground/40">…</span>;
   if (!result || result.summary.totalParcel === 0) {

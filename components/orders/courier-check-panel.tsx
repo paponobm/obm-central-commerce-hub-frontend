@@ -138,12 +138,22 @@ function OurRecordCard({
 // only appears when BD Courier is connected; it silently renders nothing
 // for that half of the panel otherwise (not every deployment has it
 // configured), while "Our Record" still shows alone.
+//
+// orderId/leadId route the BD Courier half through the persisted,
+// fetch-once endpoint (BdCourierService.getOrderCheck/getLeadCheck) —
+// once a real order/lead exists, this is the only lookup that should ever
+// happen for it again, no matter how many times the page is reopened.
+// Left out on New Order, where no row exists yet to persist onto.
 export function CourierCheckPanel({
   phone,
   onAutofill,
+  orderId,
+  leadId,
 }: {
   phone: string;
   onAutofill?: (name: string, address: string) => void;
+  orderId?: string;
+  leadId?: string;
 }) {
   const [ourRecord, setOurRecord] = useState<PhoneSummary | null>(null);
   const [result, setResult] = useState<BdCourierCheckResult | null>(null);
@@ -171,8 +181,11 @@ export function CourierCheckPanel({
         })
         .catch(() => undefined);
 
+      const params = new URLSearchParams({ phone });
+      if (orderId) params.set("orderId", orderId);
+      if (leadId) params.set("leadId", leadId);
       api
-        .get<BdCourierCheckResult>(`/admin/bd-courier/check?phone=${phone}`)
+        .get<BdCourierCheckResult>(`/admin/bd-courier/check?${params}`)
         .then((r) => {
           if (cancelled) return;
           setResult(r);
@@ -196,7 +209,7 @@ export function CourierCheckPanel({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [phone]);
+  }, [phone, orderId, leadId]);
 
   if (!PHONE_RE.test(phone)) return null;
   if (!ourRecord && !result && !error && !loading) return null;
