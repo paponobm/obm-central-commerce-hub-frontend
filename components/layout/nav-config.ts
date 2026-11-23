@@ -49,7 +49,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     children: [
       { label: "All Products", href: "/products" },
       { label: "Categories", href: "/categories", centralOnly: true },
-      { label: "Brands", href: "/brands", centralOnly: true },
+      // { label: "Brands", href: "/brands", centralOnly: true },
     ],
   },
   {

@@ -7,7 +7,7 @@ import { api, ApiError } from "@/lib/api-client";
 import type { Category, Channel, Product, ProductVariant } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { LoadingLine } from "@/components/ui/spinner";
 
@@ -19,7 +19,6 @@ interface MasterForm {
   shortDescription: string;
   description: string;
   unit: string;
-  categoryId: string;
 }
 
 // Simple-product pricing + stock — its own card (matching the New Product
@@ -183,11 +182,16 @@ export default function ProductDetailsTab() {
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
 
+  // Multi-select — the first pick is the product's primary categoryId,
+  // every pick (including that one) also goes into the shared
+  // ProductCategory join, same as the New Product page.
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+
   // Publish — same simple channel-checkbox + per-channel-category design as
   // the New Product page, not the old per-channel name/slug/price/featured
   // override table.
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
-  const [channelCategoryId, setChannelCategoryId] = useState<Record<string, string>>({});
+  const [channelCategoryIds, setChannelCategoryIds] = useState<Record<string, string[]>>({});
 
   // The one page-level Save — persists Details, Specifications, Pricing &
   // Variants, and Publish together (see handleSaveAll).
@@ -212,7 +216,6 @@ export default function ProductDetailsTab() {
         shortDescription: data.shortDescription ?? "",
         description: data.description ?? "",
         unit: data.unit,
-        categoryId: data.categoryId ?? "",
       });
       const currentStock = data.inventory?.currentStock ?? 0;
       setPricing({
@@ -253,19 +256,23 @@ export default function ProductDetailsTab() {
       const publishedChannelIds = channelRows.filter((r) => r.isPublished).map((r) => r.channelId);
       setSelectedChannelIds(publishedChannelIds);
 
-      // Pre-fill every currently-published channel's category picker with
-      // the product's first tagged category — same single shared tag set
-      // the New Product page's Publish section writes to — so the dropdown
-      // doesn't look empty when a category is actually already set.
+      // The shared extra-categories set (ProductCategory join), same one the
+      // New Product page's Publish section writes to.
       const productCategories = await api
         .get<Category[]>(`/admin/products/${productId}/categories`)
         .catch(() => []);
-      if (productCategories.length > 0) {
-        const firstCategoryId = productCategories[0].id;
-        setChannelCategoryId((prev) => {
+      const extraCategoryIds = productCategories.map((c) => c.id);
+      setSelectedCategoryIds(
+        Array.from(new Set([...(data.categoryId ? [data.categoryId] : []), ...extraCategoryIds])),
+      );
+      // Pre-fill every currently-published channel's category picker with
+      // the full existing set — so it doesn't look empty when categories
+      // are already set.
+      if (extraCategoryIds.length > 0) {
+        setChannelCategoryIds((prev) => {
           const next = { ...prev };
           for (const channelId of publishedChannelIds) {
-            if (!(channelId in next)) next[channelId] = firstCategoryId;
+            if (!(channelId in next)) next[channelId] = extraCategoryIds;
           }
           return next;
         });
@@ -488,6 +495,19 @@ export default function ProductDetailsTab() {
     );
   }
 
+  function toggleCategory(id: string) {
+    setSelectedCategoryIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  }
+  function toggleChannelCategory(channelId: string, categoryId: string) {
+    setChannelCategoryIds((prev) => {
+      const current = prev[channelId] ?? [];
+      const next = current.includes(categoryId)
+        ? current.filter((c) => c !== categoryId)
+        : [...current, categoryId];
+      return { ...prev, [channelId]: next };
+    });
+  }
+
   // A channel's own curated category list (Settings → Badge & Category →
   // categorySlugs) when it has one, else every published category — same
   // fallback the storefront's own category endpoint uses.
@@ -532,7 +552,7 @@ export default function ProductDetailsTab() {
         specifications,
         forWho: selectedForWho,
         unit: master.unit || undefined,
-        categoryId: master.categoryId || undefined,
+        categoryId: selectedCategoryIds[0] || undefined,
         ...(variantOptionLabel !== undefined ? { variantOptionLabel } : {}),
       });
 
@@ -584,15 +604,16 @@ export default function ProductDetailsTab() {
           await api.post(`/admin/products/${productId}/channels/${row.channelId}/unpublish`, {});
         }
       }
-      const categoryIdSet = new Set<string>();
-      for (const id of Object.values(channelCategoryId)) {
-        if (id) categoryIdSet.add(id);
+      const categoryIdSet = new Set<string>(selectedCategoryIds);
+      for (const ids of Object.values(channelCategoryIds)) {
+        for (const id of ids) categoryIdSet.add(id);
       }
-      if (categoryIdSet.size > 0) {
-        await api.put(`/admin/products/${productId}/categories`, {
-          categoryIds: Array.from(categoryIdSet),
-        });
-      }
+      // Always sent, even empty — a multi-select the admin clears down to
+      // nothing needs that to actually persist, not just silently keep
+      // whatever was there before.
+      await api.put(`/admin/products/${productId}/categories`, {
+        categoryIds: Array.from(categoryIdSet),
+      });
 
       await loadProduct();
       setSaved(true);
@@ -701,21 +722,33 @@ export default function ProductDetailsTab() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="!text-base !font-bold">Category</Label>
-                <Select
-                  className="w-full"
-                  value={master.categoryId}
-                  onChange={(e) =>
-                    setMaster((m) => (m ? { ...m, categoryId: e.target.value } : m))
-                  }
-                >
-                  <option value="">None</option>
+                <p className="mb-2 text-xs text-foreground/50">
+                  Pick any that apply — the first one picked is the product&rsquo;s primary category.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {categories.length === 0 && (
+                    <span className="text-sm text-foreground/50">No categories yet.</span>
+                  )}
                   {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <label
+                      key={c.id}
+                      className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm ${
+                        selectedCategoryIds.includes(c.id)
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-black/10 text-foreground/70"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCategoryIds.includes(c.id)}
+                        onChange={() => toggleCategory(c.id)}
+                        className="mr-1.5"
+                      />
                       {c.name}
-                      {!c.isPublished ? " (Unpublished — not shown in storefront)" : ""}
-                    </option>
+                      {!c.isPublished ? " (Unpublished)" : ""}
+                    </label>
                   ))}
-                </Select>
+                </div>
               </div>
               <div>
                 <Label className="!text-base !font-bold">Unit</Label>
@@ -1214,20 +1247,29 @@ export default function ProductDetailsTab() {
                   {checked && (
                     <div className="mt-2">
                       <Label className="!text-sm">Category on {channel.name}</Label>
-                      <Select
-                        className="w-full !text-base"
-                        value={channelCategoryId[channel.id] ?? ""}
-                        onChange={(e) =>
-                          setChannelCategoryId((m) => ({ ...m, [channel.id]: e.target.value }))
-                        }
-                      >
-                        <option value="">None</option>
+                      <div className="flex flex-wrap gap-2">
+                        {channelCategories.length === 0 && (
+                          <span className="text-sm text-foreground/50">No categories yet.</span>
+                        )}
                         {channelCategories.map((c) => (
-                          <option key={c.id} value={c.id}>
+                          <label
+                            key={c.id}
+                            className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm ${
+                              (channelCategoryIds[channel.id] ?? []).includes(c.id)
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-black/10 text-foreground/70"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(channelCategoryIds[channel.id] ?? []).includes(c.id)}
+                              onChange={() => toggleChannelCategory(channel.id, c.id)}
+                              className="mr-1.5"
+                            />
                             {c.name}
-                          </option>
+                          </label>
                         ))}
-                      </Select>
+                      </div>
                     </div>
                   )}
                 </div>

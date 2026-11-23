@@ -85,7 +85,7 @@ export default function ProductsPage() {
   // for. The backend's own default (no includeInactive) already does this,
   // but fetching everything and bucketing client-side (same pattern as the
   // Inventory page) is what lets this dropdown offer Inactive/All too.
-  const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "all">("active");
+  const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "draft" | "all">("active");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
@@ -145,16 +145,21 @@ export default function ProductsPage() {
       const ok = confirm(
         `"${product.name}" is published to ${product.channels!.length} storefront${
           product.channels!.length > 1 ? "s" : ""
-        }. Marking it inactive will not remove it from ${
+        }. Marking it inactive will immediately remove it from ${
           product.channels!.length > 1 ? "those storefronts" : "that storefront"
-        } — unpublish it from the product page if you want it fully removed. Continue?`,
+        } — every storefront already requires a product to be active to show it at all. Continue?`,
       );
       if (!ok) return;
     }
     setTogglingId(product.id);
     setLoadError(null);
     try {
-      await api.patch(`/admin/products/${product.id}`, { isActive: !product.isActive });
+      await api.patch(`/admin/products/${product.id}`, {
+        isActive: !product.isActive,
+        // Turning a draft on promotes it out of Draft — same "no longer a
+        // work in progress" meaning as actually publishing it.
+        ...(!product.isActive ? { isDraft: false } : {}),
+      });
       await loadProducts();
       window.dispatchEvent(new Event("inventory-alert:refresh"));
     } catch (err) {
@@ -174,7 +179,8 @@ export default function ProductsPage() {
 
   const filteredProducts = products?.filter((p) => {
     if (statusFilter === "active") return p.isActive;
-    if (statusFilter === "inactive") return !p.isActive;
+    if (statusFilter === "inactive") return !p.isActive && !p.isDraft;
+    if (statusFilter === "draft") return p.isDraft;
     return true;
   });
 
@@ -238,6 +244,7 @@ export default function ProductsPage() {
           >
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+            <option value="draft">Draft</option>
             <option value="all">All</option>
           </Select>
         </div>
@@ -354,8 +361,8 @@ export default function ProductsPage() {
                           disabled={togglingId === p.id}
                           onChange={() => handleToggleActive(p)}
                         />
-                        <Pill tone={p.isActive ? "success" : "danger"}>
-                          {p.isActive ? "Active" : "Inactive"}
+                        <Pill tone={p.isActive ? "success" : p.isDraft ? "default" : "danger"}>
+                          {p.isActive ? "Active" : p.isDraft ? "Draft" : "Inactive"}
                         </Pill>
                       </div>
                     </td>

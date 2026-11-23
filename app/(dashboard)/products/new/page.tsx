@@ -8,7 +8,7 @@ import { slugify } from "@/lib/slugify";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 
 const MAX_OPTIONS = 3;
@@ -107,7 +107,10 @@ export default function NewProductPage() {
   const [shortDescription, setShortDescription] = useState("");
   const [description, setDescription] = useState("");
   const [unit, setUnit] = useState("pcs");
-  const [categoryId, setCategoryId] = useState("");
+  // Multi-select — the first pick becomes the product's primary categoryId,
+  // every pick (including that one) also gets tagged via the shared
+  // ProductCategory join (see handleSubmit's categoryIds).
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 
   // Specifications / Key Features — just the one field (country of origin)
   // in practice, so it's a single dropdown rather than a generic key/value
@@ -140,10 +143,11 @@ export default function NewProductPage() {
 
   // Publish
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
-  const [channelCategoryId, setChannelCategoryId] = useState<Record<string, string>>({});
+  const [channelCategoryIds, setChannelCategoryIds] = useState<Record<string, string[]>>({});
 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submittingDraft, setSubmittingDraft] = useState(false);
 
   useEffect(() => {
     api.get<Category[]>("/admin/categories").then(setCategories).catch(() => {});
@@ -156,6 +160,18 @@ export default function NewProductPage() {
 
   function toggleForWho(tag: string) {
     setSelectedForWho((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+  function toggleCategory(id: string) {
+    setSelectedCategoryIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  }
+  function toggleChannelCategory(channelId: string, categoryId: string) {
+    setChannelCategoryIds((prev) => {
+      const current = prev[channelId] ?? [];
+      const next = current.includes(categoryId)
+        ? current.filter((c) => c !== categoryId)
+        : [...current, categoryId];
+      return { ...prev, [channelId]: next };
+    });
   }
   function addForWhoTag() {
     const tag = newForWhoTag.trim();
@@ -306,7 +322,7 @@ export default function NewProductPage() {
     setSelectedChannelIds((ids) => {
       if (ids.includes(channelId)) {
         const next = ids.filter((id) => id !== channelId);
-        setChannelCategoryId((m) => {
+        setChannelCategoryIds((m) => {
           const rest = { ...m };
           delete rest[channelId];
           return rest;
@@ -329,6 +345,19 @@ export default function NewProductPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    await submitProduct(false);
+  }
+
+  async function handleSaveDraft() {
+    await submitProduct(true);
+  }
+
+  // asDraft forces isActive:false and skips publishing to any channel
+  // regardless of what's checked (see ProductsService.create, which also
+  // enforces this independently) — a draft is never live anywhere, full
+  // stop. Everything else about the product (name, pricing, categories,
+  // variants) still saves normally, so no work typed in is lost.
+  async function submitProduct(asDraft: boolean) {
     setFormError(null);
 
     if (!name.trim()) {
@@ -387,9 +416,9 @@ export default function NewProductPage() {
       }));
     }
 
-    const categoryIdSet = new Set<string>();
-    for (const id of Object.values(channelCategoryId)) {
-      if (id) categoryIdSet.add(id);
+    const categoryIdSet = new Set<string>(selectedCategoryIds);
+    for (const ids of Object.values(channelCategoryIds)) {
+      for (const id of ids) categoryIdSet.add(id);
     }
 
     const specifications = origin.trim() ? [{ key: "Origin", value: origin.trim() }] : [];
@@ -402,7 +431,7 @@ export default function NewProductPage() {
     const variantOptionLabel =
       mode === "variable" && usedOptions.length === 1 ? usedOptions[0].name.trim() : undefined;
 
-    setSubmitting(true);
+    (asDraft ? setSubmittingDraft : setSubmitting)(true);
     try {
       const product = await api.post<Product>("/admin/products", {
         sku: baseSku.trim(),
@@ -417,26 +446,28 @@ export default function NewProductPage() {
         basePrice,
         compareAtPrice,
         unit: unit || undefined,
-        categoryId: categoryId || undefined,
+        categoryId: selectedCategoryIds[0] || undefined,
         thumbnailUrl: thumbnailUrl || undefined,
-        // Every new product starts sellable — deactivating is an edit-page
-        // action (Product Details tab), not something to decide at creation.
-        isActive: true,
+        // A normal create starts sellable; a draft starts (and stays)
+        // off, regardless of the Publish checkboxes below — see
+        // ProductsService.create, which enforces this pairing itself too.
+        isActive: !asDraft,
+        isDraft: asDraft,
         hasVariants: mode === "variable",
         variantOptionLabel,
         initialStock: mode === "single" ? initialStock : undefined,
         variants: variantsPayload,
-        channelIds: selectedChannelIds.length ? selectedChannelIds : undefined,
+        channelIds: asDraft || !selectedChannelIds.length ? undefined : selectedChannelIds,
         categoryIds: categoryIdSet.size ? Array.from(categoryIdSet) : undefined,
       });
       for (const url of galleryUrls) {
         await api.post(`/admin/products/${product.id}/images`, { url });
       }
-      router.push(`/products/${product.id}`);
+      router.push("/products");
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
-      setSubmitting(false);
+      (asDraft ? setSubmittingDraft : setSubmitting)(false);
     }
   }
 
@@ -547,18 +578,32 @@ export default function NewProductPage() {
                 </div>
                 <div>
                   <Label className="!text-base">Category</Label>
-                  <Select
-                    className="w-full !text-base"
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                  >
-                    <option value="">None</option>
+                  <p className="mb-2 text-xs text-foreground/50">
+                    Pick any that apply — the first one picked is the product&rsquo;s primary category.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.length === 0 && (
+                      <span className="text-sm text-foreground/50">No categories yet.</span>
+                    )}
                     {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <label
+                        key={c.id}
+                        className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm ${
+                          selectedCategoryIds.includes(c.id)
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-black/10 text-foreground/70"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCategoryIds.includes(c.id)}
+                          onChange={() => toggleCategory(c.id)}
+                          className="mr-1.5"
+                        />
                         {c.name}
-                      </option>
+                      </label>
                     ))}
-                  </Select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -909,7 +954,17 @@ export default function NewProductPage() {
             <Button type="button" variant="secondary" onClick={() => router.push("/products")} className="!text-base">
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting} className="!text-base">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleSaveDraft}
+              disabled={submitting || submittingDraft}
+              className="!text-base"
+              title="Save without publishing — won't appear on any storefront until reactivated from the Products list"
+            >
+              {submittingDraft ? "Saving…" : "Save as Draft"}
+            </Button>
+            <Button type="submit" disabled={submitting || submittingDraft} className="!text-base">
               {submitting ? "Creating…" : "Create Product"}
             </Button>
           </div>
@@ -1009,20 +1064,29 @@ export default function NewProductPage() {
                     {checked && (
                       <div className="mt-2">
                         <Label className="!text-sm">Category on {channel.name}</Label>
-                        <Select
-                          className="w-full !text-base"
-                          value={channelCategoryId[channel.id] ?? ""}
-                          onChange={(e) =>
-                            setChannelCategoryId((m) => ({ ...m, [channel.id]: e.target.value }))
-                          }
-                        >
-                          <option value="">None</option>
+                        <div className="flex flex-wrap gap-2">
+                          {channelCategories.length === 0 && (
+                            <span className="text-sm text-foreground/50">No categories yet.</span>
+                          )}
                           {channelCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
+                            <label
+                              key={c.id}
+                              className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm ${
+                                (channelCategoryIds[channel.id] ?? []).includes(c.id)
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-black/10 text-foreground/70"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={(channelCategoryIds[channel.id] ?? []).includes(c.id)}
+                                onChange={() => toggleChannelCategory(channel.id, c.id)}
+                                className="mr-1.5"
+                              />
                               {c.name}
-                            </option>
+                            </label>
                           ))}
-                        </Select>
+                        </div>
                       </div>
                     )}
                   </div>

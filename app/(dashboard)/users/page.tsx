@@ -526,7 +526,14 @@ export default function UsersPage() {
   function navGroupsForScope(isAllStoresTab: boolean) {
     return NAV_GROUPS.filter((g) => !g.centralOnly || isAllStoresTab)
       .filter((g) => !g.storeOnly || !isAllStoresTab)
-      .filter((g) => !USERS_ROLES_SETTINGS_GROUP_KEYS.includes(g.key) || accessIsAdmin);
+      .filter((g) => !USERS_ROLES_SETTINGS_GROUP_KEYS.includes(g.key) || accessIsAdmin)
+      // An Admin actor can only ever grant a permission group they hold
+      // themselves — Super Admin always has every key, so this is a no-op
+      // for them. The backend enforces this independently; this just keeps
+      // the toggle list from offering something the save would strip.
+      .filter(
+        (g) => isSuperAdminActor || g.permissionKeys.every((k) => currentUser?.permissions.includes(k)),
+      );
   }
 
   function permissionsForScope(scopeKey: string | null): string[] {
@@ -718,10 +725,12 @@ export default function UsersPage() {
                     <td className="px-3 py-3 text-right">
                       {canManage && (
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Manage-access and Delete are Super Admin only — an
-                              Admin can still edit a Manager/Member (below),
-                              just not grant permissions or remove them. */}
-                          {isSuperAdminActor && u.role.name !== "Super Admin" && (
+                          {/* Manage-access: Super Admin on anyone but another
+                              Super Admin, or Admin on a Manager/Member/Agent
+                              (canManage above already guarantees an Admin
+                              actor never reaches this row for any other
+                              role). Delete stays Super Admin only, below. */}
+                          {u.role.name !== "Super Admin" && (
                             <button
                               type="button"
                               onClick={() => openAccess(u)}

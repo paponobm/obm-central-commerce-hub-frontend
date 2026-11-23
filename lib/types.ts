@@ -363,6 +363,10 @@ export interface Product {
   // wherever it's read, so this can be null even when images exist.
   thumbnailUrl: string | null;
   isActive: boolean;
+  // true = created via "Save as Draft" and never actually published — kept
+  // distinct from isActive:false (explicitly deactivated) so the Products
+  // list can tell the two apart. Always paired with isActive:false.
+  isDraft: boolean;
   category?: Category | null;
   brand?: Brand | null;
   inventory?: RawInventory | null;
