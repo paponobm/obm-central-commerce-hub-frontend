@@ -367,6 +367,11 @@ export interface Product {
   // distinct from isActive:false (explicitly deactivated) so the Products
   // list can tell the two apart. Always paired with isActive:false.
   isDraft: boolean;
+  // New/Edit Product page's SEO tab — all optional, nothing else depends on
+  // them being set.
+  metaTitle: string | null;
+  metaDescription: string | null;
+  focusKeywords: string[];
   category?: Category | null;
   brand?: Brand | null;
   inventory?: RawInventory | null;

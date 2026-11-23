@@ -275,7 +275,11 @@ export default function CategoriesPage() {
     const payload = {
       name: form.name,
       slug: form.slug,
-      imageUrl: form.imageUrl.trim() || undefined,
+      // null (not undefined/omitted) so "Remove image" actually clears the
+      // field on save instead of silently keeping the old image — JSON.
+      // stringify drops `undefined` keys entirely, so the backend would
+      // never see the removal and the old file would never get deleted.
+      imageUrl: form.imageUrl.trim() || null,
       slogan: form.slogan.trim() || undefined,
       parentId: form.parentId || undefined,
       // No separate Published switch — a category with no storefront
