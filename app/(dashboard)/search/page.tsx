@@ -137,6 +137,7 @@ function leadToRow(lead: LeadResult, channels: { id: string; name: string }[] | 
     shipment: null,
     invoicePrinted: false,
     webApproved: false,
+    previousStageChange: null,
     adminNotes: lead.adminNotes,
     lastUpdate: lead.lastUpdate,
     customer: { id: "", name: lead.name ?? "", phone: lead.phone, successRate: null, orderCount: 0 },

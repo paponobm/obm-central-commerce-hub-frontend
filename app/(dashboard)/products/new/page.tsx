@@ -68,6 +68,7 @@ const ORIGIN_COUNTRIES = [
   "Japan",
   "Pakistan",
   "Sri Lanka",
+  "Singapore",
 ];
 
 // "কার জন্য" (Who is this for) — multi-select, unlike Origin, so it's a
@@ -426,11 +427,15 @@ export default function NewProductPage() {
     let initialStock: number | undefined;
 
     if (mode === "single") {
-      if (!singleRow.basePrice) {
+      // A draft is allowed to skip Sell Price entirely — it's not going
+      // live anywhere yet, so there's nothing to price. Publishing still
+      // requires it; the backend's own basePrice column just needs *some*
+      // number regardless, so a draft with none typed in submits 0.
+      if (!singleRow.basePrice && !asDraft) {
         setFormError("Please fill out Sell Price.");
         return;
       }
-      basePrice = Number(singleRow.basePrice);
+      basePrice = singleRow.basePrice ? Number(singleRow.basePrice) : 0;
       compareAtPrice = singleRow.discountPrice ? Number(singleRow.discountPrice) : undefined;
       initialStock = singleRow.stock ? Number(singleRow.stock) : 0;
     } else {
@@ -441,20 +446,22 @@ export default function NewProductPage() {
           return { combo, key, row };
         })
         .filter(({ row }) => row.isActive !== false && row.basePrice);
-      if (rows.length === 0) {
+      if (rows.length === 0 && !asDraft) {
         setFormError("Please add at least one option value and fill out a variant's Sell Price.");
         return;
       }
-      basePrice = Math.min(...rows.map(({ row }) => Number(row.basePrice)));
-      variantsPayload = rows.map(({ combo, key, row }) => ({
-        sku: row.sku.trim() || autoVariantSku(combo),
-        unitLabel: combo.join(" / "),
-        basePrice: Number(row.basePrice),
-        compareAtPrice: row.discountPrice ? Number(row.discountPrice) : undefined,
-        stock: row.stock ? Number(row.stock) : 0,
-        imageUrl: row.imageUrl || undefined,
-        isDefault: defaultComboKey === key,
-      }));
+      basePrice = rows.length ? Math.min(...rows.map(({ row }) => Number(row.basePrice))) : 0;
+      variantsPayload = rows.length
+        ? rows.map(({ combo, key, row }) => ({
+            sku: row.sku.trim() || autoVariantSku(combo),
+            unitLabel: combo.join(" / "),
+            basePrice: Number(row.basePrice),
+            compareAtPrice: row.discountPrice ? Number(row.discountPrice) : undefined,
+            stock: row.stock ? Number(row.stock) : 0,
+            imageUrl: row.imageUrl || undefined,
+            isDefault: defaultComboKey === key,
+          }))
+        : undefined;
     }
 
     const categoryIdSet = new Set<string>(selectedCategoryIds);

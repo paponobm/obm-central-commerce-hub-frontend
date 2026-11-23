@@ -103,4 +103,24 @@ export function webOrderStage(o: {
   return "processing";
 }
 
+// The stage an order was in immediately before its last transition — the
+// Web Orders list's "From: {stage}" line. Reuses webOrderStage() itself:
+// takes the row's current fields and swaps in whichever single one last
+// changed (back to its previous value), then classifies that reverted
+// snapshot exactly like any other row. Null when the order has never
+// transitioned (previousStageChange unset) or is a checkout lead — a
+// lead's own response-change log doesn't record a "before" value, so its
+// previous stage can't be known reliably and isn't guessed at here.
+export function previousWebOrderStage(o: OrderListItem & { isLead?: boolean }): WebStage | null {
+  const change = o.previousStageChange;
+  if (!change || o.isLead) return null;
+  if (change.field === "status") {
+    return webOrderStage({ ...o, status: change.previousStatus });
+  }
+  if (change.field === "customerResponse") {
+    return webOrderStage({ ...o, customerResponse: change.previousCustomerResponse });
+  }
+  return webOrderStage({ ...o, webApproved: false });
+}
+
 export type { OrderListItem };

@@ -54,6 +54,7 @@ const ORIGIN_COUNTRIES = [
   "Japan",
   "Pakistan",
   "Sri Lanka",
+  "Singapore",
 ];
 
 // "কার জন্য" (Who is this for) — multi-select, unlike Origin, so it's a

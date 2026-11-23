@@ -46,7 +46,7 @@ function PinIcon({ className }: { className?: string }) {
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/badge";
-import { isCompleteWebOrder, webOrderStage } from "@/lib/web-orders";
+import { isCompleteWebOrder, previousWebOrderStage, WEB_STAGE_LABELS, webOrderStage } from "@/lib/web-orders";
 import { useAuth } from "@/lib/auth-context";
 import { LoadingLine } from "@/components/ui/spinner";
 import { listOrderLocks } from "@/lib/order-locks";
@@ -131,6 +131,9 @@ function leadToRow(lead: CheckoutLead): WebRow {
     shipment: null,
     invoicePrinted: false,
     webApproved: false,
+    // Leads' own response-change log doesn't record a "before" value — see
+    // previousWebOrderStage's own comment for why this always stays null.
+    previousStageChange: null,
     adminNotes: lead.adminNotes,
     lastUpdate: lead.lastUpdate,
     customer: { id: "", name: lead.name ?? "", phone: lead.phone, successRate: null, orderCount: 0 },
@@ -392,6 +395,10 @@ export default function WebOrdersPage() {
                     <td className="whitespace-nowrap px-4 py-4">
                       <div className="whitespace-pre-line font-medium text-foreground/70">{listDate(RESPONSE_TABS.includes(tab) ? o.responseEnteredAt : o.createdAt)}</div>
                       <div className="text-sm text-foreground/40">{o.isLead ? "Checkout not completed" : o.orderNumber}</div>
+                      {(() => {
+                        const from = previousWebOrderStage(o);
+                        return from && <div className="text-xs text-foreground/40">From: {WEB_STAGE_LABELS[from]}</div>;
+                      })()}
                     </td>
                     <td className="px-4 py-4 text-foreground/70">
                       <div className="flex items-center gap-1.5">

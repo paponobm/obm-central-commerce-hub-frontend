@@ -524,6 +524,15 @@ export interface OrderListItem extends OrderBase {
   // changed its response or approved it).
   webHandledBy: { id: string; name: string } | null;
   shipment: Pick<OrderShipment, "id" | "provider" | "status" | "externalConsignmentId"> | null;
+  // Whichever of status/customerResponse/approval most recently changed,
+  // and what it changed FROM — powers the Web Orders list's "From: {stage}"
+  // line (see lib/web-orders.ts's previousWebOrderStage). Null for an order
+  // that's never transitioned out of its very first stage.
+  previousStageChange:
+    | { field: "status"; previousStatus: OrderStatus }
+    | { field: "customerResponse"; previousCustomerResponse: CustomerResponseStatus | null }
+    | { field: "webApproved" }
+    | null;
 }
 
 // GET /admin/orders/:id — full nested shapes plus history/payments/shipment.

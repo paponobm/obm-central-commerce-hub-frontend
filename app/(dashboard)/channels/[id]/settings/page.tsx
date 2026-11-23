@@ -1785,7 +1785,7 @@ export default function ChannelSettingsPage() {
                   </div>
                 ))}
 
-                {comboBanners.length < MAX_COMBO_BANNERS && (
+                {/* {comboBanners.length < MAX_COMBO_BANNERS && (
                   <button
                     type="button"
                     onClick={addComboBanner}
@@ -1793,7 +1793,7 @@ export default function ChannelSettingsPage() {
                   >
                     + Add another combo
                   </button>
-                )}
+                )} */}
               </div>
             )}
 
