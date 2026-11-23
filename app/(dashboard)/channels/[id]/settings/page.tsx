@@ -896,14 +896,6 @@ export default function ChannelSettingsPage() {
     });
   }
 
-  function addComboBanner() {
-    setComboBanners((prev) =>
-      prev.length >= MAX_COMBO_BANNERS
-        ? prev
-        : [...prev, { newBadge: false, title: "", description: "", tiers: [], enabled: true }],
-    );
-  }
-
   function removeComboBanner(index: number) {
     setComboBanners((prev) => prev.filter((_, i) => i !== index));
   }
