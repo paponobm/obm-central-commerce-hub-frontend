@@ -179,6 +179,12 @@ export default function ProductDetailsTab() {
   const [selectedForWho, setSelectedForWho] = useState<string[]>([]);
   const [newForWhoTag, setNewForWhoTag] = useState("");
 
+  // Simple vs Variable — a local, editable copy of hasVariants
+  // (which used to be read directly everywhere below, making the toggle
+  // purely decorative/uneditable). A draft that was accidentally saved as
+  // the wrong mode can now actually be switched before it's ever published.
+  const [hasVariants, setHasVariants] = useState(false);
+
   // Pricing & Variants (Variable product) — one flat list, exactly like the
   // New Product page's Step 2 table, saved by the one page-level button.
   const [variantDrafts, setVariantDrafts] = useState<VariantDraft[]>([]);
@@ -233,6 +239,7 @@ export default function ProductDetailsTab() {
       setMetaTitle(data.metaTitle ?? "");
       setMetaDescription(data.metaDescription ?? "");
       setFocusKeywords(data.focusKeywords ?? []);
+      setHasVariants(data.hasVariants);
       const currentStock = data.inventory?.currentStock ?? 0;
       setPricing({
         basePrice: data.basePrice,
@@ -321,10 +328,21 @@ export default function ProductDetailsTab() {
   }
 
   function addFocusKeyword() {
-    const kw = focusKeywordDraft.trim();
+    // Comma-separated entry — "qww, asdsd, sads" becomes three keywords,
+    // not one literal string with commas in it.
+    const words = focusKeywordDraft
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
     setFocusKeywordDraft("");
-    if (!kw) return;
-    setFocusKeywords((prev) => (prev.includes(kw) ? prev : [...prev, kw]));
+    if (words.length === 0) return;
+    setFocusKeywords((prev) => {
+      const next = [...prev];
+      for (const w of words) {
+        if (!next.includes(w)) next.push(w);
+      }
+      return next;
+    });
   }
   function removeFocusKeyword(kw: string) {
     setFocusKeywords((prev) => prev.filter((k) => k !== kw));
@@ -582,10 +600,11 @@ export default function ProductDetailsTab() {
         metaTitle: metaTitle.trim() || null,
         metaDescription: metaDescription.trim() || null,
         focusKeywords,
+        hasVariants,
         ...(variantOptionLabel !== undefined ? { variantOptionLabel } : {}),
       });
 
-      if (!product.hasVariants) {
+      if (!hasVariants) {
         if (!pricing.basePrice) {
           throw new Error("Sell Price is required.");
         }
@@ -688,13 +707,13 @@ export default function ProductDetailsTab() {
   // cheapest active variant row for a variable one (same rule the New
   // Product page uses when it computes its own submitted basePrice).
   const activeVariantRows = variantDrafts.filter((r) => r.isActive !== false && r.basePrice);
-  const sellPriceFilled = product.hasVariants ? activeVariantRows.length > 0 : !!pricing.basePrice;
-  const previewSellPrice = product.hasVariants
+  const sellPriceFilled = hasVariants ? activeVariantRows.length > 0 : !!pricing.basePrice;
+  const previewSellPrice = hasVariants
     ? activeVariantRows.length
       ? String(Math.min(...activeVariantRows.map((r) => Number(r.basePrice))))
       : ""
     : pricing.basePrice;
-  const previewRegularPrice = product.hasVariants ? "" : pricing.compareAtPrice;
+  const previewRegularPrice = hasVariants ? "" : pricing.compareAtPrice;
 
   const checklist: ChecklistItem[] = [
     { label: "Product Name", done: !!master.name.trim(), tab: "general" },
@@ -900,27 +919,31 @@ export default function ProductDetailsTab() {
             <Card>
               <h2 className="mb-1 text-lg font-bold text-primary">Pricing &amp; Variants</h2>
               <div className="mb-4 grid grid-cols-2 gap-3">
-                <div
+                <button
+                  type="button"
+                  onClick={() => setHasVariants(false)}
                   className={`rounded-lg border p-3 text-left ${
-                    !product.hasVariants ? "border-primary bg-primary/5" : "border-black/10 opacity-50"
+                    !hasVariants ? "border-primary bg-primary/5" : "border-black/10 hover:bg-black/5"
                   }`}
                 >
                   <div className="font-bold text-foreground">Simple Product</div>
                   <div className="text-xs text-foreground/50">One price, one SKU, one stock</div>
-                </div>
-                <div
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHasVariants(true)}
                   className={`rounded-lg border p-3 text-left ${
-                    product.hasVariants ? "border-primary bg-primary/5" : "border-black/10 opacity-50"
+                    hasVariants ? "border-primary bg-primary/5" : "border-black/10 hover:bg-black/5"
                   }`}
                 >
                   <div className="font-bold text-foreground">Variable Product</div>
                   <div className="text-xs text-foreground/50">
                     Weight / size / color — each its own price, SKU, stock
                   </div>
-                </div>
+                </button>
               </div>
 
-              {!product.hasVariants && (
+              {!hasVariants && (
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <Label className="!text-base">Sell Price</Label>
@@ -961,7 +984,7 @@ export default function ProductDetailsTab() {
                 </div>
               )}
 
-              {product.hasVariants && (
+              {hasVariants && (
                 <div className="space-y-6">
                   <div>
                     <div className="mb-2 flex items-center justify-between">
@@ -1306,7 +1329,7 @@ export default function ProductDetailsTab() {
           {/* Simple products edit Stock directly in Pricing & Variants now —
               this summary only still earns its place for variant products,
               where it's the one place that shows the combined total. */}
-          {product.hasVariants && (
+          {hasVariants && (
             <Card>
               <h2 className="mb-3 text-lg font-bold text-primary">Inventory</h2>
               <div className="flex items-center justify-between">

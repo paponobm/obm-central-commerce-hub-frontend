@@ -200,10 +200,21 @@ export default function NewProductPage() {
   }
 
   function addFocusKeyword() {
-    const kw = focusKeywordDraft.trim();
+    // Comma-separated entry — "qww, asdsd, sads" becomes three keywords,
+    // not one literal string with commas in it.
+    const words = focusKeywordDraft
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
     setFocusKeywordDraft("");
-    if (!kw) return;
-    setFocusKeywords((prev) => (prev.includes(kw) ? prev : [...prev, kw]));
+    if (words.length === 0) return;
+    setFocusKeywords((prev) => {
+      const next = [...prev];
+      for (const w of words) {
+        if (!next.includes(w)) next.push(w);
+      }
+      return next;
+    });
   }
   function removeFocusKeyword(kw: string) {
     setFocusKeywords((prev) => prev.filter((k) => k !== kw));

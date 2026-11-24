@@ -13,6 +13,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Pill } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { LoadingLine } from "@/components/ui/spinner";
+import { Modal } from "@/components/ui/modal";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100, 200, 500] as const;
 
@@ -20,6 +21,18 @@ function PencilIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+// Draft products aren't live anywhere, so there's no real storefront page
+// to open — this opens a quick read-only summary modal instead (see
+// previewProduct below), the next best thing to "see what it looks like".
+function EyeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -92,6 +105,7 @@ export default function ProductsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [zoomedImage, setZoomedImage] = useState<{ url: string; name: string } | null>(null);
+  const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
 
   async function loadProducts() {
     const params = new URLSearchParams();
@@ -368,6 +382,17 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {p.isDraft && (
+                          <button
+                            type="button"
+                            title="Preview"
+                            aria-label={`Preview ${p.name}`}
+                            onClick={() => setPreviewProduct(p)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-foreground/50 hover:bg-black/5 hover:text-foreground"
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           title="Edit"
@@ -440,6 +465,220 @@ export default function ProductsPage() {
           </div>
         )}
       </Card>
+
+      {previewProduct && (
+        <Modal open onClose={() => setPreviewProduct(null)} title={`Preview — ${previewProduct.name}`} size="xl">
+          <div className="flex gap-4">
+            {previewProduct.thumbnailUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+              <img
+                src={previewProduct.thumbnailUrl}
+                alt={previewProduct.name}
+                className="h-24 w-24 shrink-0 rounded-lg border border-black/10 object-cover"
+              />
+            ) : (
+              <span className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
+                No image
+              </span>
+            )}
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-bold text-foreground">{previewProduct.name}</h3>
+                <Pill tone="default">Draft</Pill>
+              </div>
+              {previewProduct.slogan && <p className="text-sm text-foreground/60">{previewProduct.slogan}</p>}
+              <p className="text-sm text-foreground/50">
+                SKU {previewProduct.sku}
+                {previewProduct.slug && ` · /${previewProduct.slug}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-base sm:grid-cols-3">
+            <div>
+              <div className="text-sm text-foreground/50">Category</div>
+              <div className="font-medium text-foreground">{previewProduct.category?.name ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-sm text-foreground/50">Brand</div>
+              <div className="font-medium text-foreground">{previewProduct.brand?.name ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-sm text-foreground/50">Unit</div>
+              <div className="font-medium text-foreground">{previewProduct.unit}</div>
+            </div>
+            <div>
+              <div className="text-sm text-foreground/50">Origin</div>
+              <div className="font-medium text-foreground">
+                {previewProduct.specifications?.find((s) => /^origin$|^country$/i.test(s.key))?.value ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-foreground/50">Cost Price</div>
+              <div className="font-medium text-foreground">{money(previewProduct.costPrice)}</div>
+            </div>
+            {/* Always shown from the product's own master fields — these
+                exist no matter the mode (kept in sync with the cheapest
+                variant automatically once any variant exists — see
+                ProductsService.recomputeBasePriceFromVariants), so pricing
+                is never blank even for a variant product with no rows
+                added yet. The Variants table below adds the per-row detail
+                on top of this summary once real rows exist. */}
+            <div>
+              <div className="text-sm text-foreground/50">Sell Price</div>
+              <div className="font-medium text-foreground">{money(previewProduct.basePrice)}</div>
+            </div>
+            <div>
+              <div className="text-sm text-foreground/50">Regular Price</div>
+              <div className="font-medium text-foreground">
+                {previewProduct.compareAtPrice ? money(previewProduct.compareAtPrice) : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-foreground/50">Stock</div>
+              <div className="font-medium text-foreground">
+                {previewProduct.inventory ? previewProduct.inventory.currentStock : "—"}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-1 text-sm text-foreground/50">Published Stores</div>
+            {previewProduct.channels && previewProduct.channels.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {previewProduct.channels.map((c) => (
+                  <Pill key={c.channelId} tone="primary">
+                    {c.channel.name}
+                  </Pill>
+                ))}
+              </div>
+            ) : (
+              <p className="text-base text-foreground/40">Not published</p>
+            )}
+          </div>
+
+          {previewProduct.hasVariants && (previewProduct.variants?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 text-sm text-foreground/50">
+                Variants{previewProduct.variantOptionLabel ? ` (${previewProduct.variantOptionLabel})` : ""}
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-black/10">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="bg-black/[0.03] text-xs font-bold text-foreground/60">
+                      <th className="px-3 py-2">Variant</th>
+                      <th className="px-3 py-2">SKU</th>
+                      <th className="px-3 py-2 text-right">Sell Price</th>
+                      <th className="px-3 py-2 text-right">Regular Price</th>
+                      <th className="px-3 py-2 text-right">Stock</th>
+                      <th className="px-3 py-2 text-center">Active</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewProduct.variants!.map((v) => (
+                      <tr key={v.id} className="border-t border-black/5">
+                        <td className="px-3 py-2 font-medium text-foreground">{v.unitLabel ?? "—"}</td>
+                        <td className="px-3 py-2 text-foreground/60">{v.sku}</td>
+                        <td className="px-3 py-2 text-right text-foreground">{money(v.basePrice)}</td>
+                        <td className="px-3 py-2 text-right text-foreground/60">
+                          {v.compareAtPrice ? money(v.compareAtPrice) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-foreground">{v.stock}</td>
+                        <td className="px-3 py-2 text-center">{v.isActive ? "Yes" : "No"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {previewProduct.forWho.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 text-sm text-foreground/50">For Who</div>
+              <div className="flex flex-wrap gap-1.5">
+                {previewProduct.forWho.map((tag) => (
+                  <Pill key={tag} tone="default">
+                    {tag}
+                  </Pill>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(previewProduct.images?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 text-sm text-foreground/50">Gallery Images</div>
+              <div className="flex flex-wrap gap-2">
+                {previewProduct.images!.map((img) => (
+                  // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
+                  <img key={img.id} src={img.url} alt={previewProduct.name} className="h-16 w-16 rounded-md border border-black/10 object-cover" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {previewProduct.shortDescription && (
+            <div className="mt-4">
+              <div className="mb-1 text-sm text-foreground/50">Short Description</div>
+              <p className="text-base text-foreground">{previewProduct.shortDescription}</p>
+            </div>
+          )}
+
+          {previewProduct.description && (
+            <div className="mt-4">
+              <div className="mb-1 text-sm text-foreground/50">Full Description</div>
+              <div
+                className="prose prose-sm max-w-none text-foreground"
+                dangerouslySetInnerHTML={{ __html: previewProduct.description }}
+              />
+            </div>
+          )}
+
+          {(previewProduct.metaTitle || previewProduct.metaDescription || previewProduct.focusKeywords.length > 0) && (
+            <div className="mt-4 rounded-lg border border-black/10 p-3">
+              <div className="mb-2 text-sm font-semibold text-foreground/70">SEO &amp; Social Sharing</div>
+              {previewProduct.metaTitle && (
+                <div className="mb-2">
+                  <div className="text-sm text-foreground/50">Meta Title</div>
+                  <p className="text-base text-foreground">{previewProduct.metaTitle}</p>
+                </div>
+              )}
+              {previewProduct.metaDescription && (
+                <div className="mb-2">
+                  <div className="text-sm text-foreground/50">Meta Description</div>
+                  <p className="text-base text-foreground">{previewProduct.metaDescription}</p>
+                </div>
+              )}
+              {previewProduct.focusKeywords.length > 0 && (
+                <div>
+                  <div className="mb-1 text-sm text-foreground/50">Focus Keywords</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {previewProduct.focusKeywords.map((kw) => (
+                      <Pill key={kw} tone="default">
+                        {kw}
+                      </Pill>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-6 flex justify-end">
+            <Button
+              type="button"
+              onClick={() => {
+                const id = previewProduct.id;
+                setPreviewProduct(null);
+                router.push(`/products/${id}`);
+              }}
+            >
+              Edit Product
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       {zoomedImage && (
         <div

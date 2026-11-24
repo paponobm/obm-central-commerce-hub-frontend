@@ -656,6 +656,20 @@ export interface DashboardData {
   salesLast7Days: { date: string; orderCount: number; salesTotal: number }[];
 }
 
+// GET /admin/reports/channel-breakdown — one channel's Orders by Source /
+// Orders by Status / employee-discount breakdown over an arbitrary date
+// range. Backs the Dashboard's per-store report card trio.
+export interface ChannelBreakdown {
+  bySource: { source: OrderSource; orderCount: number; salesTotal: number }[];
+  byStatus: Record<OrderStatus, number>;
+  employeeDiscount: {
+    employeeId: string;
+    employeeName: string;
+    orderCount: number;
+    discountTotal: number;
+  }[];
+}
+
 export interface TopProduct {
   productId: string;
   sku: string | null;
