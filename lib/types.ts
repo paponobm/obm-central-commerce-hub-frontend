@@ -310,6 +310,9 @@ export interface RawInventory {
   currentStock: number;
   reservedStock: number;
   lowStockThreshold: number;
+  manufacturingDate: string | null;
+  expiryDate: string | null;
+  expiryAlertDays: number | null;
   updatedAt: string;
 }
 
@@ -410,6 +413,8 @@ export interface InventorySummary {
   availableStock: number;
   lowStockThreshold: number;
   isLowStock: boolean;
+  expiryDate: string | null;
+  expiryAlertDays: number | null;
   updatedAt: string;
 }
 
@@ -657,6 +662,22 @@ export interface DashboardData {
 }
 
 // GET /admin/reports/channel-breakdown — one channel's Orders by Source /
+// Product Details tab's Activity Log — one merged, paginated timeline of
+// everything ProductsService.getActivity logged for this product (create/
+// update/variant/publish events plus stock movements).
+export interface ProductActivityEntry {
+  id: string;
+  actorName: string;
+  actorRole: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface ProductActivityPage {
+  items: ProductActivityEntry[];
+  total: number;
+}
+
 // Orders by Status / employee-discount breakdown over an arbitrary date
 // range. Backs the Dashboard's per-store report card trio.
 export interface ChannelBreakdown {

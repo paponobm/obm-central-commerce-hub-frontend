@@ -159,6 +159,12 @@ export default function NewProductPage() {
   const [focusKeywords, setFocusKeywords] = useState<string[]>([]);
   const [focusKeywordDraft, setFocusKeywordDraft] = useState("");
 
+  // Stock & Delivery
+  const [manufacturingDate, setManufacturingDate] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [expiryAlertDays, setExpiryAlertDays] = useState("");
+  const [lowStockThreshold, setLowStockThreshold] = useState("");
+
   // Publish
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [channelCategoryIds, setChannelCategoryIds] = useState<Record<string, string[]>>({});
@@ -521,6 +527,10 @@ export default function NewProductPage() {
         metaTitle: metaTitle.trim() || undefined,
         metaDescription: metaDescription.trim() || undefined,
         focusKeywords: focusKeywords.length ? focusKeywords : undefined,
+        manufacturingDate: manufacturingDate || undefined,
+        expiryDate: expiryDate || undefined,
+        expiryAlertDays: expiryAlertDays ? Number(expiryAlertDays) : undefined,
+        lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : undefined,
       });
       for (const url of galleryUrls) {
         await api.post(`/admin/products/${product.id}/images`, { url });
@@ -1026,7 +1036,57 @@ export default function NewProductPage() {
               </Card>
             )}
 
-            {tab === "stockDelivery" && <ComingSoonTab label="Stock & Delivery" />}
+            {tab === "stockDelivery" && (
+              <Card>
+                <h2 className="mb-1 text-lg font-bold text-primary">Stock &amp; Delivery</h2>
+                <p className="mb-4 text-xs text-foreground/50">
+                  Optional — leave blank if this product doesn&apos;t expire or you don&apos;t
+                  want a custom low-stock alert yet.
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label className="!text-base">Manufacturing Date</Label>
+                    <Input
+                      className="w-full !text-base"
+                      type="date"
+                      value={manufacturingDate}
+                      onChange={(e) => setManufacturingDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="!text-base">Expiry Date</Label>
+                    <Input
+                      className="w-full !text-base"
+                      type="date"
+                      value={expiryDate}
+                      onChange={(e) => setExpiryDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="!text-base">Alert Before Expiry (days)</Label>
+                    <Input
+                      className="w-full !text-base"
+                      type="number"
+                      min={1}
+                      value={expiryAlertDays}
+                      onChange={(e) => setExpiryAlertDays(e.target.value)}
+                      placeholder="e.g. 30"
+                    />
+                  </div>
+                  <div>
+                    <Label className="!text-base">Minimum Quantity (low stock alert)</Label>
+                    <Input
+                      className="w-full !text-base"
+                      type="number"
+                      min={0}
+                      value={lowStockThreshold}
+                      onChange={(e) => setLowStockThreshold(e.target.value)}
+                      placeholder="e.g. 10"
+                    />
+                  </div>
+                </div>
+              </Card>
+            )}
             {tab === "detailsCompliance" && <ComingSoonTab label="Details & Compliance" />}
 
             {tab === "seo" && (

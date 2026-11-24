@@ -74,6 +74,23 @@ function stockBucket(r: Pick<InventorySummary, "availableStock" | "lowStockThres
   return "healthy";
 }
 
+// Independent of the stock-level bucket above — a product can be fully
+// stocked and still be expired/expiring soon, so this is shown alongside
+// (not instead of) the Available-based Status pill. Mirrors the Products
+// list's own getStockStatus priority (Expired beats Expiring Soon).
+function expiryStatus(
+  r: Pick<InventorySummary, "expiryDate" | "expiryAlertDays">,
+): { label: string; tone: "danger" | "warning" } | null {
+  if (!r.expiryDate) return null;
+  const now = Date.now();
+  const expiry = new Date(r.expiryDate).getTime();
+  if (expiry < now) return { label: "Expired", tone: "danger" };
+  if (r.expiryAlertDays && expiry - now <= r.expiryAlertDays * 24 * 60 * 60 * 1000) {
+    return { label: "Expiring Soon", tone: "warning" };
+  }
+  return null;
+}
+
 const SUMMARY_DOT_CLASSES = {
   primary: "bg-primary",
   delivered: "bg-status-delivered",
@@ -431,13 +448,19 @@ export function InventoryList({
                     {r.availableStock}
                   </td>
                   <td className="py-2.5 pl-8">
-                    {stockBucket(r) === "out" ? (
-                      <Pill tone="alert">Out of Stock</Pill>
-                    ) : stockBucket(r) === "low" ? (
-                      <Pill tone="danger">Low stock</Pill>
-                    ) : (
-                      <Pill tone="success">OK</Pill>
-                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {stockBucket(r) === "out" ? (
+                        <Pill tone="alert">Out of Stock</Pill>
+                      ) : stockBucket(r) === "low" ? (
+                        <Pill tone="danger">Low stock</Pill>
+                      ) : (
+                        <Pill tone="success">OK</Pill>
+                      )}
+                      {(() => {
+                        const expiry = expiryStatus(r);
+                        return expiry && <Pill tone={expiry.tone}>{expiry.label}</Pill>;
+                      })()}
+                    </div>
                   </td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">

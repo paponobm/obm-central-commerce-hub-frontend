@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useContext, useEffect, useState, type ChangeEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { Category, Channel, Product, ProductVariant } from "@/lib/types";
+import { SetProductSavingContext } from "./saving-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -211,6 +212,12 @@ export default function ProductDetailsTab() {
   const [focusKeywords, setFocusKeywords] = useState<string[]>([]);
   const [focusKeywordDraft, setFocusKeywordDraft] = useState("");
 
+  // Stock & Delivery
+  const [manufacturingDate, setManufacturingDate] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [expiryAlertDays, setExpiryAlertDays] = useState("");
+  const [lowStockThreshold, setLowStockThreshold] = useState("");
+
   // Publish — same simple channel-checkbox + per-channel-category design as
   // the New Product page, not the old per-channel name/slug/price/featured
   // override table.
@@ -222,6 +229,15 @@ export default function ProductDetailsTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Tells the shared layout to lock "Back to Products" and the tab links
+  // while a save is in flight, so navigating away mid-save (the save keeps
+  // running in the background regardless) can't look like "it just dumped
+  // me back on the list" once it finishes.
+  const setParentSaving = useContext(SetProductSavingContext);
+  useEffect(() => {
+    setParentSaving(saving);
+  }, [saving, setParentSaving]);
 
   async function loadProduct() {
     try {
@@ -239,6 +255,10 @@ export default function ProductDetailsTab() {
       setMetaTitle(data.metaTitle ?? "");
       setMetaDescription(data.metaDescription ?? "");
       setFocusKeywords(data.focusKeywords ?? []);
+      setManufacturingDate(data.inventory?.manufacturingDate?.slice(0, 10) ?? "");
+      setExpiryDate(data.inventory?.expiryDate?.slice(0, 10) ?? "");
+      setExpiryAlertDays(data.inventory?.expiryAlertDays?.toString() ?? "");
+      setLowStockThreshold(data.inventory?.lowStockThreshold?.toString() ?? "");
       setHasVariants(data.hasVariants);
       const currentStock = data.inventory?.currentStock ?? 0;
       setPricing({
@@ -602,6 +622,10 @@ export default function ProductDetailsTab() {
         focusKeywords,
         hasVariants,
         ...(variantOptionLabel !== undefined ? { variantOptionLabel } : {}),
+        manufacturingDate: manufacturingDate || null,
+        expiryDate: expiryDate || null,
+        expiryAlertDays: expiryAlertDays ? Number(expiryAlertDays) : null,
+        ...(lowStockThreshold ? { lowStockThreshold: Number(lowStockThreshold) } : {}),
       });
 
       if (!hasVariants) {
@@ -1215,7 +1239,57 @@ export default function ProductDetailsTab() {
             </Card>
           )}
 
-          {tab === "stockDelivery" && <ComingSoonTab label="Stock & Delivery" />}
+          {tab === "stockDelivery" && (
+            <Card>
+              <h2 className="mb-1 text-lg font-bold text-primary">Stock &amp; Delivery</h2>
+              <p className="mb-4 text-xs text-foreground/50">
+                Optional — leave blank if this product doesn&apos;t expire or you don&apos;t want
+                a custom low-stock alert.
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Label className="!text-base">Manufacturing Date</Label>
+                  <Input
+                    className="w-full !text-base"
+                    type="date"
+                    value={manufacturingDate}
+                    onChange={(e) => setManufacturingDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="!text-base">Expiry Date</Label>
+                  <Input
+                    className="w-full !text-base"
+                    type="date"
+                    value={expiryDate}
+                    onChange={(e) => setExpiryDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="!text-base">Alert Before Expiry (days)</Label>
+                  <Input
+                    className="w-full !text-base"
+                    type="number"
+                    min={1}
+                    value={expiryAlertDays}
+                    onChange={(e) => setExpiryAlertDays(e.target.value)}
+                    placeholder="e.g. 30"
+                  />
+                </div>
+                <div>
+                  <Label className="!text-base">Minimum Quantity (low stock alert)</Label>
+                  <Input
+                    className="w-full !text-base"
+                    type="number"
+                    min={0}
+                    value={lowStockThreshold}
+                    onChange={(e) => setLowStockThreshold(e.target.value)}
+                    placeholder="e.g. 10"
+                  />
+                </div>
+              </div>
+            </Card>
+          )}
           {tab === "detailsCompliance" && <ComingSoonTab label="Details & Compliance" />}
 
           {tab === "seo" && (
@@ -1479,7 +1553,13 @@ export default function ProductDetailsTab() {
       <ProductFooterBar>
         <PublishChecklist checklist={checklist} />
         <div className="flex items-center justify-end gap-3 pb-3">
-          <Button type="button" variant="secondary" onClick={() => router.push("/products")} className="!text-base">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={saving}
+            onClick={() => router.push("/products")}
+            className="!text-base"
+          >
             Cancel
           </Button>
           {nextTab && (

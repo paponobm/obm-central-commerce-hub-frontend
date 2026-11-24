@@ -83,6 +83,29 @@ function SummaryCard({
   );
 }
 
+// Product list's Stock Status column — Expired beats Expiring Soon beats
+// Low Stock, since an expired product is the most urgent of the three.
+// Mirrors the Inventory page's own isLowStock rule (currentStock <=
+// lowStockThreshold) so this column never disagrees with that page.
+function getStockStatus(p: Product): { label: string; tone: "danger" | "warning" | "success" } | null {
+  const inventory = p.inventory;
+  if (!inventory) return null;
+  const now = Date.now();
+  if (inventory.expiryDate && new Date(inventory.expiryDate).getTime() < now) {
+    return { label: "Expired", tone: "danger" };
+  }
+  if (inventory.expiryDate && inventory.expiryAlertDays) {
+    const msUntilExpiry = new Date(inventory.expiryDate).getTime() - now;
+    if (msUntilExpiry <= inventory.expiryAlertDays * 24 * 60 * 60 * 1000) {
+      return { label: "Expiring Soon", tone: "warning" };
+    }
+  }
+  if (inventory.currentStock <= inventory.lowStockThreshold) {
+    return { label: "Low Stock", tone: "danger" };
+  }
+  return { label: "In Stock", tone: "success" };
+}
+
 export default function ProductsPage() {
   const router = useRouter();
   const { activeChannelId } = useChannelScope();
@@ -106,6 +129,10 @@ export default function ProductsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [zoomedImage, setZoomedImage] = useState<{ url: string; name: string } | null>(null);
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
+  // Which image the preview's big hero slot is currently showing — starts
+  // at the thumbnail (or the first gallery image if there's no thumbnail),
+  // then switches to whichever thumbnail strip image was clicked.
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   async function loadProducts() {
     const params = new URLSearchParams();
@@ -286,7 +313,7 @@ export default function ProductsPage() {
               >
                 <th className="rounded-l-lg px-3 py-3 font-bold">#</th>
                 <th className="px-3 py-3 font-bold">Product</th>
-                <th className="px-3 py-3 font-bold">Category / Brand</th>
+                <th className="px-3 py-3 font-bold">Stock Status</th>
                 <th className="px-3 py-3 font-bold">Published Stores</th>
                 <th className="px-3 py-3 text-right font-bold">Base Price</th>
                 <th className="px-3 py-3 font-bold">Status</th>
@@ -341,13 +368,19 @@ export default function ProductsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-foreground/60">
-                      {p.category?.name ?? "—"}
-                      {p.brand?.name && ` · ${p.brand.name}`}
+                    <td className="px-3 py-3">
+                      {(() => {
+                        const stockStatus = getStockStatus(p);
+                        return stockStatus ? (
+                          <Pill tone={stockStatus.tone}>{stockStatus.label}</Pill>
+                        ) : (
+                          <span className="text-sm text-foreground/40">—</span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-3">
                       {p.channels && p.channels.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-col items-start gap-1">
                           {p.channels.map((c) => (
                             <Pill key={c.channelId} tone="primary">
                               {c.channel.name}
@@ -387,7 +420,10 @@ export default function ProductsPage() {
                             type="button"
                             title="Preview"
                             aria-label={`Preview ${p.name}`}
-                            onClick={() => setPreviewProduct(p)}
+                            onClick={() => {
+                              setPreviewProduct(p);
+                              setPreviewImage(p.thumbnailUrl ?? p.images?.[0]?.url ?? null);
+                            }}
                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/15 text-foreground/50 hover:bg-black/5 hover:text-foreground"
                           >
                             <EyeIcon className="h-4 w-4" />
@@ -468,38 +504,150 @@ export default function ProductsPage() {
 
       {previewProduct && (
         <Modal open onClose={() => setPreviewProduct(null)} title={`Preview — ${previewProduct.name}`} size="xl">
-          <div className="flex gap-4">
-            {previewProduct.thumbnailUrl ? (
+          {/* Big hero image + a clickable thumbnail strip (thumbnail first,
+              then every gallery image) — clicking one swaps the hero, same
+              "main image + strip" pattern as a real storefront product
+              page, instead of the small fixed-size thumbnail this used to
+              be stuck showing. */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {previewImage ? (
               // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
               <img
-                src={previewProduct.thumbnailUrl}
+                src={previewImage}
                 alt={previewProduct.name}
-                className="h-24 w-24 shrink-0 rounded-lg border border-black/10 object-cover"
+                className="h-72 w-72 shrink-0 rounded-lg border border-black/10 object-cover"
               />
             ) : (
-              <span className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
+              <span className="flex h-72 w-72 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
                 No image
               </span>
             )}
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-bold text-foreground">{previewProduct.name}</h3>
+            {(() => {
+              const thumbs = [
+                ...(previewProduct.thumbnailUrl ? [previewProduct.thumbnailUrl] : []),
+                ...(previewProduct.images ?? []).map((img) => img.url),
+              ].filter((url, i, all) => all.indexOf(url) === i);
+              return (
+                thumbs.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto sm:flex-col sm:overflow-visible">
+                    {thumbs.map((url) => (
+                      <button
+                        key={url}
+                        type="button"
+                        onClick={() => setPreviewImage(url)}
+                        className={`h-14 w-14 shrink-0 overflow-hidden rounded-md border-2 ${
+                          previewImage === url ? "border-primary" : "border-black/10 hover:border-black/30"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image */}
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )
+              );
+            })()}
+          </div>
+
+          <div className="mt-5 space-y-2.5 text-base">
+            <div>
+              <span className="text-foreground/50">Name: </span>
+              <span className="font-medium text-foreground">{previewProduct.name}</span>{" "}
+              <span className="inline-block">
                 <Pill tone="default">Draft</Pill>
-              </div>
-              {previewProduct.slogan && <p className="text-sm text-foreground/60">{previewProduct.slogan}</p>}
-              <p className="text-sm text-foreground/50">
-                SKU {previewProduct.sku}
-                {previewProduct.slug && ` · /${previewProduct.slug}`}
-              </p>
+              </span>
             </div>
+            <div>
+              <span className="text-foreground/50">SKU: </span>
+              <span className="font-medium text-foreground">{previewProduct.sku}</span>
+            </div>
+            <div>
+              <span className="text-foreground/50">Slug: </span>
+              <span className="font-medium text-foreground">{previewProduct.slug ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-foreground/50">Slogan: </span>
+              <span className="font-medium text-foreground">{previewProduct.slogan ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-foreground/50">Category: </span>
+              <span className="font-medium text-foreground">{previewProduct.category?.name ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-foreground/50">Origin: </span>
+              <span className="font-medium text-foreground">
+                {previewProduct.specifications?.find((s) => /^origin$|^country$/i.test(s.key))?.value ?? "—"}
+              </span>
+            </div>
+            <div>
+              <span className="mr-1 text-foreground/50">For Who:</span>
+              {previewProduct.forWho.length > 0 ? (
+                <span className="inline-flex flex-wrap gap-1.5 align-middle">
+                  {previewProduct.forWho.map((tag) => (
+                    <Pill key={tag} tone="default">
+                      {tag}
+                    </Pill>
+                  ))}
+                </span>
+              ) : (
+                <span className="font-medium text-foreground">—</span>
+              )}
+            </div>
+            <div>
+              <div className="text-foreground/50">Short Description:</div>
+              <p className="text-foreground">{previewProduct.shortDescription ?? "—"}</p>
+            </div>
+            <div>
+              <div className="text-foreground/50">Full Description:</div>
+              {previewProduct.description ? (
+                <div
+                  className="prose prose-sm max-w-none text-foreground"
+                  dangerouslySetInnerHTML={{ __html: previewProduct.description }}
+                />
+              ) : (
+                <p className="text-foreground">—</p>
+              )}
+            </div>
+
+            {previewProduct.hasVariants && (previewProduct.variants?.length ?? 0) > 0 && (
+              <div>
+                <div className="mb-1 text-foreground/50">
+                  Variants{previewProduct.variantOptionLabel ? ` (${previewProduct.variantOptionLabel})` : ""}:
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-black/10">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="bg-black/[0.03] text-xs font-bold text-foreground/60">
+                        <th className="px-3 py-2">Variant</th>
+                        <th className="px-3 py-2">SKU</th>
+                        <th className="px-3 py-2 text-right">Sell Price</th>
+                        <th className="px-3 py-2 text-right">Regular Price</th>
+                        <th className="px-3 py-2 text-right">Stock</th>
+                        <th className="px-3 py-2 text-center">Active</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewProduct.variants!.map((v) => (
+                        <tr key={v.id} className="border-t border-black/5">
+                          <td className="px-3 py-2 font-medium text-foreground">{v.unitLabel ?? "—"}</td>
+                          <td className="px-3 py-2 text-foreground/60">{v.sku}</td>
+                          <td className="px-3 py-2 text-right text-foreground">{money(v.basePrice)}</td>
+                          <td className="px-3 py-2 text-right text-foreground/60">
+                            {v.compareAtPrice ? money(v.compareAtPrice) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right text-foreground">{v.stock}</td>
+                          <td className="px-3 py-2 text-center">{v.isActive ? "Yes" : "No"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-base sm:grid-cols-3">
-            <div>
-              <div className="text-sm text-foreground/50">Category</div>
-              <div className="font-medium text-foreground">{previewProduct.category?.name ?? "—"}</div>
-            </div>
-            <div>
+            {/* <div>
               <div className="text-sm text-foreground/50">Brand</div>
               <div className="font-medium text-foreground">{previewProduct.brand?.name ?? "—"}</div>
             </div>
@@ -508,23 +656,17 @@ export default function ProductsPage() {
               <div className="font-medium text-foreground">{previewProduct.unit}</div>
             </div>
             <div>
-              <div className="text-sm text-foreground/50">Origin</div>
-              <div className="font-medium text-foreground">
-                {previewProduct.specifications?.find((s) => /^origin$|^country$/i.test(s.key))?.value ?? "—"}
-              </div>
-            </div>
-            <div>
               <div className="text-sm text-foreground/50">Cost Price</div>
               <div className="font-medium text-foreground">{money(previewProduct.costPrice)}</div>
-            </div>
+            </div> */}
             {/* Always shown from the product's own master fields — these
                 exist no matter the mode (kept in sync with the cheapest
                 variant automatically once any variant exists — see
                 ProductsService.recomputeBasePriceFromVariants), so pricing
                 is never blank even for a variant product with no rows
-                added yet. The Variants table below adds the per-row detail
+                added yet. The Variants table above adds the per-row detail
                 on top of this summary once real rows exist. */}
-            <div>
+            {/* <div>
               <div className="text-sm text-foreground/50">Sell Price</div>
               <div className="font-medium text-foreground">{money(previewProduct.basePrice)}</div>
             </div>
@@ -539,7 +681,7 @@ export default function ProductsPage() {
               <div className="font-medium text-foreground">
                 {previewProduct.inventory ? previewProduct.inventory.currentStock : "—"}
               </div>
-            </div>
+            </div> */}
           </div>
 
           <div className="mt-4">
@@ -556,84 +698,6 @@ export default function ProductsPage() {
               <p className="text-base text-foreground/40">Not published</p>
             )}
           </div>
-
-          {previewProduct.hasVariants && (previewProduct.variants?.length ?? 0) > 0 && (
-            <div className="mt-4">
-              <div className="mb-1 text-sm text-foreground/50">
-                Variants{previewProduct.variantOptionLabel ? ` (${previewProduct.variantOptionLabel})` : ""}
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-black/10">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-black/[0.03] text-xs font-bold text-foreground/60">
-                      <th className="px-3 py-2">Variant</th>
-                      <th className="px-3 py-2">SKU</th>
-                      <th className="px-3 py-2 text-right">Sell Price</th>
-                      <th className="px-3 py-2 text-right">Regular Price</th>
-                      <th className="px-3 py-2 text-right">Stock</th>
-                      <th className="px-3 py-2 text-center">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewProduct.variants!.map((v) => (
-                      <tr key={v.id} className="border-t border-black/5">
-                        <td className="px-3 py-2 font-medium text-foreground">{v.unitLabel ?? "—"}</td>
-                        <td className="px-3 py-2 text-foreground/60">{v.sku}</td>
-                        <td className="px-3 py-2 text-right text-foreground">{money(v.basePrice)}</td>
-                        <td className="px-3 py-2 text-right text-foreground/60">
-                          {v.compareAtPrice ? money(v.compareAtPrice) : "—"}
-                        </td>
-                        <td className="px-3 py-2 text-right text-foreground">{v.stock}</td>
-                        <td className="px-3 py-2 text-center">{v.isActive ? "Yes" : "No"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {previewProduct.forWho.length > 0 && (
-            <div className="mt-4">
-              <div className="mb-1 text-sm text-foreground/50">For Who</div>
-              <div className="flex flex-wrap gap-1.5">
-                {previewProduct.forWho.map((tag) => (
-                  <Pill key={tag} tone="default">
-                    {tag}
-                  </Pill>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(previewProduct.images?.length ?? 0) > 0 && (
-            <div className="mt-4">
-              <div className="mb-1 text-sm text-foreground/50">Gallery Images</div>
-              <div className="flex flex-wrap gap-2">
-                {previewProduct.images!.map((img) => (
-                  // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                  <img key={img.id} src={img.url} alt={previewProduct.name} className="h-16 w-16 rounded-md border border-black/10 object-cover" />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {previewProduct.shortDescription && (
-            <div className="mt-4">
-              <div className="mb-1 text-sm text-foreground/50">Short Description</div>
-              <p className="text-base text-foreground">{previewProduct.shortDescription}</p>
-            </div>
-          )}
-
-          {previewProduct.description && (
-            <div className="mt-4">
-              <div className="mb-1 text-sm text-foreground/50">Full Description</div>
-              <div
-                className="prose prose-sm max-w-none text-foreground"
-                dangerouslySetInnerHTML={{ __html: previewProduct.description }}
-              />
-            </div>
-          )}
 
           {(previewProduct.metaTitle || previewProduct.metaDescription || previewProduct.focusKeywords.length > 0) && (
             <div className="mt-4 rounded-lg border border-black/10 p-3">

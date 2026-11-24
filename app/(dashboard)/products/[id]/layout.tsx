@@ -8,10 +8,11 @@ import type { Product } from "@/lib/types";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { LoadingLine } from "@/components/ui/spinner";
+import { SetProductSavingContext } from "./saving-context";
 
 const TABS: { label: string; path: string }[] = [
   { label: "Details", path: "" },
-  { label: "Order History", path: "/orders" },
+  { label: "Product Details", path: "/orders" },
 ];
 
 // Shared chrome for the three product-detail tabs, each its own route/page
@@ -25,6 +26,7 @@ export default function ProductDetailLayout({ children }: { children: ReactNode 
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [childSaving, setChildSaving] = useState(false);
 
   useEffect(() => {
     setProduct(null);
@@ -51,7 +53,7 @@ export default function ProductDetailLayout({ children }: { children: ReactNode 
         title={product.name}
         description={`SKU ${product.sku}`}
         actions={
-          <Button variant="secondary" onClick={() => router.push("/products")}>
+          <Button variant="secondary" disabled={childSaving} onClick={() => router.push("/products")}>
             Back to Products
           </Button>
         }
@@ -64,11 +66,13 @@ export default function ProductDetailLayout({ children }: { children: ReactNode 
             <Link
               key={t.label}
               href={`${base}${t.path}`}
+              aria-disabled={childSaving}
+              onClick={(e) => childSaving && e.preventDefault()}
               className={`shrink-0 border-b-2 px-4 py-2 text-base font-medium transition-colors ${
                 active
                   ? "border-primary text-primary"
                   : "border-transparent text-foreground/60 hover:text-foreground"
-              }`}
+              } ${childSaving ? "pointer-events-none opacity-50" : ""}`}
             >
               {t.label}
             </Link>
@@ -76,7 +80,7 @@ export default function ProductDetailLayout({ children }: { children: ReactNode 
         })}
       </div>
 
-      {children}
+      <SetProductSavingContext.Provider value={setChildSaving}>{children}</SetProductSavingContext.Provider>
     </div>
   );
 }
