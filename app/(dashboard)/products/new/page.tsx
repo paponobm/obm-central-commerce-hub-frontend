@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { Category, Channel, Product } from "@/lib/types";
@@ -12,6 +12,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   ComingSoonTab,
+  DraftAutoSaveStatus,
   PRODUCT_TABS,
   ProductFooterBar,
   ProductTabNav,
@@ -172,6 +173,165 @@ export default function NewProductPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submittingDraft, setSubmittingDraft] = useState(false);
+
+  // Auto-save-as-draft — once the admin has typed a name, every further
+  // change (debounced) silently creates/updates a real draft product in
+  // the background, so closing the tab or navigating away never loses
+  // typed work. `draftIdRef` (not just the `draftId` state) is what the
+  // debounce timer and the final submit actually read, since a state value
+  // read inside a setTimeout closure can be stale by the time it fires.
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const draftIdRef = useRef<string | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"saving" | "saved" | null>(null);
+  // What stock was last pushed to the backend for this draft (simple mode
+  // only) — lets auto-save send just the *delta* to /inventory/:id/adjust,
+  // the same ledger-based way every other stock change in this app works.
+  const lastSyncedStockRef = useRef(0);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState<string | null>(null);
+
+  function generateDraftSku() {
+    return `DRAFT-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  }
+
+  // Shared by auto-save and the real Save as Draft/Publish submit — every
+  // field that lives directly on the Product/Inventory row (not variants,
+  // gallery images, or channel publishing, which only get persisted on an
+  // explicit Save/Publish — see handleDuplicate's own comment on why those
+  // are out of scope for continuous autosave).
+  function buildDraftPayload() {
+    const categoryIdSet = new Set<string>(selectedCategoryIds);
+    for (const ids of Object.values(channelCategoryIds)) {
+      for (const id of ids) categoryIdSet.add(id);
+    }
+    const specifications = origin.trim() ? [{ key: "Origin", value: origin.trim() }] : [];
+    const usedOptions = options.filter((o) => o.name.trim() && o.values.length > 0);
+    const variantOptionLabel =
+      mode === "variable" && usedOptions.length === 1 ? usedOptions[0].name.trim() : undefined;
+    return {
+      name: name.trim(),
+      slug: urlSlug.trim() || undefined,
+      slogan: slogan.trim() || undefined,
+      shortDescription: shortDescription.trim() || undefined,
+      description: description.trim() || undefined,
+      specifications: specifications.length ? specifications : undefined,
+      forWho: selectedForWho.length ? selectedForWho : undefined,
+      costPrice: 0,
+      basePrice: mode === "single" ? (singleRow.basePrice ? Number(singleRow.basePrice) : 0) : 0,
+      compareAtPrice:
+        mode === "single" && singleRow.discountPrice ? Number(singleRow.discountPrice) : undefined,
+      unit: unit || undefined,
+      categoryId: selectedCategoryIds[0] || undefined,
+      thumbnailUrl: thumbnailUrl || undefined,
+      hasVariants: mode === "variable",
+      variantOptionLabel,
+      categoryIds: Array.from(categoryIdSet),
+      metaTitle: metaTitle.trim() || undefined,
+      metaDescription: metaDescription.trim() || undefined,
+      focusKeywords: focusKeywords.length ? focusKeywords : undefined,
+      manufacturingDate: manufacturingDate || undefined,
+      expiryDate: expiryDate || undefined,
+      expiryAlertDays: expiryAlertDays ? Number(expiryAlertDays) : undefined,
+      lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : undefined,
+    };
+  }
+
+  async function autoSave() {
+    if (!name.trim()) return;
+    setAutoSaveStatus("saving");
+    try {
+      const payload = buildDraftPayload();
+      if (!draftIdRef.current) {
+        const initialStock = mode === "single" && singleRow.stock ? Number(singleRow.stock) : 0;
+        const created = await api.post<Product>("/admin/products", {
+          sku: baseSku.trim() || generateDraftSku(),
+          ...payload,
+          isActive: false,
+          isDraft: true,
+          initialStock,
+        });
+        draftIdRef.current = created.id;
+        setDraftId(created.id);
+        lastSyncedStockRef.current = initialStock;
+      } else {
+        const { categoryIds, ...rest } = payload;
+        await api.patch(`/admin/products/${draftIdRef.current}`, rest);
+        await api.put(`/admin/products/${draftIdRef.current}/categories`, { categoryIds });
+        if (mode === "single") {
+          const newStock = singleRow.stock ? Number(singleRow.stock) : 0;
+          const delta = newStock - lastSyncedStockRef.current;
+          if (delta !== 0) {
+            await api.post(`/admin/inventory/${draftIdRef.current}/adjust`, {
+              delta,
+              note: "Auto-saved from New Product draft",
+            });
+            lastSyncedStockRef.current = newStock;
+          }
+        }
+      }
+      setAutoSaveStatus("saved");
+    } catch {
+      // Silent — auto-save failing shouldn't interrupt typing. The
+      // explicit Save as Draft/Publish button is the reliable fallback
+      // and will surface a real error if something's actually wrong.
+      setAutoSaveStatus(null);
+    }
+  }
+
+  // Debounced 1.2s after the last change to any field auto-save covers —
+  // long enough to not fire on every keystroke, short enough that closing
+  // the tab a few seconds after typing still doesn't lose it.
+  useEffect(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (!name.trim()) return;
+    debounceTimerRef.current = setTimeout(autoSave, 1200);
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    name,
+    baseSku,
+    urlSlug,
+    slogan,
+    shortDescription,
+    description,
+    origin,
+    selectedForWho,
+    unit,
+    selectedCategoryIds,
+    channelCategoryIds,
+    thumbnailUrl,
+    metaTitle,
+    metaDescription,
+    focusKeywords,
+    manufacturingDate,
+    expiryDate,
+    expiryAlertDays,
+    lowStockThreshold,
+    mode,
+    singleRow,
+  ]);
+
+  // Copies the in-progress draft (once auto-save has created one) into a
+  // brand-new separate draft product — variants/images/categories/Stock &
+  // Delivery settings all copy, stock resets to 0 and it stays unpublished
+  // everywhere (see ProductsService.duplicate). Deliberately stays on this
+  // page rather than navigating to the copy.
+  async function handleDuplicate() {
+    if (!draftIdRef.current) return;
+    setDuplicating(true);
+    setDuplicateNotice(null);
+    try {
+      const copy = await api.post<Product>(`/admin/products/${draftIdRef.current}/duplicate`, {});
+      setDuplicateNotice(`Created draft "${copy.name}" (SKU ${copy.sku}) — find it in Products.`);
+    } catch (err) {
+      setDuplicateNotice(err instanceof ApiError ? err.message : "Failed to duplicate this draft.");
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   useEffect(() => {
     api.get<Category[]>("/admin/categories").then(setCategories).catch(() => {});
@@ -418,6 +578,9 @@ export default function NewProductPage() {
   // variants) still saves normally, so no work typed in is lost.
   async function submitProduct(asDraft: boolean) {
     setFormError(null);
+    // Auto-save's debounce timer could otherwise fire concurrently with
+    // this explicit submit a moment later.
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
     if (!name.trim()) {
       setFormError("Please enter a product name.");
@@ -498,6 +661,70 @@ export default function NewProductPage() {
 
     (asDraft ? setSubmittingDraft : setSubmitting)(true);
     try {
+      // Auto-save already created a real draft product from whatever was
+      // typed earlier — finalize THAT one (PATCH) instead of creating a
+      // second, separate product alongside it.
+      if (draftIdRef.current) {
+        const id = draftIdRef.current;
+        await api.patch(`/admin/products/${id}`, {
+          sku: baseSku.trim(),
+          name: name.trim(),
+          slug: urlSlug.trim() || undefined,
+          slogan: slogan.trim() || undefined,
+          shortDescription: shortDescription.trim() || undefined,
+          description: description.trim() || undefined,
+          specifications: specifications.length ? specifications : undefined,
+          forWho: selectedForWho.length ? selectedForWho : undefined,
+          costPrice: 0,
+          basePrice,
+          compareAtPrice,
+          unit: unit || undefined,
+          categoryId: selectedCategoryIds[0] || undefined,
+          thumbnailUrl: thumbnailUrl || undefined,
+          isActive: !asDraft,
+          isDraft: asDraft,
+          hasVariants: mode === "variable",
+          variantOptionLabel,
+          metaTitle: metaTitle.trim() || undefined,
+          metaDescription: metaDescription.trim() || undefined,
+          focusKeywords: focusKeywords.length ? focusKeywords : undefined,
+          manufacturingDate: manufacturingDate || undefined,
+          expiryDate: expiryDate || undefined,
+          expiryAlertDays: expiryAlertDays ? Number(expiryAlertDays) : undefined,
+          lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : undefined,
+        });
+        await api.put(`/admin/products/${id}/categories`, {
+          categoryIds: categoryIdSet.size ? Array.from(categoryIdSet) : [],
+        });
+        if (mode === "single") {
+          const newStock = initialStock ?? 0;
+          const delta = newStock - lastSyncedStockRef.current;
+          if (delta !== 0) {
+            await api.post(`/admin/inventory/${id}/adjust`, {
+              delta,
+              note: "Stock set from the New Product form",
+            });
+            lastSyncedStockRef.current = newStock;
+          }
+        } else if (variantsPayload?.length) {
+          // Auto-save never creates variant rows (see buildDraftPayload's
+          // comment) — these are always brand new at this point.
+          for (const v of variantsPayload) {
+            await api.post(`/admin/products/${id}/variants`, v);
+          }
+        }
+        if (!asDraft && selectedChannelIds.length) {
+          for (const channelId of selectedChannelIds) {
+            await api.post(`/admin/products/${id}/channels/${channelId}/publish`, {});
+          }
+        }
+        for (const url of galleryUrls) {
+          await api.post(`/admin/products/${id}/images`, { url });
+        }
+        router.push("/products");
+        return;
+      }
+
       const product = await api.post<Product>("/admin/products", {
         sku: baseSku.trim(),
         name: name.trim(),
@@ -567,9 +794,20 @@ export default function NewProductPage() {
       />
 
       <form onSubmit={handleSubmit}>
-        <div className="-mx-4 mb-6  px-4 shadow-card sm:-mx-6 sm:px-6 font-bold text-xl">
+        <div className="-mx-4 mb-6 flex items-center justify-between px-4 shadow-card sm:-mx-6 sm:px-6">
           <ProductTabNav tab={tab} onChange={setTab} checklist={checklist} />
+          {draftId && (
+            <DraftAutoSaveStatus
+              status={autoSaveStatus}
+              onDuplicate={handleDuplicate}
+              duplicating={duplicating}
+            />
+          )}
         </div>
+
+        {duplicateNotice && (
+          <p className="mb-6 rounded-lg bg-primary/10 px-3 py-2 text-base text-primary">{duplicateNotice}</p>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
@@ -1329,7 +1567,7 @@ export default function NewProductPage() {
             <Button type="button" variant="secondary" onClick={() => router.push("/products")} className="!text-base">
               Cancel
             </Button>
-            <Button
+            {/* <Button
               type="button"
               variant="secondary"
               onClick={handleSaveDraft}
@@ -1338,7 +1576,7 @@ export default function NewProductPage() {
               title="Save without publishing — won't appear on any storefront until reactivated from the Products list"
             >
               {submittingDraft ? "Saving…" : "Save as Draft"}
-            </Button>
+            </Button> */}
             {nextTab && (
               <Button type="button" variant="secondary" onClick={() => setTab(nextTab.key)} className="!text-base">
                 Next: {nextTab.label} →

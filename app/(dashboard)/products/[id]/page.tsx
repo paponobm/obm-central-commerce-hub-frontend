@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useEffect, useState, type ChangeEvent } from "react";
+import { useContext, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import type { Category, Channel, Product, ProductVariant } from "@/lib/types";
@@ -12,6 +12,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { LoadingLine } from "@/components/ui/spinner";
 import {
   ComingSoonTab,
+  DraftAutoSaveStatus,
   PRODUCT_TABS,
   ProductFooterBar,
   ProductTabNav,
@@ -228,7 +229,29 @@ export default function ProductDetailsTab() {
   // Variants, and Publish together (see handleSaveAll).
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // True only while a genuine Publish click (publish=true) is actually
+  // running — distinct from `saving`, which is also true during a plain
+  // background auto-save tick. Without this, the footer button showed
+  // "Publishing…" during an ordinary auto-save too, making it look like
+  // Publish had fired on its own.
+  const [publishing, setPublishing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState<string | null>(null);
+
+  async function handleDuplicate() {
+    setDuplicating(true);
+    setDuplicateNotice(null);
+    try {
+      const copy = await api.post<Product>(`/admin/products/${productId}/duplicate`, {});
+      setDuplicateNotice(`Created draft "${copy.name}" (SKU ${copy.sku}) — find it in Products.`);
+    } catch (err) {
+      setDuplicateNotice(err instanceof ApiError ? err.message : "Failed to duplicate this product.");
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   // Tells the shared layout to lock "Back to Products" and the tab links
   // while a save is in flight, so navigating away mid-save (the save keeps
@@ -587,10 +610,27 @@ export default function ProductDetailsTab() {
   // Publish. Runs each section in sequence and stops at the first failure,
   // so a save error always means "something after this point wasn't saved"
   // rather than a silently partial save.
-  async function handleSaveAll() {
-    if (!master || !pricing || !product) return;
-    setSaveError(null);
+  // `publish` flips a draft live (isActive:true/isDraft:false) — omitted
+  // entirely otherwise, so an already-published product's own isActive
+  // stays untouched exactly like before this existed. `reload` skips the
+  // post-save refetch for the auto-save path below (that refetch would
+  // otherwise re-seed every piece of form state with a new object
+  // reference, re-triggering the auto-save effect that just ran — an
+  // infinite loop). `silent` keeps a real validation error (e.g. missing
+  // Sell Price) from flashing the error banner while the admin is still
+  // mid-typing other fields; the explicit Publish/Save Changes buttons
+  // still always surface it.
+  // Returns whether the save actually succeeded — the Publish button uses
+  // this to decide whether to navigate back to the list afterward (never
+  // on a failed save, since that would hide the error that just happened).
+  async function runSaveAll(
+    publish: boolean,
+    { reload, silent }: { reload: boolean; silent: boolean },
+  ): Promise<boolean> {
+    if (!master || !pricing || !product) return false;
+    if (!silent) setSaveError(null);
     setSaving(true);
+    if (publish) setPublishing(true);
     setSaved(false);
     try {
       const specifications = origin.trim() ? [{ key: "Origin", value: origin.trim() }] : [];
@@ -626,6 +666,7 @@ export default function ProductDetailsTab() {
         expiryDate: expiryDate || null,
         expiryAlertDays: expiryAlertDays ? Number(expiryAlertDays) : null,
         ...(lowStockThreshold ? { lowStockThreshold: Number(lowStockThreshold) } : {}),
+        ...(publish ? { isActive: true, isDraft: false } : {}),
       });
 
       if (!hasVariants) {
@@ -687,17 +728,85 @@ export default function ProductDetailsTab() {
         categoryIds: Array.from(categoryIdSet),
       });
 
-      await loadProduct();
+      if (reload) await loadProduct();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      return true;
     } catch (err) {
-      setSaveError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Something went wrong. Try again.",
-      );
+      if (!silent) {
+        setSaveError(
+          err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Something went wrong. Try again.",
+        );
+      }
+      return false;
     } finally {
       setSaving(false);
+      if (publish) setPublishing(false);
     }
   }
+
+  // Queues every call (auto-save debounce ticks and explicit Save
+  // Changes/Publish clicks alike) onto one serial chain instead of letting
+  // two saves run concurrently — important because a save here is several
+  // sequential network calls, slow enough that a later auto-save tick can
+  // easily still be mid-flight when the admin clicks Publish. Dropping the
+  // click silently (the previous `if (saving) return`) is exactly what
+  // caused Publish to sometimes appear to do nothing — this way the click
+  // always runs, just right after whatever was already in progress.
+  const saveChainRef = useRef<Promise<boolean | undefined>>(Promise.resolve(undefined));
+  function handleSaveAll(
+    publish = false,
+    { reload = true, silent = false }: { reload?: boolean; silent?: boolean } = {},
+  ) {
+    const run = () => runSaveAll(publish, { reload, silent });
+    const next = saveChainRef.current.then(run, run);
+    saveChainRef.current = next.catch(() => undefined);
+    return next;
+  }
+
+  // Auto-save while still a draft — a draft's own real product id already
+  // exists, so every change just PATCHes it directly (no "create" branch
+  // like the New Product page needs). Skipped once published: an
+  // already-live product keeps today's explicit Save Changes button, same
+  // as before this existed.
+  const autoSaveReadyRef = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!product?.isDraft) return;
+    if (!autoSaveReadyRef.current) {
+      // The render where loadProduct() just finished seeding every piece
+      // of form state below — nothing the admin actually typed yet.
+      autoSaveReadyRef.current = true;
+      return;
+    }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSaveAll(false, { reload: false, silent: true });
+    }, 1200);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    product?.isDraft,
+    master,
+    origin,
+    selectedForWho,
+    selectedCategoryIds,
+    channelCategoryIds,
+    metaTitle,
+    metaDescription,
+    focusKeywords,
+    hasVariants,
+    genOptions,
+    manufacturingDate,
+    expiryDate,
+    expiryAlertDays,
+    lowStockThreshold,
+    pricing,
+    variantDrafts,
+    selectedChannelIds,
+  ]);
 
   if (loadError) {
     return <p className="text-base text-status-cancelled">{loadError}</p>;
@@ -752,9 +861,18 @@ export default function ProductDetailsTab() {
 
   return (
     <div className="pb-20">
-      <div className="-mx-4 mb-6 bg-card px-4 shadow-card sm:-mx-6 sm:px-6">
+      <div className="-mx-4 mb-6 flex items-center justify-between bg-card px-4 shadow-card sm:-mx-6 sm:px-6">
         <ProductTabNav tab={tab} onChange={setTab} checklist={checklist} />
+        <DraftAutoSaveStatus
+          status={product.isDraft ? (saving ? "saving" : saved ? "saved" : null) : null}
+          onDuplicate={handleDuplicate}
+          duplicating={duplicating}
+        />
       </div>
+
+      {duplicateNotice && (
+        <p className="mb-6 rounded-lg bg-primary/10 px-3 py-2 text-base text-primary">{duplicateNotice}</p>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -1568,9 +1686,22 @@ export default function ProductDetailsTab() {
             </Button>
           )}
           {saved && <span className="text-sm text-status-delivered">Saved</span>}
-          <Button onClick={handleSaveAll} disabled={saving} className="!text-base">
-            {saving ? "Saving…" : "Save Changes"}
-          </Button>
+          {product.isDraft ? (
+            <Button
+              onClick={async () => {
+                const ok = await handleSaveAll(true);
+                if (ok) router.push("/products");
+              }}
+              disabled={saving}
+              className="!text-base"
+            >
+              {publishing ? "Publishing…" : "Publish"}
+            </Button>
+          ) : (
+            <Button onClick={() => handleSaveAll(false)} disabled={saving} className="!text-base">
+              {saving ? "Saving…" : "Save Changes"}
+            </Button>
+          )}
         </div>
       </ProductFooterBar>
     </div>

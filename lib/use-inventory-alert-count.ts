@@ -4,17 +4,18 @@ import { useEffect, useState } from "react";
 import { api } from "./api-client";
 import type { InventorySummary } from "./types";
 
-// Low Stock + Expiring Soon/Expired rows — Out of Stock is deliberately left
-// out (it already has its own "Out of Stock" summary card/filter; this badge
-// is for "still sellable but needs attention soon", not "already at zero").
-// Counted at the same row granularity the All Stock page itself shows
+// Low Stock + Out of Stock + Expiring Soon/Expired rows, counted at the
+// same row granularity the All Stock page itself shows
 // (expandVariants) — so, e.g., a 3-variant product with 2 variants running
 // low counts as 2, matching what the admin actually sees when they click in.
-// Pages that change stock, thresholds, or a product's active flag dispatch
-// this event (window-level, no shared store needed) so the sidebar badge —
-// which fetched once on mount and otherwise has no way to know — updates
-// immediately instead of only after a full page reload.
+// A handful of pages dispatch this event for an instant update right after
+// their own change; everything else (publishing a product, auto-save,
+// duplicating, deleting — anywhere that isn't the Inventory page itself)
+// has no such wiring and would otherwise leave this badge stale until a
+// full page reload, so it's also polled on a short timer as the real
+// "make this actually live" fix rather than chasing every mutation site.
 const REFRESH_EVENT = "inventory-alert:refresh";
+const POLL_INTERVAL_MS = 10_000;
 
 function isExpiryAlert(r: Pick<InventorySummary, "expiryDate" | "expiryAlertDays">): boolean {
   if (!r.expiryDate) return false;
@@ -40,8 +41,7 @@ export function useInventoryAlertCount(enabled: boolean): number | null {
           if (cancelled) return;
           const n = rows.filter((r) => {
             if (!r.isActive) return false;
-            const isLowNotOut = r.availableStock > 0 && r.availableStock <= r.lowStockThreshold;
-            return isLowNotOut || isExpiryAlert(r);
+            return r.availableStock <= r.lowStockThreshold || isExpiryAlert(r);
           }).length;
           setCount(n);
         })
@@ -51,9 +51,11 @@ export function useInventoryAlertCount(enabled: boolean): number | null {
     }
     refresh();
     window.addEventListener(REFRESH_EVENT, refresh);
+    const interval = setInterval(refresh, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       window.removeEventListener(REFRESH_EVENT, refresh);
+      clearInterval(interval);
     };
   }, [enabled]);
 

@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 // Shared by the New and Edit Product pages — same 7 tabs, same stub content
 // for the ones with nothing built yet, same "has a missing required field"
@@ -60,6 +61,37 @@ export function ProductTabNav({
         );
       })}
     </nav>
+  );
+}
+
+// Sits beside the tab nav on both the New and Edit Product pages — once a
+// real draft product exists (right after the New page's first auto-save,
+// or always on the Edit page), shows whether the draft is currently
+// up to date, plus the "Duplicate" button.
+export function DraftAutoSaveStatus({
+  status,
+  onDuplicate,
+  duplicating,
+}: {
+  status: "saving" | "saved" | null;
+  onDuplicate: () => void;
+  duplicating: boolean;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-3 pb-1 pl-2">
+      {status === "saving" && <span className="text-sm text-foreground/50">Saving…</span>}
+      {status === "saved" && (
+        <span className="flex items-center gap-1 text-sm font-medium text-status-delivered">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+          Draft auto-saved
+        </span>
+      )}
+      <Button type="button" variant="secondary" disabled={duplicating} onClick={onDuplicate} className="!text-sm">
+        {duplicating ? "Duplicating…" : "Duplicate"}
+      </Button>
+    </div>
   );
 }
 
