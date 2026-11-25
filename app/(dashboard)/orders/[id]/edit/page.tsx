@@ -936,37 +936,7 @@ export default function EditOrderPage() {
           </Card>
         </div>
 
-        {hasRealBreakdown && (
-          <div className="rounded-lg border border-dashed border-orange-400 bg-orange-50 p-3">
-            <div className="mb-2 text-xs font-semibold text-foreground/70">
-              Website checkout breakdown (already applied — Discount above is for an extra manual amount only)
-            </div>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-foreground/70">পণ্যের মূল দাম</span>
-                <span className="font-medium text-foreground">{formatAmount(realRawProductTotal)}৳</span>
-              </div>
-              {realItemDiscountTotal > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-foreground/70">পণ্যে ছাড়{itemDiscountPercent > 0 ? `(${itemDiscountPercent}%)` : ""}</span>
-                  <span className="font-medium text-status-cancelled">-{formatAmount(realItemDiscountTotal)}৳</span>
-                </div>
-              )}
-              {realWebsiteDiscount > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-foreground/70">পরিমাণে ছাড়{orderDiscountPercent > 0 ? `(${orderDiscountPercent}%)` : ""}</span>
-                  <span className="font-medium text-status-cancelled">-{formatAmount(realWebsiteDiscount)}৳</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-foreground/70">ডেলিভারি চার্জ</span>
-                <span className="font-medium text-foreground">
-                  {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+       
 
         <div ref={pricingRef}>
           <Card>
@@ -1074,6 +1044,7 @@ export default function EditOrderPage() {
                 </div>
               </div>
             )}
+            
 
             {formError && (
               <p className="mt-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-sm text-status-cancelled">
@@ -1086,6 +1057,37 @@ export default function EditOrderPage() {
             </Button>
           </Card>
         </div>
+         {hasRealBreakdown && (
+          <div className="rounded-lg border border-dashed border-orange-400 bg-orange-50 p-3">
+            <div className="mb-2 text-xs font-semibold text-foreground/70">
+              Website Checkout Breakdown 
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-foreground/70">পণ্যের মূল দাম</span>
+                <span className="font-medium text-foreground">{formatAmount(realRawProductTotal)}৳</span>
+              </div>
+              {realItemDiscountTotal > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-foreground/70">পণ্যে ছাড়{itemDiscountPercent > 0 ? `(${itemDiscountPercent}%)` : ""}</span>
+                  <span className="font-medium text-status-cancelled">-{formatAmount(realItemDiscountTotal)}৳</span>
+                </div>
+              )}
+              {realWebsiteDiscount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-foreground/70">পরিমাণে ছাড়{orderDiscountPercent > 0 ? `(${orderDiscountPercent}%)` : ""}</span>
+                  <span className="font-medium text-status-cancelled">-{formatAmount(realWebsiteDiscount)}৳</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-foreground/70">ডেলিভারি চার্জ</span>
+                <span className="font-medium text-foreground">
+                  {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <Card>
           <h2 className="mb-3 text-base font-semibold text-foreground">Activity Log</h2>

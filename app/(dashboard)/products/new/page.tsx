@@ -13,6 +13,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   ComingSoonTab,
   DraftAutoSaveStatus,
+  ImageLightbox,
   PRODUCT_TABS,
   ProductFooterBar,
   ProductTabNav,
@@ -142,6 +143,7 @@ export default function NewProductPage() {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -1410,7 +1412,7 @@ export default function NewProductPage() {
                 <div className="flex h-40 items-center justify-center bg-black/5 text-sm text-foreground/40">
                   {thumbnailUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                    <img src={thumbnailUrl} alt="Thumbnail preview" className="h-full w-full object-cover" />
+                    <img src={thumbnailUrl} alt="Thumbnail preview" className="h-full w-full object-contain" />
                   ) : (
                     "Thumbnail"
                   )}
@@ -1435,12 +1437,19 @@ export default function NewProductPage() {
               <h2 className="mb-10 text-lg font-bold text-primary">Thumbnail</h2>
               <div className="flex items-center justify-center gap-3">
                 {thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                  <img
-                    src={thumbnailUrl}
-                    alt="Thumbnail preview"
-                    className="h-20 w-20 shrink-0 rounded-md border border-black/10 object-cover"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setZoomedImage(thumbnailUrl)}
+                    className="shrink-0 cursor-zoom-in"
+                    title="Click to zoom in"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image */}
+                    <img
+                      src={thumbnailUrl}
+                      alt="Thumbnail preview"
+                      className="h-20 w-20 rounded-md border border-black/10 object-cover"
+                    />
+                  </button>
                 ) : (
                   <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
                     None
@@ -1592,6 +1601,10 @@ export default function NewProductPage() {
           </div>
         </ProductFooterBar>
       </form>
+
+      {zoomedImage && (
+        <ImageLightbox src={zoomedImage} alt="Thumbnail" onClose={() => setZoomedImage(null)} />
+      )}
     </div>
   );
 }

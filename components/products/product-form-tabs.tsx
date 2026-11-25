@@ -95,6 +95,37 @@ export function DraftAutoSaveStatus({
   );
 }
 
+// Full-screen click-to-zoom overlay for the Thumbnail preview — portaled
+// like the footer bar so it sits above everything regardless of where the
+// triggering image lives in the page's own scroll/overflow containers.
+export function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image, zoomed */}
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-full max-w-full rounded-lg object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>,
+    document.body,
+  );
+}
+
 // Placeholder for the four tabs with no content yet (Stock & Delivery,
 // Details & Compliance, Marketing, Activity) — visible and clearly labeled
 // rather than hidden, so it's obvious more is coming rather than looking

@@ -13,6 +13,7 @@ import { LoadingLine } from "@/components/ui/spinner";
 import {
   ComingSoonTab,
   DraftAutoSaveStatus,
+  ImageLightbox,
   PRODUCT_TABS,
   ProductFooterBar,
   ProductTabNav,
@@ -201,6 +202,7 @@ export default function ProductDetailsTab() {
 
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   // Multi-select — the first pick is the product's primary categoryId,
   // every pick (including that one) also goes into the shared
@@ -1497,7 +1499,7 @@ export default function ProductDetailsTab() {
               <div className="flex h-40 items-center justify-center bg-black/5 text-sm text-foreground/40">
                 {product.thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                  <img src={product.thumbnailUrl} alt={product.name} className="h-full w-full object-cover" />
+                  <img src={product.thumbnailUrl} alt={product.name} className="h-full w-full object-contain" />
                 ) : (
                   "Thumbnail"
                 )}
@@ -1513,7 +1515,7 @@ export default function ProductDetailsTab() {
                     </span>
                   )}
                 </p>
-                <p className="text-xs font-medium text-status-delivered">Free delivery inside Dhaka</p>
+                {/* <p className="text-xs font-medium text-status-delivered">Free delivery inside Dhaka</p> */}
               </div>
             </div>
           </Card>
@@ -1545,12 +1547,19 @@ export default function ProductDetailsTab() {
             <h2 className="mb-1 text-lg font-bold text-primary">Thumbnail</h2>
             <div className="mb-3 flex items-center justify-center gap-3">
               {product.thumbnailUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image
-                <img
-                  src={product.thumbnailUrl}
-                  alt={product.name}
-                  className="h-20 w-20 shrink-0 rounded-md border border-black/10 object-cover"
-                />
+                <button
+                  type="button"
+                  onClick={() => setZoomedImage(product.thumbnailUrl)}
+                  className="shrink-0 cursor-zoom-in"
+                  title="Click to zoom in"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- admin-uploaded product image */}
+                  <img
+                    src={product.thumbnailUrl}
+                    alt={product.name}
+                    className="h-20 w-20 rounded-md border border-black/10 object-cover"
+                  />
+                </button>
               ) : (
                 <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-black/15 bg-black/5 text-sm text-foreground/40">
                   None
@@ -1704,6 +1713,10 @@ export default function ProductDetailsTab() {
           )}
         </div>
       </ProductFooterBar>
+
+      {zoomedImage && (
+        <ImageLightbox src={zoomedImage} alt={product.name} onClose={() => setZoomedImage(null)} />
+      )}
     </div>
   );
 }

@@ -5,9 +5,31 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
-import type { CustomerResponseStatus, OrderListItem } from "@/lib/types";
+import type { CustomerResponseStatus, OrderItem, OrderListItem } from "@/lib/types";
 import { telHref } from "@/lib/phone";
 import { formatAmount, formatRelativeTime } from "@/lib/format";
+
+// Same product can now be split across an "original" row and a "suggested"
+// row (see OrderItem.isSuggested) — real and useful detail on the order's
+// own page, but just noise here, where this list only needs one combined
+// line per product. Merges same product + same unit price back into one row
+// for display only; the underlying order keeps its real, split rows.
+function mergedOrderItems(items: OrderItem[]): OrderItem[] {
+  const merged: OrderItem[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.productId}:${item.unitPrice}`;
+    const i = indexByKey.get(key);
+    if (i === undefined) {
+      indexByKey.set(key, merged.length);
+      merged.push({ ...item });
+    } else {
+      merged[i].quantity += item.quantity;
+      merged[i].total = String(Number(merged[i].total) + Number(item.total));
+    }
+  }
+  return merged;
+}
 
 function listDate(value: string): string {
   const d = new Date(value);
@@ -455,7 +477,7 @@ export default function WebOrdersPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="space-y-2">
-                        {o.items.map((item) => {
+                        {mergedOrderItems(o.items).map((item) => {
                           const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
                           return (
                           <div key={item.id} className="flex items-center gap-2">

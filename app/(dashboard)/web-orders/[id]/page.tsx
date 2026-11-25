@@ -128,7 +128,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
       <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/50">
         <span>{formatDateTime(entry.at)}</span>
         {entry.by && (
-          <span className="rounded bg-black/5 px-1.5 py-0.5 font-medium text-foreground/70">{entry.by}</span>
+          <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">{entry.by}</span>
         )}
       </div>
       <div className="whitespace-pre-line">{entry.text}</div>
@@ -240,6 +240,39 @@ interface LineItem {
 
 function availableStock(p: Product): number {
   return p.inventory ? p.inventory.currentStock - p.inventory.reservedStock : 0;
+}
+
+// The backend can now hold the same product as two separate rows — an
+// "original" one and a "suggested" one from a later quantity bump (see
+// updateOrder's isSuggested split) — but this form edits one Qty per
+// product, same as it always has. Merges them back into one line here so
+// reopening a previously-split order doesn't show it as two separately
+// editable rows; the split itself is re-derived from scratch on the next
+// save anyway (see updateOrder), so nothing about it is lost by merging here.
+function mergeOrderItemsIntoLineItems(items: OrderItem[]): LineItem[] {
+  const merged: LineItem[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.productId}:${item.unitPrice}`;
+    const i = indexByKey.get(key);
+    if (i === undefined) {
+      indexByKey.set(key, merged.length);
+      merged.push({
+        productId: item.productId,
+        productName: item.productName,
+        sku: item.sku,
+        image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineDiscount: item.discount ?? "0",
+        originalUnitPrice: item.unitPrice,
+      });
+    } else {
+      merged[i].quantity += item.quantity;
+      merged[i].lineDiscount = String(Number(merged[i].lineDiscount || 0) + Number(item.discount || 0));
+    }
+  }
+  return merged;
 }
 
 // A web order is reviewed and approved here, in the same form as New Order.
@@ -443,16 +476,22 @@ export default function WebOrderDetailsPage() {
   async function updateResponse() {
     if (!order || !nextResponse || nextResponse === "CANCEL") return;
     setResponseError(null);
+    // Saves what is on the page as well, so edits to Ordered products (e.g. an
+    // agent adding another product while following up) are never lost just
+    // because the admin used Update here instead of Approve Order below —
+    // same products/discount/advance protection either button gives.
+    const validItems = lineItems.filter((i) => i.quantity > 0);
+    if (validItems.length === 0) {
+      setResponseError("Add at least one product.");
+      return;
+    }
+    if (!isLead && Number(advanceAmount) > orderTotal) {
+      setResponseError("Advance cannot be more than the order total.");
+      return;
+    }
     setResponseSaving(true);
     try {
       if (isLead) {
-        // Saves what is on the page as well, so edits to Ordered products are
-        // not lost when the response is set.
-        const validItems = lineItems.filter((i) => i.quantity > 0);
-        if (validItems.length === 0) {
-          setResponseError("Add at least one product.");
-          return;
-        }
         await api.patch(`/admin/orders/checkout-leads/${leadId}`, {
           customerName: customerName || undefined,
           shippingAddress: shippingAddress || undefined,
@@ -462,14 +501,43 @@ export default function WebOrderDetailsPage() {
             unitPrice: i.unitPrice ? submitUnitPrice(i) : undefined,
           })),
         });
-      } else if (order.status === "CANCELLED") {
-        // Setting a response on a cancelled order picks it back up, same as
-        // Approve does — it needs a real reactivation (stock re-reserved),
-        // not just a response change on an order with nothing held for it.
-        await api.patch(`/admin/orders/${orderId}/status`, {
-          status: "PENDING",
-          note: "Reactivated from Web Orders",
+      } else {
+        if (order.status === "CANCELLED") {
+          // Setting a response on a cancelled order picks it back up, same as
+          // Approve does — it needs a real reactivation (stock re-reserved),
+          // not just a response change on an order with nothing held for it.
+          await api.patch(`/admin/orders/${orderId}/status`, {
+            status: "PENDING",
+            note: "Reactivated from Web Orders",
+          });
+        }
+        // Any product not already on the order (e.g. Dr Rhazes Foot Cream
+        // added just now) comes back from this save flagged isSuggested by
+        // the backend, and shows up in the Suggested products card below —
+        // no separate "mark as suggested" step needed here.
+        await api.patch(`/admin/orders/${orderId}`, {
+          customerName,
+          customerPhone,
+          shippingAddress,
+          deliveryMethod: deliveryMethod || undefined,
+          items: validItems.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice ? submitUnitPrice(i) : undefined,
+            discount: Number(i.lineDiscount) > 0 ? Number(i.lineDiscount) : undefined,
+          })),
+          discount: realWebsiteDiscount + (Number(discount) || 0),
+          manualDiscount: Number(discount) || 0,
+          shippingFee: shippingFee ? Number(shippingFee) : undefined,
+          notes: shippingNote || undefined,
         });
+        if (Number(advanceAmount) > 0) {
+          await api.post(`/admin/orders/${orderId}/payments`, {
+            amount: Number(advanceAmount),
+            method: paymentMethod,
+            transactionId: transactionId || undefined,
+          });
+        }
       }
       const path = isLead
         ? `/admin/orders/checkout-leads/${leadId}/customer-response`
@@ -552,19 +620,7 @@ export default function WebOrderDetailsPage() {
         // saved doesn't make it look like it vanished.
         setDiscount(Number(o.manualDiscount) > 0 ? o.manualDiscount : "");
         setShippingFee(Number(o.shippingFee) > 0 ? o.shippingFee : "");
-        setLineItems(
-          formItems ??
-            o.items.map((item) => ({
-              productId: item.productId,
-              productName: item.productName,
-              sku: item.sku,
-              image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              lineDiscount: item.discount ?? "0",
-              originalUnitPrice: item.unitPrice,
-            })),
-        );
+        setLineItems(formItems ?? mergeOrderItemsIntoLineItems(o.items));
         if (isLead) return null;
         return api.get<OrderListItem[]>(`/admin/orders?customerId=${o.customer.id}`);
       })
@@ -1441,7 +1497,7 @@ export default function WebOrderDetailsPage() {
             </Card>
 
             {!isLead && hasRealBreakdown && (
-              <div className="rounded-lg border border-dashed border-orange-700 bg-orange-100 p-3">
+              <div className="rounded-lg border border-dashed border-orange-700 bg-red-100 p-3">
                 <div className="mb-2 text-md font-semibold text-red/70">
                   Website checkout breakdown 
                 </div>
@@ -1473,7 +1529,7 @@ export default function WebOrderDetailsPage() {
             )}
 
            
-
+            <div className="border border-dashed border-orange-700 rounded-lg">
             <Card>
               <h2 className="mb-3 text-sm font-semibold text-foreground">Order items</h2>
               <div className="space-y-3">
@@ -1484,7 +1540,7 @@ export default function WebOrderDetailsPage() {
             </Card>
 
             {suggestedOrderItems.length > 0 && (
-              <div className="rounded-lg border border-[color-mix(in_srgb,var(--status-pending)_35%,transparent)] bg-[color-mix(in_srgb,var(--status-pending)_8%,transparent)] p-3">
+              <div className="  bg-orange-100 p-3">
                 <h2 className="mb-3 text-sm font-semibold text-foreground">Suggested products</h2>
                 <div className="space-y-3">
                   {suggestedOrderItems.map((item) => (
@@ -1493,6 +1549,7 @@ export default function WebOrderDetailsPage() {
                 </div>
               </div>
             )}
+            </div>
 
             <Card>
               <h2 className="mb-3 text-sm font-semibold text-foreground">Order tags</h2>
