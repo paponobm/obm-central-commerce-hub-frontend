@@ -567,10 +567,6 @@ export default function NewProductPage() {
     await submitProduct(false);
   }
 
-  async function handleSaveDraft() {
-    await submitProduct(true);
-  }
-
   // asDraft forces isActive:false and skips publishing to any channel
   // regardless of what's checked (see ProductsService.create, which also
   // enforces this independently) — a draft is never live anywhere, full
