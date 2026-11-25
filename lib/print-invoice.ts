@@ -1,6 +1,7 @@
 import JsBarcode from "jsbarcode";
 import type { OrderListItem } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
+import { mergeOrderItemsByProduct } from "@/lib/order-items";
 
 export type InvoiceMode = "by-invoice" | "grouped-by-sku";
 export type PaperSize = "A4" | "A5" | "Letter";
@@ -51,7 +52,8 @@ function barcodeSvg(value: string): string {
 }
 
 function invoiceHtml(order: OrderListItem, storeName: string): string {
-  const rows = order.items
+  const mergedItems = mergeOrderItemsByProduct(order.items);
+  const rows = mergedItems
     .map(
       (item) => `
         <tr>
@@ -82,7 +84,7 @@ function invoiceHtml(order: OrderListItem, storeName: string): string {
         <div class="meta">
           <div><b>Invoice No:</b> ${esc(order.orderNumber)}</div>
           <div><b>Invoice Date:</b> ${esc(formatDateTime(order.createdAt))}</div>
-          <div><b>Total Items:</b> ${order.items.length}</div>
+          <div><b>Total Items:</b> ${mergedItems.length}</div>
           <div><b>Delivery:</b> ${esc(order.deliveryMethod ?? "—")}</div>
           <div><b>Tracking:</b> —</div>
         </div>

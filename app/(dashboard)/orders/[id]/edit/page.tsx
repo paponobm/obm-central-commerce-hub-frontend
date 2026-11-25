@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderSource, PaymentMethod, Product, OrderDetail, Payment, OverdueResponse } from "@/lib/types";
+import type { OrderSource, PaymentMethod, Product, OrderDetail, OrderItem, Payment, OverdueResponse } from "@/lib/types";
 import { formatAmount, formatDateTime } from "@/lib/format";
 import { isOverdueShipped } from "@/lib/order-overdue";
 import { minPreorderNotifyAt, PREORDER_REASONS } from "@/lib/order-pipeline";
@@ -85,6 +85,38 @@ function availableStock(p: Product): number {
   return p.inventory ? p.inventory.currentStock - p.inventory.reservedStock : 0;
 }
 
+// The backend can hold the same product as two separate rows — an
+// "original" one and a "suggested" one from a later quantity bump (see
+// OrdersService.updateOrder's isSuggested split) — but this form edits one
+// Qty per product, same as it always has. Merges them back into one line
+// here so reopening a previously-split order doesn't show it as two
+// separately editable rows; the split itself is re-derived from scratch on
+// the next save anyway, so nothing about it is lost by merging here.
+function mergeOrderItemsIntoLineItems(items: OrderItem[]): LineItem[] {
+  const merged: LineItem[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.productId}:${item.unitPrice}`;
+    const i = indexByKey.get(key);
+    if (i === undefined) {
+      indexByKey.set(key, merged.length);
+      merged.push({
+        productId: item.productId,
+        productName: item.productName,
+        sku: item.sku,
+        image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineDiscount: item.discount ?? "0",
+      });
+    } else {
+      merged[i].quantity += item.quantity;
+      merged[i].lineDiscount = String(Number(merged[i].lineDiscount || 0) + Number(item.discount || 0));
+    }
+  }
+  return merged;
+}
+
 // One line of the Activity Log, as the server describes it (same
 // /admin/orders/:id/activity shape the Web Order Details and Orders list
 // pages use) — who did what, and when.
@@ -109,6 +141,21 @@ function ActivityLogRow({ entry }: { entry: ActivityEntry }) {
           <div className="text-foreground/70">{entry.by ?? "—"}</div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// One row of the read-only "Order items"/"Suggested products" lists below
+// the Website Checkout Breakdown box — same split as Web Order Details,
+// text-only to match this page's own (image-free) Products table above.
+function OrderItemRow({ item }: { item: OrderItem }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <div className="min-w-0">
+        <div className="truncate font-medium text-foreground">{item.productName}</div>
+        <div className="text-xs text-foreground/50">{formatAmount(item.unitPrice)}৳</div>
+      </div>
+      <span className="shrink-0 text-foreground/60">{item.quantity}x</span>
     </div>
   );
 }
@@ -205,17 +252,7 @@ export default function EditOrderPage() {
             ]),
           ),
         );
-        setLineItems(
-          o.items.map((item) => ({
-            productId: item.productId,
-            productName: item.productName,
-            sku: item.sku,
-            image: item.product?.thumbnailUrl ?? item.product?.images[0]?.url,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            lineDiscount: item.discount ?? "0",
-          })),
-        );
+        setLineItems(mergeOrderItemsIntoLineItems(o.items));
       })
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Failed to load order"));
     api
@@ -362,6 +399,11 @@ export default function EditOrderPage() {
   const hasRealBreakdown =
     order?.source === "WEBSITE" &&
     (realItemDiscountTotal > 0 || realOrderDiscount > 0 || realRawProductTotal > 0);
+  // Order items vs. products added on a later edit — same split as the Web
+  // Order Details page's Order items/Suggested products cards, driven by
+  // the same isSuggested flag the backend already tracks per line.
+  const realOrderItems = order?.items.filter((item) => !item.isSuggested) ?? [];
+  const suggestedOrderItems = order?.items.filter((item) => item.isSuggested) ?? [];
 
   // The website's own discount (realWebsiteDiscount) always comes off
   // first — Discount above is the full manual amount on top of it
@@ -1085,6 +1127,28 @@ export default function EditOrderPage() {
                   {realShippingFee > 0 ? `${formatAmount(realShippingFee)}৳` : "ফ্রি"}
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {realOrderItems.length > 0 && (
+          <Card>
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Order items</h2>
+            <div className="space-y-3">
+              {realOrderItems.map((item) => (
+                <OrderItemRow key={item.id} item={item} />
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {suggestedOrderItems.length > 0 && (
+          <div className="rounded-lg border border-dashed border-orange-700 bg-orange-100 p-3">
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Suggested products</h2>
+            <div className="space-y-3">
+              {suggestedOrderItems.map((item) => (
+                <OrderItemRow key={item.id} item={item} />
+              ))}
             </div>
           </div>
         )}

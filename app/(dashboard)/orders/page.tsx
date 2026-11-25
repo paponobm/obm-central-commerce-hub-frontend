@@ -17,6 +17,7 @@ import type {
   InventorySummary,
 } from "@/lib/types";
 import { formatAmount, formatDateTime, formatRelativeTime } from "@/lib/format";
+import { mergeOrderItemsByProduct } from "@/lib/order-items";
 import { printInvoices, type InvoiceMode, type PaperSize } from "@/lib/print-invoice";
 import { printStickers } from "@/lib/print-sticker";
 import { telHref } from "@/lib/phone";
@@ -1864,8 +1865,9 @@ export default function OrdersPage() {
               </thead>
               <tbody>
                 {visibleOrders.map((o) => {
-                  const visibleItems = o.items.slice(0, 3);
-                  const hiddenCount = o.items.length - visibleItems.length;
+                  const mergedItems = mergeOrderItemsByProduct(o.items);
+                  const visibleItems = mergedItems.slice(0, 3);
+                  const hiddenCount = mergedItems.length - visibleItems.length;
                   return (
                     <tr
                       key={o.id}
@@ -2088,7 +2090,7 @@ export default function OrdersPage() {
               </button>
             </div>
             <div className="space-y-3">
-              {productsModal.items.map((item) => {
+              {mergeOrderItemsByProduct(productsModal.items).map((item) => {
                 const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
                 return (
                 <div key={item.id} className="flex gap-3 rounded-lg border border-black/10 p-3">
@@ -2266,7 +2268,7 @@ export default function OrdersPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {detailsData.items.map((item) => (
+                        {mergeOrderItemsByProduct(detailsData.items).map((item) => (
                           <tr key={item.id} className="border-b border-black/5">
                             <td className="py-2 text-foreground">
                               {item.productName} ({item.sku})
@@ -2388,7 +2390,7 @@ export default function OrdersPage() {
 
                   <div className="rounded-lg border border-black/10">
                     <h4 className="border-b border-black/10 px-4 py-3 text-base font-semibold text-foreground">Products</h4>
-                    {detailsData.items.map((item) => {
+                    {mergeOrderItemsByProduct(detailsData.items).map((item) => {
                       const thumb = item.product?.thumbnailUrl ?? item.product?.images[0]?.url;
                       return (
                       <div key={item.id} className="flex items-center gap-4 border-b border-black/5 px-4 py-3 last:border-b-0">
