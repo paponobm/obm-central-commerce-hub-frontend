@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useChannelScope } from "@/lib/channel-scope-context";
 import { useInventoryAlertCount } from "@/lib/use-inventory-alert-count";
+import { useCounselingPendingCount } from "@/lib/use-counseling-pending-count";
 import { NAV_ENTRIES, type NavEntry } from "./nav-config";
 import { NAV_ICONS } from "./nav-icons";
 import { StoreSelector } from "./store-selector";
@@ -115,6 +116,10 @@ export function Sidebar({
   // so there's no point fetching this outside "All Stores" scope.
   const inventoryAlertCount = useInventoryAlertCount(
     !activeChannel && hasPermission("inventory.view"),
+  );
+  // Same reasoning — Counseling is also centralOnly.
+  const counselingPendingCount = useCounselingPendingCount(
+    !activeChannel && hasPermission("counseling.view"),
   );
 
   // Whichever group contains the current route starts expanded, so landing
@@ -236,6 +241,7 @@ export function Sidebar({
 
             if (entry.type === "link") {
               const active = entry.href === activeHref;
+              const showCounselingBadge = entry.label === "Counseling" && !!counselingPendingCount;
               return (
                 <Link
                   key={entry.href}
@@ -245,8 +251,17 @@ export function Sidebar({
                     collapsed ? "lg:justify-center lg:px-0" : ""
                   } ${active ? "bg-sidebar-active text-sidebar-active-fg" : "text-sidebar-fg hover:bg-white/5"}`}
                 >
-                  <Icon className="h-[18px] w-[18px] shrink-0 opacity-80" />
+                  <span className="relative shrink-0">
+                    <Icon className="h-[18px] w-[18px] opacity-80" />
+                    {showCounselingBadge && iconOnly && (
+                      <CountBadge
+                        count={counselingPendingCount!}
+                        className="absolute -right-2 -top-2 h-3.5 min-w-[14px] px-0.5 text-[9px]"
+                      />
+                    )}
+                  </span>
                   <span className={collapsed ? "lg:hidden" : ""}>{entry.label}</span>
+                  {showCounselingBadge && !iconOnly && <CountBadge count={counselingPendingCount!} />}
                 </Link>
               );
             }

@@ -47,6 +47,9 @@ export default function CounselingPage() {
       setRequests((rows) =>
         rows ? rows.map((r) => (r.id === id ? { ...r, status: "SOLVED" } : r)) : rows,
       );
+      // Instant sidebar badge update — see useCounselingPendingCount, which
+      // otherwise only catches this on its next poll.
+      window.dispatchEvent(new Event("counseling:refresh"));
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to update status");
     } finally {
