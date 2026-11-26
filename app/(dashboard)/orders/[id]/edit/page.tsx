@@ -1102,7 +1102,7 @@ export default function EditOrderPage() {
          {hasRealBreakdown && (
           <div className="rounded-lg border border-dashed border-orange-400 bg-orange-50 p-3">
             <div className="mb-2 text-xs font-semibold text-foreground/70">
-              Website Checkout Breakdown 
+              Website Checkout Breakdown
             </div>
             <div className="space-y-1.5 text-sm">
               <div className="flex items-center justify-between">

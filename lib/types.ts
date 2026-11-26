@@ -905,3 +905,21 @@ export interface CodReport {
   delivered: OrderReportMetric;
   returned: OrderReportMetric;
 }
+
+export type CallRequestStatus = "PENDING" | "SOLVED";
+
+// GET /admin/call-requests — a storefront's "ফ্রি কল-পরামর্শ নিন" (free
+// call consultation) leads, reviewed centrally across every store rather
+// than scoped to whichever one is currently active (see the Counseling nav
+// entry's centralOnly flag).
+export interface CallRequest {
+  id: string;
+  requestCode: string;
+  name: string;
+  phone: string;
+  problem: string;
+  status: CallRequestStatus;
+  channel: { name: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}

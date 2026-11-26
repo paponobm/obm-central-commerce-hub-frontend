@@ -1529,7 +1529,7 @@ export default function WebOrderDetailsPage() {
             )}
 
            
-            <div className="border border-dashed border-orange-700 rounded-lg">
+            <div className="border border-dashed border-orange-700">
             <Card>
               <h2 className="mb-3 text-sm font-semibold text-foreground">Order items</h2>
               <div className="space-y-3">

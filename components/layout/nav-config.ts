@@ -89,6 +89,10 @@ export const NAV_ENTRIES: NavEntry[] = [
     storeOnly: true,
   },
   { type: "link", label: "Customers", href: "/customers", icon: "customers", permission: "customers.view" },
+  // Call-back requests from every storefront's "ফ্রি কল-পরামর্শ নিন" form —
+  // reviewed centrally, not per-store (see CallRequest's own schema
+  // comment), so this is centralOnly like Inventory/Channels/Users.
+  { type: "link", label: "Counseling", href: "/counseling", icon: "counseling", permission: "counseling.view", centralOnly: true },
   // channels.view is a baseline permission granted automatically to any
   // non-Super-Admin user (see UsersService.sanitizePermissions — the store
   // picker itself depends on it), so it can't be used to gate this link;
@@ -131,6 +135,7 @@ export const STORE_BLOCKED_PREFIXES = [
   "/settings",
   "/categories",
   "/brands",
+  "/counseling",
 ];
 
 export function isBlockedInStore(pathname: string): boolean {
