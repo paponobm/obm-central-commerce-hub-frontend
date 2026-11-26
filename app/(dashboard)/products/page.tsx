@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
 import { useChannelScope } from "@/lib/channel-scope-context";
+import { getStoredProductsPageSize, setStoredProductsPageSize } from "@/lib/products-list-prefs";
 import type { Category, Product } from "@/lib/types";
 import { money } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
@@ -127,12 +128,26 @@ export default function ProductsPage() {
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
   const [zoomedImage, setZoomedImage] = useState<{ url: string; name: string } | null>(null);
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
   // Which image the preview's big hero slot is currently showing — starts
   // at the thumbnail (or the first gallery image if there's no thumbnail),
   // then switches to whichever thumbnail strip image was clicked.
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Restored after mount (not in the initializer above) so the server-
+  // rendered first pass and the client's first render still match — same
+  // pattern the dashboard sidebar's collapsed state already uses.
+  useEffect(() => {
+    setPageSize(getStoredProductsPageSize(PAGE_SIZE_OPTIONS[0]));
+  }, []);
+
+  function changePageSize(next: number) {
+    setPageSize(next);
+    setStoredProductsPageSize(next);
+  }
 
   async function loadProducts() {
     const params = new URLSearchParams();
@@ -210,6 +225,22 @@ export default function ProductsPage() {
     }
   }
 
+  // Only ever called from the "#" column while the list is unfiltered (see
+  // canReorder below) — position is the 1-indexed target, same numbering
+  // the # column itself shows.
+  async function handleReorder(productId: string, position: number) {
+    setReorderingId(productId);
+    setReorderError(null);
+    try {
+      await api.patch(`/admin/products/${productId}/reorder`, { position });
+      await loadProducts();
+    } catch (err) {
+      setReorderError(err instanceof ApiError ? err.message : "Failed to reorder");
+    } finally {
+      setReorderingId(null);
+    }
+  }
+
   // These three always reflect the whole catalog (fetched once above with
   // includeInactive=true), independent of whatever the Status dropdown is
   // currently narrowing the table down to — same pattern as the Inventory
@@ -227,6 +258,13 @@ export default function ProductsPage() {
 
   const totalPages = filteredProducts ? Math.max(1, Math.ceil(filteredProducts.length / pageSize)) : 1;
   const pagedProducts = filteredProducts?.slice((page - 1) * pageSize, page * pageSize);
+
+  // "#" is only ever editable here — with no search/category filter and
+  // Status set to Active, what's on screen is exactly the active-only set
+  // the backend reorders (see ProductsService.reorder), so a typed position
+  // means the same thing on both ends. All/Inactive/Draft mix in rows the
+  // backend doesn't reorder against, which would make "position 4" wrong.
+  const canReorder = !search && !categoryFilter && statusFilter === "active";
 
   return (
     <div>
@@ -297,6 +335,11 @@ export default function ProductsPage() {
             {loadError}
           </p>
         )}
+        {reorderError && (
+          <p className="mb-4 rounded-lg bg-status-cancelled/10 px-3 py-2 text-base text-status-cancelled">
+            {reorderError}
+          </p>
+        )}
 
         {!filteredProducts ? (
           <LoadingLine className="text-base text-foreground/60" />
@@ -324,10 +367,36 @@ export default function ProductsPage() {
               {pagedProducts!.map((p, i) => {
                 const image = p.thumbnailUrl ?? p.images?.[0]?.url;
                 const activeVariants = p.variants?.filter((v) => v.isActive) ?? [];
+                const position = (page - 1) * pageSize + i + 1;
                 return (
                   <tr key={p.id} className="border-b border-black/5 last:border-0">
                     <td className="px-3 py-3 text-foreground/50">
-                      {(page - 1) * pageSize + i + 1}
+                      {canReorder ? (
+                        <input
+                          key={`${p.id}-${position}`}
+                          type="number"
+                          min={1}
+                          defaultValue={position}
+                          disabled={reorderingId === p.id}
+                          onBlur={(e) => {
+                            const next = Number(e.target.value);
+                            if (Number.isFinite(next) && next >= 1 && next !== position) {
+                              handleReorder(p.id, next);
+                            } else {
+                              e.target.value = String(position);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          title="Type a new position to move this product"
+                          className="w-14 rounded border border-black/10 bg-white px-1.5 py-1 text-center text-base text-foreground/70 focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                      ) : (
+                        <span title="Set Status to Active (with no search/category filter) to reorder">
+                          {position}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">
@@ -468,7 +537,7 @@ export default function ProductsPage() {
               <Select
                 className="w-auto !text-base font-bold !text-primary"
                 value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
+                onChange={(e) => changePageSize(Number(e.target.value))}
               >
                 {PAGE_SIZE_OPTIONS.map((n) => (
                   <option key={n} value={n}>
