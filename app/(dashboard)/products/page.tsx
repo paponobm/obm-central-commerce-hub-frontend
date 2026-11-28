@@ -420,10 +420,10 @@ export default function ProductsPage() {
                             —
                           </span>
                         )}
-                        <div>
+                        <div className="max-w-xs">
                           <button
                             onClick={() => router.push(`/products/${p.id}`)}
-                            className="font-bold text-primary hover:underline"
+                            className="text-left font-bold text-primary hover:underline"
                           >
                             {p.name}
                             {activeVariants.length > 1 && (
