@@ -923,3 +923,26 @@ export interface CallRequest {
   createdAt: string;
   updatedAt: string;
 }
+
+// GET /admin/analytics/overview — every storefront's traffic in one place
+// (or one, via ?channelId=), not an attempt at rebuilding Google Analytics:
+// just enough to answer "how many views", "what are people searching for",
+// and "where from" (referrer, plus utm_source when a link was tagged).
+export interface AnalyticsOverview {
+  range: { from: string; to: string };
+  totalPageViews: number;
+  uniqueVisitors: number;
+  topPaths: { path: string; count: number }[];
+  topSearches: { query: string; count: number }[];
+  topReferrers: { referrer: string; count: number }[];
+  topUtmSources: { source: string; count: number }[];
+}
+
+// GET /admin/products/:id/analytics — fills the Product Details tab's
+// Performance card "Page views" slot.
+export interface ProductAnalytics {
+  range: { from: string; to: string };
+  totalViews: number;
+  uniqueVisitors: number;
+  byDay: { day: string; count: number }[];
+}

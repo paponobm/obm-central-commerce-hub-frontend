@@ -187,6 +187,12 @@ const NAV_GROUPS: {
     centralOnly: true,
   },
   {
+    key: "analytics",
+    title: "Analytics",
+    permissionKeys: ["analytics.view"],
+    centralOnly: true,
+  },
+  {
     key: "channels",
     title: "Channels",
     permissionKeys: ["channels.view", "channels.manage"],

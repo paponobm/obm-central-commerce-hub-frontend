@@ -93,6 +93,10 @@ export const NAV_ENTRIES: NavEntry[] = [
   // reviewed centrally, not per-store (see CallRequest's own schema
   // comment), so this is centralOnly like Inventory/Channels/Users.
   { type: "link", label: "Counseling", href: "/counseling", icon: "counseling", permission: "counseling.view", centralOnly: true },
+  // Traffic across every storefront — page views, on-site searches, and
+  // referrer/UTM breakdown (see AnalyticsEvent). Central like Counseling,
+  // for the same reason: not a per-store concern the way Orders/Products are.
+  { type: "link", label: "Analytics", href: "/analytics", icon: "analytics", permission: "analytics.view", centralOnly: true },
   // channels.view is a baseline permission granted automatically to any
   // non-Super-Admin user (see UsersService.sanitizePermissions — the store
   // picker itself depends on it), so it can't be used to gate this link;
@@ -136,6 +140,7 @@ export const STORE_BLOCKED_PREFIXES = [
   "/categories",
   "/brands",
   "/counseling",
+  "/analytics",
 ];
 
 export function isBlockedInStore(pathname: string): boolean {

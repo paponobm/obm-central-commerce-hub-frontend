@@ -81,6 +81,17 @@ function CustomersIcon(props: IconProps) {
   );
 }
 
+function AnalyticsIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 3v14h14" />
+      <path d="M6 13.5V9.5" />
+      <path d="M10 13.5v-7" />
+      <path d="M14 13.5v-4" />
+    </svg>
+  );
+}
+
 function CounselingIcon(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -157,6 +168,7 @@ export const NAV_ICONS = {
   integrations: IntegrationsIcon,
   customers: CustomersIcon,
   counseling: CounselingIcon,
+  analytics: AnalyticsIcon,
   channels: ChannelsIcon,
   reports: ReportsIcon,
   users: UsersIcon,

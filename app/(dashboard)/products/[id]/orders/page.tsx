@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api-client";
-import type { OrderListItem, ProductActivityPage } from "@/lib/types";
+import type { OrderListItem, ProductActivityPage, ProductAnalytics } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,11 +16,14 @@ export default function ProductDetailsTab() {
   const params = useParams<{ id: string }>();
   const productId = params.id;
 
-  // Performance — Orders/Returns are computed from this product's real
-  // order history; Page views/Conversion have no data source yet, so they
-  // stay the same placeholder the design calls for until that's wired up.
+  // Performance — Orders/Returns from this product's real order history;
+  // Page views/Conversion from AnalyticsEvent (see the Analytics nav page
+  // for the cross-product version of the same data).
   const [orders, setOrders] = useState<OrderListItem[] | null>(null);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+
+  const [analytics, setAnalytics] = useState<ProductAnalytics | null>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   const [activity, setActivity] = useState<ProductActivityPage | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
@@ -32,6 +35,13 @@ export default function ProductDetailsTab() {
       .get<OrderListItem[]>(`/admin/orders?productId=${productId}`)
       .then(setOrders)
       .catch((err) => setOrdersError(err instanceof ApiError ? err.message : "Failed to load orders"));
+  }, [productId]);
+
+  useEffect(() => {
+    api
+      .get<ProductAnalytics>(`/admin/products/${productId}/analytics`)
+      .then(setAnalytics)
+      .catch((err) => setAnalyticsError(err instanceof ApiError ? err.message : "Failed to load analytics"));
   }, [productId]);
 
   useEffect(() => {
@@ -59,6 +69,17 @@ export default function ProductDetailsTab() {
     : [];
   const returnedCount = orders?.filter((o) => o.status === "RETURNED").length ?? 0;
   const returnPct = totalOrders > 0 ? ((returnedCount / totalOrders) * 100).toFixed(1) : null;
+  // Same range the Page views card itself shows (trailing 30 days) — orders
+  // outside that window aren't counted here, so this stays "orders per
+  // view, this range" rather than silently mixing two different periods.
+  const conversionPct =
+    analytics && orders && analytics.totalViews > 0
+      ? (
+          (orders.filter((o) => new Date(o.createdAt) >= new Date(analytics.range.from)).length /
+            analytics.totalViews) *
+          100
+        ).toFixed(1)
+      : null;
 
   const activityTotalPages = Math.max(1, Math.ceil((activity?.total ?? 0) / activityPageSize));
 
@@ -69,7 +90,16 @@ export default function ProductDetailsTab() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border border-black/10 p-4">
             <div className="text-sm text-foreground/50">Page views</div>
-            <div className="mt-2 text-2xl font-bold text-foreground">—</div>
+            {analyticsError ? (
+              <div className="mt-2 text-sm text-status-cancelled">{analyticsError}</div>
+            ) : analytics === null ? (
+              <div className="mt-2 text-2xl font-bold text-foreground">—</div>
+            ) : (
+              <>
+                <div className="mt-2 text-2xl font-bold text-foreground">{analytics.totalViews}</div>
+                <div className="mt-1 text-xs text-foreground/50">{analytics.uniqueVisitors} unique visitors</div>
+              </>
+            )}
           </div>
           <div className="rounded-xl border border-black/10 p-4">
             <div className="text-sm text-foreground/50">Orders</div>
@@ -95,7 +125,10 @@ export default function ProductDetailsTab() {
           </div>
           <div className="rounded-xl border border-black/10 p-4">
             <div className="text-sm text-foreground/50">Conversion</div>
-            <div className="mt-2 text-2xl font-bold text-foreground">—</div>
+            <div className="mt-2 text-2xl font-bold text-foreground">
+              {conversionPct !== null ? `${conversionPct}%` : "—"}
+            </div>
+            <div className="mt-1 text-xs text-foreground/50">orders ÷ page views</div>
           </div>
           <div className="rounded-xl border border-black/10 p-4">
             <div className="text-sm text-foreground/50">Returns</div>
@@ -111,9 +144,7 @@ export default function ProductDetailsTab() {
             )}
           </div>
         </div>
-        <p className="mt-4 text-xs text-foreground/40">
-          Page views &amp; Conversion — shown per-website once available.
-        </p>
+        <p className="mt-4 text-xs text-foreground/40">Page views &amp; conversion: trailing 30 days.</p>
       </Card>
 
       <Card>
